@@ -133,7 +133,7 @@
     "hardenedRuntime": true,
     "entitlements": "resources/mac/entitlements.mac.plist",
     "entitlementsInherit": "resources/mac/entitlements.mac.plist",
-    "identity": "Developer ID Application: Nikolai Iambroskin (54Q38243Z3)",
+    "identity": "Nikolai Iambroskin (54Q38243Z3)",
     "notarize": true,
     "extraResources": [
       {
