@@ -13,7 +13,7 @@ This milestone reverse-engineers the existing OpenWhispr cloud backend, document
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Wire Contract Documentation** - Reverse-engineer and document every external HTTP call and OAuth flow the app makes
-- [ ] **Phase 2: Architecture Doc + Hardcode Inventory** - Document the application's internal architecture and enumerate every hardcoded value that must become configurable
+- [x] **Phase 2: Architecture Doc + Hardcode Inventory** - Document the application's internal architecture and enumerate every hardcoded value that must become configurable
 - [ ] **Phase 3: Build-time Env Refactor** - Replace all inventoried hardcodes with build-time variables via Vite define and electron-builder env
 - [ ] **Phase 4: OAuth Gating, Build Docs, and Parity Gate** - Add per-provider OAuth flags, write BUILD_CONFIG.md, and verify default-build behavioral parity
 
@@ -43,8 +43,8 @@ Plans:
   3. CONFIG_INVENTORY entries are complete enough that a developer can execute the Phase 3 refactor without re-auditing the source tree
 **Plans:** 2 plans
 Plans:
-- [ ] 02-01-PLAN.md — Write docs/ARCHITECTURE.md (process model, IPC surface, secrets, model registry, transcription, embeddings, sidecars)
-- [ ] 02-02-PLAN.md — Write docs/CONFIG_INVENTORY.md (5-column hardcode inventory with proposed OPENWHISPR_* env-vars)
+- [x] 02-01-PLAN.md — Write docs/ARCHITECTURE.md (process model, IPC surface, secrets, model registry, transcription, embeddings, sidecars)
+- [x] 02-02-PLAN.md — Write docs/CONFIG_INVENTORY.md (5-column hardcode inventory with proposed OPENWHISPR_* env-vars)
 
 ### Phase 3: Build-time Env Refactor
 **Goal**: Every entry in CONFIG_INVENTORY is replaced with a build-time variable; no production code path reads the new variables at runtime
@@ -76,6 +76,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Wire Contract Documentation | 0/TBD | Not started | - |
-| 2. Architecture Doc + Hardcode Inventory | 0/2 | Not started | - |
+| 2. Architecture Doc + Hardcode Inventory | 3/3 | Complete | 2026-05-08 |
 | 3. Build-time Env Refactor | 0/TBD | Not started | - |
 | 4. OAuth Gating, Build Docs, and Parity Gate | 0/TBD | Not started | - |
