@@ -27,6 +27,33 @@ export default defineConfig(({ mode }) => {
   const rawPort = env.VITE_DEV_SERVER_PORT || env.OPENWHISPR_DEV_SERVER_PORT;
   const devServerPort = parseDevServerPort(rawPort);
 
+  // Phase 3 build-time env: resolve every VITE_OPENWHISPR_* renderer key from
+  // process.env / .env at build time. Defaults match docs/CONFIG_INVENTORY.md.
+  // These values are inlined into the JS bundle as literals via Vite `define`.
+  const buildTimeDefaults = {
+    VITE_OPENWHISPR_BACKEND_URL:
+      env.OPENWHISPR_BACKEND_URL ?? env.VITE_OPENWHISPR_API_URL ?? "",
+    VITE_OPENWHISPR_BACKEND_URL_PATTERN:
+      env.OPENWHISPR_BACKEND_URL_PATTERN || "https://api.openwhispr.com/*",
+    VITE_OPENWHISPR_AUTH_URL:
+      env.OPENWHISPR_AUTH_URL || env.VITE_AUTH_URL || "https://auth.openwhispr.com",
+    VITE_OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL:
+      env.OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL ||
+      env.VITE_OPENWHISPR_OAUTH_CALLBACK_URL ||
+      "https://openwhispr.com/auth/desktop-callback",
+    VITE_OPENWHISPR_MCP_URL: env.OPENWHISPR_MCP_URL || "https://mcp.openwhispr.com/mcp",
+    VITE_OPENWHISPR_OAUTH_RESET_PASSWORD_URL:
+      env.OPENWHISPR_OAUTH_RESET_PASSWORD_URL || "https://openwhispr.com/reset-password",
+    VITE_OPENWHISPR_OPENAI_BASE_URL:
+      env.OPENWHISPR_OPENAI_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+    VITE_OPENWHISPR_GEMINI_BASE_URL:
+      env.OPENWHISPR_GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta",
+    VITE_OPENWHISPR_GROQ_BASE_URL:
+      env.OPENWHISPR_GROQ_BASE_URL || "https://api.groq.com/openai/v1",
+    VITE_OPENWHISPR_MISTRAL_BASE_URL:
+      env.OPENWHISPR_MISTRAL_BASE_URL || "https://api.mistral.ai/v1",
+  };
+
   return {
     plugins: [
       react(),
@@ -37,6 +64,7 @@ export default defineConfig(({ mode }) => {
           const runtimeEnv = {
             VITE_OPENWHISPR_API_URL: env.VITE_OPENWHISPR_API_URL || "",
             VITE_AUTH_URL: env.VITE_AUTH_URL || "",
+            ...buildTimeDefaults,
           };
           fs.writeFileSync(
             path.resolve(__dirname, "dist", "runtime-env.json"),
@@ -45,6 +73,12 @@ export default defineConfig(({ mode }) => {
         },
       },
     ],
+    define: Object.fromEntries(
+      Object.entries(buildTimeDefaults).map(([k, v]) => [
+        `import.meta.env.${k}`,
+        JSON.stringify(v),
+      ])
+    ),
     base: "./", // Use relative paths for file:// protocol in Electron
     envDir, // Load .env from project root
     resolve: {
