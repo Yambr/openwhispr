@@ -1,26 +1,17 @@
-// electron-builder configuration (CommonJS).
-// Reads OPENWHISPR_OAUTH_PROTOCOL_SCHEME from process.env at packaging time so
-// maintainers can register a custom protocol scheme without editing source.
-// CONFIG_INVENTORY row 16 — see docs/CONFIG_INVENTORY.md.
-
-"use strict";
-
-const PROTOCOL_SCHEME = process.env.OPENWHISPR_OAUTH_PROTOCOL_SCHEME || "openwhispr";
-
-module.exports = {
-  appId: "com.yambr.openwhispr",
-  afterPack: "scripts/afterPack.js",
-  productName: "OpenWhispr",
-  protocols: {
-    name: "OpenWhispr Protocol",
-    schemes: [PROTOCOL_SCHEME],
+{
+  "appId": "com.yambr.openwhispr",
+  "afterPack": "scripts/afterPack.js",
+  "productName": "OpenWhispr",
+  "protocols": {
+    "name": "OpenWhispr Protocol",
+    "schemes": ["openwhispr"]
   },
-  directories: {
-    output: "dist",
+  "directories": {
+    "output": "dist"
   },
-  npmRebuild: true,
-  buildDependenciesFromSource: false,
-  files: [
+  "npmRebuild": true,
+  "buildDependenciesFromSource": false,
+  "files": [
     "main.js",
     "preload.js",
     "package.json",
@@ -91,21 +82,21 @@ module.exports = {
     "!**/node_modules/**/*.ts",
     "!**/node_modules/**/*.map",
     "!**/node_modules/**/CHANGELOG*",
-    "!**/node_modules/**/.github/**",
+    "!**/node_modules/**/.github/**"
   ],
-  asarUnpack: [
+  "asarUnpack": [
     "**/node_modules/ffmpeg-static/**/*",
     "**/node_modules/better-sqlite3/**/*",
     "**/node_modules/onnxruntime-node/**/*",
-    "**/node_modules/@napi-rs/keyring/**/*",
+    "**/node_modules/@napi-rs/keyring/**/*"
   ],
-  extraResources: [
+  "extraResources": [
     ".env",
     "src/assets/**/*",
     {
-      from: "resources/bin/",
-      to: "bin/",
-      filter: [
+      "from": "resources/bin/",
+      "to": "bin/",
+      "filter": [
         "whisper-cpp-*",
         "whisper-server-*",
         "llama-server-*",
@@ -130,59 +121,56 @@ module.exports = {
         "diarization-models/**/*",
         "*.dylib",
         "*.dll",
-        "*.so*",
-      ],
-    },
+        "*.so*"
+      ]
+    }
   ],
-  mac: {
-    category: "public.app-category.productivity",
-    target: ["dmg", "zip"],
-    icon: "src/assets/icon.icns",
-    gatekeeperAssess: false,
-    hardenedRuntime: true,
-    entitlements: "resources/mac/entitlements.mac.plist",
-    entitlementsInherit: "resources/mac/entitlements.mac.plist",
-    identity: "Nikolai Iambroskin (54Q38243Z3)",
-    notarize: true,
-    extraResources: [
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": ["dmg", "zip"],
+    "icon": "src/assets/icon.icns",
+    "gatekeeperAssess": false,
+    "hardenedRuntime": true,
+    "entitlements": "resources/mac/entitlements.mac.plist",
+    "entitlementsInherit": "resources/mac/entitlements.mac.plist",
+    "identity": "Nikolai Iambroskin (54Q38243Z3)",
+    "notarize": true,
+    "extraResources": [
       {
-        from: "src/assets/Assets.car",
-        to: "Assets.car",
-      },
+        "from": "src/assets/Assets.car",
+        "to": "Assets.car"
+      }
     ],
-    extendInfo: {
-      LSUIElement: false,
-      CFBundleIconName: "openwhispr",
-      NSMicrophoneUsageDescription:
-        "OpenWhispr uses the microphone to capture your voice for transcription.",
-      NSAudioCaptureUsageDescription:
-        "OpenWhispr uses system audio to capture other participants' audio from calls and meetings.",
-      NSAccessibilityUsageDescription:
-        "OpenWhispr needs accessibility permissions to paste transcribed text into other applications.",
-    },
+    "extendInfo": {
+      "LSUIElement": false,
+      "CFBundleIconName": "openwhispr",
+      "NSMicrophoneUsageDescription": "OpenWhispr uses the microphone to capture your voice for transcription.",
+      "NSAudioCaptureUsageDescription": "OpenWhispr uses system audio to capture other participants' audio from calls and meetings.",
+      "NSAccessibilityUsageDescription": "OpenWhispr needs accessibility permissions to paste transcribed text into other applications."
+    }
   },
-  win: {
-    target: ["nsis", "portable"],
-    icon: "src/assets/icon.ico",
-    extraResources: [
+  "win": {
+    "target": ["nsis", "portable"],
+    "icon": "src/assets/icon.ico",
+    "extraResources": [
       {
-        from: "resources/bin/nircmd.exe",
-        to: "bin/nircmd.exe",
-      },
-    ],
+        "from": "resources/bin/nircmd.exe",
+        "to": "bin/nircmd.exe"
+      }
+    ]
   },
-  linux: {
-    target: ["AppImage", "deb", "rpm", "tar.gz"],
-    icon: "src/assets/icon.png",
-    category: "Utility",
-    artifactName: "${productName}-${version}-${os}-${arch}.${ext}",
+  "linux": {
+    "target": ["AppImage", "deb", "rpm", "tar.gz"],
+    "icon": "src/assets/icon.png",
+    "category": "Utility",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
   },
-  flatpak: {
-    runtime: "org.freedesktop.Platform",
-    runtimeVersion: "24.08",
-    sdk: "org.freedesktop.Sdk",
-    useWaylandFlags: true,
-    finishArgs: [
+  "flatpak": {
+    "runtime": "org.freedesktop.Platform",
+    "runtimeVersion": "24.08",
+    "sdk": "org.freedesktop.Sdk",
+    "useWaylandFlags": true,
+    "finishArgs": [
       "--socket=wayland",
       "--socket=fallback-x11",
       "--share=network",
@@ -193,14 +181,14 @@ module.exports = {
       "--filesystem=xdg-documents",
       "--filesystem=xdg-download",
       "--talk-name=org.freedesktop.Notifications",
-      "--talk-name=org.freedesktop.portal.Desktop",
-    ],
+      "--talk-name=org.freedesktop.portal.Desktop"
+    ]
   },
-  deb: {
-    afterInstall: "resources/linux/after-install.sh",
-    afterRemove: "resources/linux/after-remove.sh",
-    depends: ["ydotool"],
-    fpm: [
+  "deb": {
+    "afterInstall": "resources/linux/after-install.sh",
+    "afterRemove": "resources/linux/after-remove.sh",
+    "depends": ["ydotool"],
+    "fpm": [
       "--deb-recommends",
       "ydotoold",
       "--deb-suggests",
@@ -212,11 +200,11 @@ module.exports = {
       "--deb-recommends",
       "xclip",
       "--deb-suggests",
-      "xsel",
-    ],
+      "xsel"
+    ]
   },
-  rpm: {
-    fpm: [
+  "rpm": {
+    "fpm": [
       "--after-install",
       "resources/linux/after-install.sh",
       "--rpm-rpmbuild-define",
@@ -232,29 +220,29 @@ module.exports = {
       "--rpm-tag",
       "Recommends: xclip",
       "--rpm-tag",
-      "Suggests: xsel",
-    ],
+      "Suggests: xsel"
+    ]
   },
-  nsis: {
-    oneClick: false,
-    allowToChangeInstallationDirectory: true,
-    createDesktopShortcut: true,
-    createStartMenuShortcut: true,
-    include: "resources/nsis/cleanup-models.nsh",
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "include": "resources/nsis/cleanup-models.nsh"
   },
-  dmg: {
-    title: "OpenWhispr",
-    icon: "src/assets/icon.icns",
-    window: {
-      width: 540,
-      height: 380,
-    },
+  "dmg": {
+    "title": "OpenWhispr",
+    "icon": "src/assets/icon.icns",
+    "window": {
+      "width": 540,
+      "height": 380
+    }
   },
-  publish: {
-    provider: "github",
-    owner: "Yambr",
-    repo: "openwhispr",
-    private: false,
-    releaseType: "draft",
-  },
-};
+  "publish": {
+    "provider": "github",
+    "owner": "Yambr",
+    "repo": "openwhispr",
+    "private": false,
+    "releaseType": "draft"
+  }
+}

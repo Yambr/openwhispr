@@ -1,12 +1,3 @@
-import {
-  OPENWHISPR_BACKEND_URL,
-  OPENWHISPR_OPENAI_BASE_URL,
-  OPENWHISPR_ANTHROPIC_URL,
-  OPENWHISPR_GEMINI_BASE_URL,
-  OPENWHISPR_GROQ_BASE_URL,
-  OPENWHISPR_MISTRAL_BASE_URL,
-} from "./defaults";
-
 // API Configuration helpers
 export const normalizeBaseUrl = (value?: string | null): string => {
   if (!value) return "";
@@ -38,7 +29,7 @@ export const normalizeBaseUrl = (value?: string | null): string => {
 };
 
 export const buildApiUrl = (base: string, path: string): string => {
-  const normalizedBase = normalizeBaseUrl(base) || OPENWHISPR_OPENAI_BASE_URL;
+  const normalizedBase = normalizeBaseUrl(base) || "https://api.openai.com/v1";
   if (!path) {
     return normalizedBase;
   }
@@ -64,7 +55,10 @@ const computeBaseUrl = (candidates: Array<string | undefined>, fallback: string)
   return fallback;
 };
 
-const DEFAULT_OPENAI_BASE = OPENWHISPR_OPENAI_BASE_URL;
+const DEFAULT_OPENAI_BASE = computeBaseUrl(
+  [env.OPENWHISPR_OPENAI_BASE_URL as string | undefined, env.OPENAI_BASE_URL as string | undefined],
+  "https://api.openai.com/v1"
+);
 
 const DEFAULT_TRANSCRIPTION_BASE = computeBaseUrl(
   [
@@ -78,10 +72,10 @@ export const API_ENDPOINTS = {
   OPENAI_BASE: DEFAULT_OPENAI_BASE,
   OPENAI: buildApiUrl(DEFAULT_OPENAI_BASE, "/responses"),
   OPENAI_MODELS: buildApiUrl(DEFAULT_OPENAI_BASE, "/models"),
-  ANTHROPIC: OPENWHISPR_ANTHROPIC_URL,
-  GEMINI: OPENWHISPR_GEMINI_BASE_URL,
-  GROQ_BASE: OPENWHISPR_GROQ_BASE_URL,
-  MISTRAL_BASE: OPENWHISPR_MISTRAL_BASE_URL,
+  ANTHROPIC: "https://api.anthropic.com/v1/messages",
+  GEMINI: "https://generativelanguage.googleapis.com/v1beta",
+  GROQ_BASE: "https://api.groq.com/openai/v1",
+  MISTRAL_BASE: "https://api.mistral.ai/v1",
   TRANSCRIPTION_BASE: DEFAULT_TRANSCRIPTION_BASE,
   TRANSCRIPTION: buildApiUrl(DEFAULT_TRANSCRIPTION_BASE, "/audio/transcriptions"),
 } as const;
@@ -119,7 +113,7 @@ export const CACHE_CONFIG = {
 } as const;
 
 // OpenWhispr Cloud API
-export const OPENWHISPR_API_URL = OPENWHISPR_BACKEND_URL;
+export const OPENWHISPR_API_URL = (env.VITE_OPENWHISPR_API_URL as string) || "";
 
 // Retry Configuration
 export const RETRY_CONFIG = {

@@ -1,14 +1,6 @@
 const { ipcMain, app, shell, BrowserWindow, systemPreferences, net } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const {
-  OPENWHISPR_AUTH_URL,
-  OPENWHISPR_BACKEND_URL,
-  OPENWHISPR_ANTHROPIC_URL,
-  OPENWHISPR_GROQ_BASE_URL,
-  OPENWHISPR_MISTRAL_BASE_URL,
-  OPENWHISPR_OPENAI_BASE_URL,
-} = require("../config/build-config.generated.cjs");
 const os = require("os");
 const http = require("http");
 const https = require("https");
@@ -66,7 +58,7 @@ function parseAttendees(raw) {
   }
 }
 
-const MISTRAL_TRANSCRIPTION_URL = `${OPENWHISPR_MISTRAL_BASE_URL}/audio/transcriptions`;
+const MISTRAL_TRANSCRIPTION_URL = "https://api.mistral.ai/v1/audio/transcriptions";
 
 // Debounce delay: wait for user to stop typing before processing corrections
 const AUTO_LEARN_DEBOUNCE_MS = 1500;
@@ -2831,7 +2823,7 @@ class IPCHandlers {
             temperature: config?.temperature || 0.3,
           };
 
-          const response = await proxyFetch(OPENWHISPR_ANTHROPIC_URL, {
+          const response = await proxyFetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -3319,10 +3311,29 @@ class IPCHandlers {
       }
     });
 
-    // CONFIG_INVENTORY rows 3,6 — single-source-of-truth via src/config/build-config.generated.cjs
-    const getApiUrl = () => OPENWHISPR_BACKEND_URL;
-    // CONFIG_INVENTORY rows 3,6 — single-source-of-truth via src/config/build-config.generated.cjs
-    const getAuthUrl = () => OPENWHISPR_AUTH_URL;
+    // In production, VITE_* env vars aren't available in the main process because
+    // Vite only inlines them into the renderer bundle at build time. Load the
+    // runtime-env.json that the Vite build writes to src/dist/ as a fallback.
+    const runtimeEnv = (() => {
+      const fs = require("fs");
+      const envPath = path.join(__dirname, "..", "dist", "runtime-env.json");
+      try {
+        if (fs.existsSync(envPath)) return JSON.parse(fs.readFileSync(envPath, "utf8"));
+      } catch {}
+      return {};
+    })();
+
+    const getApiUrl = () =>
+      process.env.OPENWHISPR_API_URL ||
+      process.env.VITE_OPENWHISPR_API_URL ||
+      runtimeEnv.VITE_OPENWHISPR_API_URL ||
+      "";
+
+    const getAuthUrl = () =>
+      process.env.AUTH_URL ||
+      process.env.VITE_AUTH_URL ||
+      runtimeEnv.VITE_AUTH_URL ||
+      "https://auth.openwhispr.com";
 
     const getSessionCookiesFromWindow = async (win) => {
       const scopedUrls = [getAuthUrl(), getApiUrl()].filter(Boolean);
@@ -3575,7 +3586,7 @@ class IPCHandlers {
           let apiKey, endpoint;
           if (provider === "groq") {
             apiKey = this.environmentManager.getGroqKey();
-            endpoint = `${OPENWHISPR_GROQ_BASE_URL}/audio/transcriptions`;
+            endpoint = "https://api.groq.com/openai/v1/audio/transcriptions";
           } else if (provider === "mistral") {
             apiKey = this.environmentManager.getMistralKey();
             endpoint = MISTRAL_TRANSCRIPTION_URL;
@@ -3586,10 +3597,10 @@ class IPCHandlers {
               ? /\/audio\/(transcriptions|translations)$/i.test(base)
                 ? base
                 : `${base}/audio/transcriptions`
-              : `${OPENWHISPR_OPENAI_BASE_URL}/audio/transcriptions`;
+              : "https://api.openai.com/v1/audio/transcriptions";
           } else {
             apiKey = this.environmentManager.getOpenAIKey();
-            endpoint = `${OPENWHISPR_OPENAI_BASE_URL}/audio/transcriptions`;
+            endpoint = "https://api.openai.com/v1/audio/transcriptions";
           }
           if (!apiKey && provider !== "custom") {
             throw new Error(`${provider} API key not configured`);

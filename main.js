@@ -31,16 +31,6 @@ const http = require("http");
 const tls = require("tls");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
-const {
-  OPENWHISPR_AUTH_URL,
-  OPENWHISPR_BACKEND_URL_PATTERN,
-  OPENWHISPR_OAUTH_PROTOCOL_SCHEME,
-  OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN,
-} = require("./src/config/build-config.generated.cjs");
-
-// Normalize trailing slashes so `${AUTH_URL}/*` doesn't produce `//*` patterns.
-const ensureNoTrailingSlash = (u) => u.replace(/\/+$/, "");
-
 // Extend Node's TLS trust with the OS store so ws and https.get see corporate
 // CAs that Chromium already trusts.
 try {
@@ -56,7 +46,6 @@ try {
 }
 
 const VALID_CHANNELS = new Set(["development", "staging", "production"]);
-// Channel-specific defaults; OPENWHISPR_OAUTH_PROTOCOL_SCHEME (CONFIG_INVENTORY row 16) overrides all of these when OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN is true.
 const DEFAULT_OAUTH_PROTOCOL_BY_CHANNEL = {
   development: "openwhispr-dev",
   staging: "openwhispr-staging",
@@ -144,13 +133,12 @@ if (process.platform === "win32") {
 }
 
 function getOAuthProtocol() {
-  // Build-time env override wins regardless of channel — detected via the
-  // OVERRIDDEN boolean from build-config.generated.cjs (hasOwnProperty-based
-  // in the generator). DO NOT replace this with a string compare against
-  // "openwhispr": that would false-negative when a maintainer explicitly sets
-  // OPENWHISPR_OAUTH_PROTOCOL_SCHEME=openwhispr (the default).
-  if (OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN) {
-    return OPENWHISPR_OAUTH_PROTOCOL_SCHEME;
+  const fromEnv = (process.env.VITE_OPENWHISPR_PROTOCOL || process.env.OPENWHISPR_PROTOCOL || "")
+    .trim()
+    .toLowerCase();
+
+  if (/^[a-z][a-z0-9+.-]*$/.test(fromEnv)) {
+    return fromEnv;
   }
 
   return (
@@ -484,7 +472,18 @@ app.on("open-url", (event, url) => {
 });
 
 function resolveAuthUrl() {
-  return OPENWHISPR_AUTH_URL;
+  const fs = require("fs");
+  const envPath = path.join(__dirname, "src", "dist", "runtime-env.json");
+  let runtimeEnv = {};
+  try {
+    if (fs.existsSync(envPath)) runtimeEnv = JSON.parse(fs.readFileSync(envPath, "utf8"));
+  } catch {}
+  return (
+    process.env.AUTH_URL ||
+    process.env.VITE_AUTH_URL ||
+    runtimeEnv.VITE_AUTH_URL ||
+    "https://auth.openwhispr.com"
+  );
 }
 
 function getOauthCookieName() {
@@ -713,8 +712,8 @@ async function startApp() {
   session.defaultSession.webRequest.onBeforeSendHeaders(
     {
       urls: [
-        `${ensureNoTrailingSlash(OPENWHISPR_AUTH_URL)}/*`,
-        OPENWHISPR_BACKEND_URL_PATTERN,
+        "https://auth.openwhispr.com/*",
+        "https://api.openwhispr.com/*",
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*",
       ],

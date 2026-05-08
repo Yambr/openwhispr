@@ -57,12 +57,12 @@ Plans:
   4. Default build (no env vars set) produces a binary whose network behavior is identical to pre-refactor — same URLs, same endpoints
 **Plans:** 6 plans
 Plans:
-- [x] 03-01-PLAN.md — Create src/config/defaults.ts SoT, generated build-config module, Vite define extension
-- [x] 03-02-PLAN.md — Refactor auth cluster (src/lib/auth.ts, main.js, ipcHandlers.js) — CFG-04 anchor lands here
-- [x] 03-03-PLAN.md — Convert electron-builder.json → electron-builder.config.js + protocol scheme env override
-- [x] 03-04-PLAN.md — Refactor Google OAuth cluster (googleCalendarOAuth.js, googleCalendarManager.js)
-- [x] 03-05-PLAN.md — Refactor model-registry + LiteLLM bucket (constants.ts, modelRegistryData.json, ModelRegistry.ts, McpIntegrationCard.tsx, ipcHandlers.js mirrors)
-- [x] 03-06-PLAN.md — Ship scripts/verify-defaults-parity.js gate + Phase 3 smoke checklist in SELF_HOSTING.md
+- [ ] 03-01-PLAN.md — Create src/config/defaults.ts SoT, generated build-config module, Vite define extension
+- [ ] 03-02-PLAN.md — Refactor auth cluster (src/lib/auth.ts, main.js, ipcHandlers.js) — CFG-04 anchor lands here
+- [ ] 03-03-PLAN.md — Convert electron-builder.json → electron-builder.config.js + protocol scheme env override
+- [ ] 03-04-PLAN.md — Refactor Google OAuth cluster (googleCalendarOAuth.js, googleCalendarManager.js)
+- [ ] 03-05-PLAN.md — Refactor model-registry + LiteLLM bucket (constants.ts, modelRegistryData.json, ModelRegistry.ts, McpIntegrationCard.tsx, ipcHandlers.js mirrors)
+- [ ] 03-06-PLAN.md — Ship scripts/verify-defaults-parity.js gate + Phase 3 smoke checklist in SELF_HOSTING.md
 
 ### Phase 4: OAuth Gating, Build Docs, and Parity Gate
 **Goal**: Each OAuth provider can be individually disabled at build time, every build-time variable is documented with examples, and the default build is verified to be behaviorally identical to the current Yambr fork

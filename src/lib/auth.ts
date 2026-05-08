@@ -1,13 +1,8 @@
 import { createAuthClient } from "better-auth/react";
 import { OPENWHISPR_API_URL } from "../config/constants";
-import {
-  OPENWHISPR_AUTH_URL,
-  OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL,
-  OPENWHISPR_OAUTH_RESET_PASSWORD_URL,
-} from "../config/defaults";
 import { openExternalLink } from "../utils/externalLinks";
 
-export const AUTH_URL = OPENWHISPR_AUTH_URL;
+export const AUTH_URL = import.meta.env.VITE_AUTH_URL || "https://auth.openwhispr.com";
 export const authClient = createAuthClient({
   baseURL: AUTH_URL,
   fetchOptions: {
@@ -173,7 +168,7 @@ export async function withSessionRefresh<T>(operation: () => Promise<T>): Promis
   }
 }
 
-const DESKTOP_OAUTH_CALLBACK_URL = OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL;
+const DESKTOP_OAUTH_CALLBACK_URL = "https://openwhispr.com/auth/desktop-callback";
 
 export async function signInWithSocial(provider: SocialProvider): Promise<{ error?: Error }> {
   try {
@@ -203,7 +198,7 @@ export async function requestPasswordReset(email: string): Promise<{ error?: Err
   try {
     await authClient.requestPasswordReset({
       email: email.trim(),
-      redirectTo: OPENWHISPR_OAUTH_RESET_PASSWORD_URL,
+      redirectTo: "https://openwhispr.com/reset-password",
     });
     return {};
   } catch (error) {
