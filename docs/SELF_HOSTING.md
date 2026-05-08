@@ -1,6 +1,30 @@
-# Self-Hosting OpenWhispr Cloud
+# Self-Hosting Yambr OpenWhispr
 
 This document is a top-to-bottom walkthrough for an external implementer (third party / OSS contributor) who wants to stand up a drop-in compatible **OpenWhispr cloud backend**. It explains the client architecture, the authentication contract, the OAuth round-trip, and the wire format of every cloud endpoint the desktop client calls — sufficient to build a minimum viable backend without reading source code.
+
+> **Want a build delivered to you instead of doing this yourself?** Write [@yambrcom](https://t.me/yambrcom) on Telegram. Typical deliverable: signed `.dmg` / `.exe` / `.AppImage` for your bundle ID and backend, plus a private repo with your build config so you can rebuild yourself anytime.
+
+## TL;DR — fork and build your own in 1-2-3
+
+If your backend already implements the contract below (or is willing to), here's the express path:
+
+1. **Fork [Yambr/openwhispr](https://github.com/Yambr/openwhispr)** and clone your fork locally.
+2. **Set 3 build-time env vars** pointing at your backend:
+   ```bash
+   OPENWHISPR_BACKEND_URL=https://api.your-domain.com
+   VITE_OPENWHISPR_AUTH_URL=https://auth.your-domain.com
+   VITE_OPENWHISPR_MCP_URL=https://mcp.your-domain.com/mcp   # optional
+   ```
+3. **Set your code-signing material**:
+   - macOS: Apple Developer ID Application certificate in Keychain (or `CSC_LINK` + `CSC_KEY_PASSWORD` env vars), plus `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` for notarization. Update `electron-builder.json` `appId` if you want a bundle ID other than `com.yambr.openwhispr`.
+   - Windows: `WIN_CSC_LINK` + `WIN_CSC_KEY_PASSWORD` (.pfx).
+   - Linux: nothing — Linux builds are unsigned.
+
+Then `npm run build:mac` (or `:win` / `:linux`). You get a signed binary that talks to your backend, ships only the OAuth providers you configured, and contains none of the upstream consumer features (Stripe billing UI, referrals, AssemblyAI/Deepgram streaming) by default. The `.github/workflows/corporate-build.yml` workflow does this for all 3 platforms — fork, set GitHub Actions secrets, dispatch the workflow.
+
+The rest of this document is the deep reference for what your backend has to actually serve.
+
+---
 
 > **Default build is corporate-minimal (2026-05-08 pivot).** As of the 2026-05-08 pivot, `npm run build` (no env vars) produces a *minimal corporate-self-hosted* binary, NOT an upstream-parity binary. Three feature flags default OFF — Stripe billing UI, the referral program, and live (WebSocket) third-party ASR (AssemblyAI / Deepgram) — and only dictation, transcription (whisper.cpp + OpenAI Whisper file mode), reasoning (multi-provider via runtime BYOK API keys), and Google / Microsoft / Apple OAuth ship by default. **Self-hosters whose backend does NOT implement `/api/stripe/*`, `/api/referrals/*`, `/api/streaming-token`, or `/api/deepgram-streaming-token` should ship the default build — the client will not call those endpoints.** To recreate upstream-parity behavior, see the *Upstream Parity Build* section below and `docs/BUILD_CONFIG.md` for the full variable reference.
 
