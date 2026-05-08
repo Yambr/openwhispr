@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 01-02-oauth-spec-PLAN.md
-last_updated: "2026-05-08T08:27:39.961Z"
+status: verifying
+stopped_at: Completed 01-03-self-hosting-guide-PLAN.md
+last_updated: "2026-05-08T08:34:40.094Z"
 last_activity: 2026-05-08
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 67
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-08)
 
 Phase: 01 (wire-contract-documentation) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-08
 
 Progress: [░░░░░░░░░░] 0%
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 01 P01 | 6min | 1 tasks | 1 files |
 | Phase 01 P02 | 5min | 1 tasks | 1 files |
+| Phase 01 P03 | 4min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,7 @@ Recent decisions affecting current work:
 - [Phase 01]: Source-only reverse engineering with file:line drift detection — no live HTTP traces, source is the contract
 - [Phase 01]: OAUTH_SPEC.md uses provider-card template (Authorization/Token/Refresh/Revoke/Scopes/Redirect/ClientID/Secret/Storage/RefreshTrigger/IPC/SourceFiles) — same shape per provider, mechanical Phase 4 CFG-03 gating
 - [Phase 01]: Apple/Microsoft sign-in buttons are NOT independent OAuth flows in the desktop client — they tunnel through the OpenWhispr cloud-sign-in shim; CFG-03 only needs flags for cloud-sign-in + Google Calendar
+- [Phase 01]: SELF_HOSTING.md uses two-tier endpoint pattern (3 must-implement inline + 16 operational cross-linked to BACKEND_SPEC) for readability + single-source-of-truth
 
 ### Pending Todos
 
@@ -80,6 +82,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-08T08:27:30.693Z
-Stopped at: Completed 01-02-oauth-spec-PLAN.md
+Last session: 2026-05-08T08:34:40.091Z
+Stopped at: Completed 01-03-self-hosting-guide-PLAN.md
 Resume file: None
