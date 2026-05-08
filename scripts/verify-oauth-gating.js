@@ -146,7 +146,9 @@ function runBuild(scenarioName, scenarioEnv) {
     console.error(
       `[verify-oauth-gating] BUILD-CONFIG FAILED for scenario: ${scenarioName}`
     );
-    process.exit(1);
+    // CR-01: throw instead of process.exit(1) so the caller's `finally` runs
+    // `runBuild("restore-default", {})` to leave the dev tree at default.
+    throw new Error(`build-config generation failed for scenario: ${scenarioName}`);
   }
   const buildResult = spawnSync(
     "npm",
@@ -161,7 +163,9 @@ function runBuild(scenarioName, scenarioEnv) {
     console.error(
       `[verify-oauth-gating] BUILD FAILED for scenario: ${scenarioName}`
     );
-    process.exit(1);
+    // CR-01: throw instead of process.exit(1) so the caller's `finally` runs
+    // `runBuild("restore-default", {})` to leave the dev tree at default.
+    throw new Error(`renderer build failed for scenario: ${scenarioName}`);
   }
 }
 
@@ -239,6 +243,7 @@ function checkProviderPresent(scenarioName, provider) {
 function main() {
   const violations = [];
   let totalGreps = 0;
+  let runError = null;
 
   try {
     for (const scenario of SCENARIOS) {
@@ -254,6 +259,10 @@ function main() {
         totalGreps += presentTargets(provider).length;
       }
     }
+  } catch (e) {
+    // CR-01: capture the error so the `finally` cleanup still runs, then
+    // re-surface a non-zero exit after restore-default completes.
+    runError = e;
   } finally {
     if (process.env.SKIP_RESTORE !== "1") {
       // Leave the developer's tree in a sensible state — default build at end.
@@ -265,6 +274,13 @@ function main() {
         );
       }
     }
+  }
+
+  if (runError) {
+    console.error(
+      `[verify-oauth-gating] FAILED — ${runError?.message || runError}`
+    );
+    process.exit(1);
   }
 
   if (violations.length === 0) {
