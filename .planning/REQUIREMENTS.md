@@ -51,15 +51,15 @@ Tracked here for traceability; not built in this milestone.
 
 Filled by roadmap. Each requirement maps to exactly one phase.
 
-| REQ-ID  | Phase |
-|---------|-------|
-| DOC-01  | TBD   |
-| DOC-02  | TBD   |
-| DOC-03  | TBD   |
-| DOC-04  | TBD   |
-| CFG-01  | TBD   |
-| CFG-02  | TBD   |
-| CFG-03  | TBD   |
-| CFG-04  | TBD   |
-| CFG-05  | TBD   |
-| CFG-06  | TBD   |
+| REQ-ID  | Phase   |
+|---------|---------|
+| DOC-01  | Phase 1 |
+| DOC-02  | Phase 1 |
+| DOC-03  | Phase 1 |
+| DOC-04  | Phase 2 |
+| CFG-01  | Phase 2 |
+| CFG-02  | Phase 3 |
+| CFG-03  | Phase 4 |
+| CFG-04  | Phase 3 |
+| CFG-05  | Phase 4 |
+| CFG-06  | Phase 4 |
