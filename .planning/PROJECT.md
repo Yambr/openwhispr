@@ -23,14 +23,14 @@ A self-hostable fork of OpenWhispr (Electron-based dictation desktop app) that a
 - ✓ Global hotkeys (incl. GNOME / Hyprland Wayland, Windows push-to-talk) — existing
 - ✓ Encrypted secret storage via Electron `safeStorage` — existing
 - ✓ Signed/notarized build pipeline (Yambr fork — `com.yambr.openwhispr` bundle ID) — existing
+- ✓ **DOC-01**: Backend wire spec published (`docs/BACKEND_SPEC.md`) — validated in Phase 1
+- ✓ **DOC-02**: OAuth provider spec published (`docs/OAUTH_SPEC.md`) — validated in Phase 1
+- ✓ **DOC-03**: Self-hosting guide published (`docs/SELF_HOSTING.md`) — validated in Phase 1
 
 ### Active
 
 <!-- v1: Documentation + build-time configurability. -->
 
-- [ ] **DOC-01**: Reverse-engineered backend wire spec published in repo (`docs/BACKEND_SPEC.md`) — every external HTTP call, payload schema, auth flow
-- [ ] **DOC-02**: OAuth provider spec published in repo (`docs/OAUTH_SPEC.md`) — current providers, endpoints, scopes, redirect URIs, client-ID locations
-- [ ] **DOC-03**: Self-hosting guide published in repo (`docs/SELF_HOSTING.md`) — how a third party can stand up a compatible backend
 - [ ] **DOC-04**: Application architecture doc published in repo (`docs/ARCHITECTURE.md`) — IPC surface, secrets, models, transcription, embeddings, sidecars
 - [ ] **CFG-01**: Inventory of every hardcoded backend URL / OAuth client config / enterprise endpoint / model registry default in source (`docs/CONFIG_INVENTORY.md`)
 - [ ] **CFG-02**: All inventoried hardcodes replaced with build-time env variables (Vite `define`, electron-builder env, `.env.production`)
@@ -99,4 +99,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-08 after initialization*
+*Last updated: 2026-05-08 after Phase 1 (Wire Contract Documentation) complete*
