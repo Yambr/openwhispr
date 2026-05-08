@@ -41,7 +41,10 @@ Plans:
   1. `docs/ARCHITECTURE.md` exists and covers process model (main / renderer / preload / ONNX worker), IPC surface (channels and contracts), secret storage, model registry, transcription pipeline, embeddings pipeline, and sidecar binaries
   2. `docs/CONFIG_INVENTORY.md` exists and lists every hardcoded backend URL, OAuth client ID, enterprise endpoint, default model registry override, and LiteLLM-shaped URL — each entry includes file path, line number, current value, and proposed env-var name
   3. CONFIG_INVENTORY entries are complete enough that a developer can execute the Phase 3 refactor without re-auditing the source tree
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 02-01-PLAN.md — Write docs/ARCHITECTURE.md (process model, IPC surface, secrets, model registry, transcription, embeddings, sidecars)
+- [ ] 02-02-PLAN.md — Write docs/CONFIG_INVENTORY.md (5-column hardcode inventory with proposed OPENWHISPR_* env-vars)
 
 ### Phase 3: Build-time Env Refactor
 **Goal**: Every entry in CONFIG_INVENTORY is replaced with a build-time variable; no production code path reads the new variables at runtime
@@ -73,6 +76,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Wire Contract Documentation | 0/TBD | Not started | - |
-| 2. Architecture Doc + Hardcode Inventory | 0/TBD | Not started | - |
+| 2. Architecture Doc + Hardcode Inventory | 0/2 | Not started | - |
 | 3. Build-time Env Refactor | 0/TBD | Not started | - |
 | 4. OAuth Gating, Build Docs, and Parity Gate | 0/TBD | Not started | - |
