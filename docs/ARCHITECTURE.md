@@ -230,7 +230,7 @@ Note: `CLAUDE.md` describes this as 12 keys, but the current source at `src/help
 Each key is stored as an individual encrypted file at `userData/secure-keys/{KEY_NAME}.enc`. The file contains an AES-256-GCM encrypted blob. The master key used for encryption is stored in the OS keychain via `@napi-rs/keyring` (service: `"OpenWhispr"`, account: `"secrets-master-key"`) — see `src/helpers/secretCrypto.js:5-10`.
 
 OS keychain backing by platform:
-- **macOS**: Keychain (via `@napi-rs/keyring` → libsecret / Security.framework)
+- **macOS**: Keychain (via `@napi-rs/keyring` → Security.framework)
 - **Windows**: DPAPI (via `@napi-rs/keyring` → Windows Credential Manager)
 - **Linux**: libsecret (via `@napi-rs/keyring`) when a keyring daemon (GNOME Keyring, KWallet) is available
 
