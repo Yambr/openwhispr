@@ -6,6 +6,7 @@ const http = require("http");
 const https = require("https");
 const crypto = require("crypto");
 const debugLogger = require("./debugLogger");
+const BuildConfig = require("../config/build-config.generated.cjs");
 const tokenStore = require("./tokenStore");
 const { classifyAndLog } = require("./networkErrors");
 const GnomeShortcutManager = require("./gnomeShortcut");
@@ -1946,17 +1947,21 @@ class IPCHandlers {
       } catch (e) {
         errors.push(`Whisper stop: ${e.message}`);
       }
-      try {
-        this.googleCalendarManager?.stop();
-      } catch (e) {
-        errors.push(`GCal stop: ${e.message}`);
+      if (BuildConfig.OAUTH_GOOGLE_ENABLED) {
+        try {
+          this.googleCalendarManager?.stop();
+        } catch (e) {
+          errors.push(`GCal stop: ${e.message}`);
+        }
       }
 
       // Revoke Google OAuth tokens before DB is closed
-      try {
-        await this.googleCalendarManager?.revokeAllTokens();
-      } catch (e) {
-        errors.push(`GCal revoke: ${e.message}`);
+      if (BuildConfig.OAUTH_GOOGLE_ENABLED) {
+        try {
+          await this.googleCalendarManager?.revokeAllTokens();
+        } catch (e) {
+          errors.push(`GCal revoke: ${e.message}`);
+        }
       }
 
       // Close DB connection before deleting the file
@@ -5858,113 +5863,120 @@ class IPCHandlers {
       }
     });
 
-    const fetchStripeUrl = async (event, endpoint, errorPrefix, body) => {
-      try {
-        const apiUrl = getApiUrl();
-        if (!apiUrl) throw new Error("OpenWhispr API URL not configured");
+    // Phase 04.1 PLAN-03 (CFG-09 BILLING_ENABLED): Stripe billing IPC handlers
+    // are gated by the build flag. When disabled (default), the handlers are
+    // never registered — the renderer also lacks the corresponding preload
+    // method names (see preload-billing.generated.cjs), so no
+    // "No handler registered" surface is reachable in default builds.
+    if (BuildConfig.BILLING_ENABLED) {
+      const fetchStripeUrl = async (event, endpoint, errorPrefix, body) => {
+        try {
+          const apiUrl = getApiUrl();
+          if (!apiUrl) throw new Error("OpenWhispr API URL not configured");
 
-        const authHeader = await getAuthHeader(event);
-        if (!Object.keys(authHeader).length) throw new Error("Not authenticated");
+          const authHeader = await getAuthHeader(event);
+          if (!Object.keys(authHeader).length) throw new Error("Not authenticated");
 
-        const headers = { ...authHeader };
-        const fetchOpts = { method: "POST", headers };
-        if (body) {
-          headers["Content-Type"] = "application/json";
-          fetchOpts.body = JSON.stringify(body);
+          const headers = { ...authHeader };
+          const fetchOpts = { method: "POST", headers };
+          if (body) {
+            headers["Content-Type"] = "application/json";
+            fetchOpts.body = JSON.stringify(body);
+          }
+
+          const response = await proxyFetch(`${apiUrl}${endpoint}`, fetchOpts);
+
+          if (!response.ok) {
+            if (response.status === 401) {
+              return { success: false, error: "Session expired", code: "AUTH_EXPIRED" };
+            }
+            if (response.status === 503) {
+              return { success: false, error: "Request timed out", code: "SERVER_ERROR" };
+            }
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `API error: ${response.status}`);
+          }
+
+          const data = await response.json();
+          return { success: true, url: data.url };
+        } catch (error) {
+          debugLogger.error(`${errorPrefix}: ${error.message}`);
+          return { success: false, error: error.message };
         }
+      };
 
-        const response = await proxyFetch(`${apiUrl}${endpoint}`, fetchOpts);
+      ipcMain.handle("cloud-checkout", (event, opts) =>
+        fetchStripeUrl(event, "/api/stripe/checkout", "Cloud checkout error", opts || undefined)
+      );
 
-        if (!response.ok) {
+      ipcMain.handle("cloud-billing-portal", (event) =>
+        fetchStripeUrl(event, "/api/stripe/portal", "Cloud billing portal error")
+      );
+
+      ipcMain.handle("cloud-switch-plan", async (event, opts) => {
+        try {
+          const apiUrl = getApiUrl();
+          if (!apiUrl) throw new Error("OpenWhispr API URL not configured");
+
+          const authHeader = await getAuthHeader(event);
+          if (!Object.keys(authHeader).length) throw new Error("Not authenticated");
+
+          const response = await proxyFetch(`${apiUrl}/api/stripe/switch-plan`, {
+            method: "POST",
+            headers: { ...authHeader, "Content-Type": "application/json" },
+            body: JSON.stringify(opts),
+          });
+
           if (response.status === 401) {
             return { success: false, error: "Session expired", code: "AUTH_EXPIRED" };
           }
           if (response.status === 503) {
             return { success: false, error: "Request timed out", code: "SERVER_ERROR" };
           }
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `API error: ${response.status}`);
+
+          const data = await response.json();
+          if (!response.ok) {
+            return { success: false, error: data.error || "Failed to switch plan" };
+          }
+          return data;
+        } catch (error) {
+          debugLogger.error(`Cloud switch plan error: ${error.message}`);
+          return { success: false, error: error.message };
         }
+      });
 
-        const data = await response.json();
-        return { success: true, url: data.url };
-      } catch (error) {
-        debugLogger.error(`${errorPrefix}: ${error.message}`);
-        return { success: false, error: error.message };
-      }
-    };
+      ipcMain.handle("cloud-preview-switch", async (event, opts) => {
+        try {
+          const apiUrl = getApiUrl();
+          if (!apiUrl) throw new Error("OpenWhispr API URL not configured");
 
-    ipcMain.handle("cloud-checkout", (event, opts) =>
-      fetchStripeUrl(event, "/api/stripe/checkout", "Cloud checkout error", opts || undefined)
-    );
+          const authHeader = await getAuthHeader(event);
+          if (!Object.keys(authHeader).length) throw new Error("Not authenticated");
 
-    ipcMain.handle("cloud-billing-portal", (event) =>
-      fetchStripeUrl(event, "/api/stripe/portal", "Cloud billing portal error")
-    );
+          const response = await proxyFetch(`${apiUrl}/api/stripe/preview-switch`, {
+            method: "POST",
+            headers: { ...authHeader, "Content-Type": "application/json" },
+            body: JSON.stringify(opts),
+          });
 
-    ipcMain.handle("cloud-switch-plan", async (event, opts) => {
-      try {
-        const apiUrl = getApiUrl();
-        if (!apiUrl) throw new Error("OpenWhispr API URL not configured");
+          if (response.status === 401) {
+            return { success: false, error: "Session expired", code: "AUTH_EXPIRED" };
+          }
+          if (response.status === 503) {
+            return { success: false, error: "Request timed out", code: "SERVER_ERROR" };
+          }
 
-        const authHeader = await getAuthHeader(event);
-        if (!Object.keys(authHeader).length) throw new Error("Not authenticated");
-
-        const response = await proxyFetch(`${apiUrl}/api/stripe/switch-plan`, {
-          method: "POST",
-          headers: { ...authHeader, "Content-Type": "application/json" },
-          body: JSON.stringify(opts),
-        });
-
-        if (response.status === 401) {
-          return { success: false, error: "Session expired", code: "AUTH_EXPIRED" };
+          const data = await response.json();
+          if (!response.ok) {
+            return { success: false, error: data.error || "Failed to preview plan change" };
+          }
+          return { success: true, ...data };
+        } catch (error) {
+          debugLogger.error(`Cloud preview switch error: ${error.message}`);
+          return { success: false, error: error.message };
         }
-        if (response.status === 503) {
-          return { success: false, error: "Request timed out", code: "SERVER_ERROR" };
-        }
-
-        const data = await response.json();
-        if (!response.ok) {
-          return { success: false, error: data.error || "Failed to switch plan" };
-        }
-        return data;
-      } catch (error) {
-        debugLogger.error(`Cloud switch plan error: ${error.message}`);
-        return { success: false, error: error.message };
-      }
-    });
-
-    ipcMain.handle("cloud-preview-switch", async (event, opts) => {
-      try {
-        const apiUrl = getApiUrl();
-        if (!apiUrl) throw new Error("OpenWhispr API URL not configured");
-
-        const authHeader = await getAuthHeader(event);
-        if (!Object.keys(authHeader).length) throw new Error("Not authenticated");
-
-        const response = await proxyFetch(`${apiUrl}/api/stripe/preview-switch`, {
-          method: "POST",
-          headers: { ...authHeader, "Content-Type": "application/json" },
-          body: JSON.stringify(opts),
-        });
-
-        if (response.status === 401) {
-          return { success: false, error: "Session expired", code: "AUTH_EXPIRED" };
-        }
-        if (response.status === 503) {
-          return { success: false, error: "Request timed out", code: "SERVER_ERROR" };
-        }
-
-        const data = await response.json();
-        if (!response.ok) {
-          return { success: false, error: data.error || "Failed to preview plan change" };
-        }
-        return { success: true, ...data };
-      } catch (error) {
-        debugLogger.error(`Cloud preview switch error: ${error.message}`);
-        return { success: false, error: error.message };
-      }
-    });
+      });
+    }
 
     ipcMain.handle("cloud-api-request", async (event, opts) => {
       try {
@@ -6180,6 +6192,7 @@ class IPCHandlers {
       }
     );
 
+    if (BuildConfig.REFERRALS_ENABLED) {
     ipcMain.handle("get-referral-stats", async (event) => {
       try {
         const apiUrl = getApiUrl();
@@ -6289,6 +6302,7 @@ class IPCHandlers {
         throw error;
       }
     });
+    } // end if (BuildConfig.REFERRALS_ENABLED)
 
     ipcMain.handle("open-whisper-models-folder", async () => {
       try {
@@ -6445,6 +6459,14 @@ class IPCHandlers {
       return this.updateManager.getUpdateInfo();
     });
 
+    // Phase 04.1 PLAN-05 (CFG-09 STREAMING_ENABLED): all AssemblyAI + Deepgram
+    // realtime ASR IPC handlers + token-fetch helpers are gated behind the
+    // STREAMING_ENABLED build flag. When false (corporate-minimal default),
+    // none of these handlers register, none of the URL strings
+    // ("/api/streaming-token", "/api/deepgram-streaming-token") appear in the
+    // bundle, and any attempt by the renderer to invoke a streaming method is
+    // a no-op via the stubbed preload + streamingProviders.stub.js.
+    if (BuildConfig.STREAMING_ENABLED) {
     const fetchStreamingToken = async (event) => {
       const apiUrl = getApiUrl();
       if (!apiUrl) {
@@ -6924,6 +6946,7 @@ class IPCHandlers {
       }
       return this.deepgramStreaming.getStatus();
     });
+    } // end if (BuildConfig.STREAMING_ENABLED) — Phase 04.1 PLAN-05
 
     // Agent mode handlers
     ipcMain.handle("update-agent-hotkey", async (_event, hotkey) => {
@@ -6998,83 +7021,85 @@ class IPCHandlers {
       return { success: true };
     });
 
-    // Google Calendar
-    ipcMain.handle("gcal-start-oauth", async () => {
-      try {
-        return await this.googleCalendarManager.startOAuth();
-      } catch (error) {
-        debugLogger.error("Google Calendar OAuth failed", { error: error.message }, "calendar");
-        return { success: false, error: error.message };
-      }
-    });
+    // Google Calendar (gated by build-time OAUTH_GOOGLE_ENABLED — see Phase 4 CFG-03)
+    if (BuildConfig.OAUTH_GOOGLE_ENABLED) {
+      ipcMain.handle("gcal-start-oauth", async () => {
+        try {
+          return await this.googleCalendarManager.startOAuth();
+        } catch (error) {
+          debugLogger.error("Google Calendar OAuth failed", { error: error.message }, "calendar");
+          return { success: false, error: error.message };
+        }
+      });
 
-    ipcMain.handle("gcal-disconnect", async () => {
-      try {
-        this.googleCalendarManager.disconnect();
-        return { success: true };
-      } catch (error) {
-        debugLogger.error(
-          "Google Calendar disconnect failed",
-          { error: error.message },
-          "calendar"
-        );
-        return { success: false, error: error.message };
-      }
-    });
+      ipcMain.handle("gcal-disconnect", async () => {
+        try {
+          this.googleCalendarManager.disconnect();
+          return { success: true };
+        } catch (error) {
+          debugLogger.error(
+            "Google Calendar disconnect failed",
+            { error: error.message },
+            "calendar"
+          );
+          return { success: false, error: error.message };
+        }
+      });
 
-    ipcMain.handle("gcal-get-connection-status", async () => {
-      try {
-        return this.googleCalendarManager.getConnectionStatus();
-      } catch (error) {
-        return { connected: false, email: null };
-      }
-    });
+      ipcMain.handle("gcal-get-connection-status", async () => {
+        try {
+          return this.googleCalendarManager.getConnectionStatus();
+        } catch (error) {
+          return { connected: false, email: null };
+        }
+      });
 
-    ipcMain.handle("gcal-get-calendars", async () => {
-      try {
-        return { success: true, calendars: this.googleCalendarManager.getCalendars() };
-      } catch (error) {
-        return { success: false, calendars: [] };
-      }
-    });
+      ipcMain.handle("gcal-get-calendars", async () => {
+        try {
+          return { success: true, calendars: this.googleCalendarManager.getCalendars() };
+        } catch (error) {
+          return { success: false, calendars: [] };
+        }
+      });
 
-    ipcMain.handle("gcal-set-calendar-selection", async (_event, calendarId, isSelected) => {
-      try {
-        await this.googleCalendarManager.setCalendarSelection(calendarId, isSelected);
-        return { success: true };
-      } catch (error) {
-        return { success: false, error: error.message };
-      }
-    });
+      ipcMain.handle("gcal-set-calendar-selection", async (_event, calendarId, isSelected) => {
+        try {
+          await this.googleCalendarManager.setCalendarSelection(calendarId, isSelected);
+          return { success: true };
+        } catch (error) {
+          return { success: false, error: error.message };
+        }
+      });
 
-    ipcMain.handle("gcal-sync-events", async () => {
-      try {
-        await this.googleCalendarManager.syncEvents();
-        return { success: true };
-      } catch (error) {
-        return { success: false, error: error.message };
-      }
-    });
+      ipcMain.handle("gcal-sync-events", async () => {
+        try {
+          await this.googleCalendarManager.syncEvents();
+          return { success: true };
+        } catch (error) {
+          return { success: false, error: error.message };
+        }
+      });
 
-    ipcMain.handle("gcal-get-upcoming-events", async (_event, windowMinutes) => {
-      try {
-        return {
-          success: true,
-          events: await this.googleCalendarManager.getUpcomingEvents(windowMinutes),
-        };
-      } catch (error) {
-        return { success: false, events: [] };
-      }
-    });
+      ipcMain.handle("gcal-get-upcoming-events", async (_event, windowMinutes) => {
+        try {
+          return {
+            success: true,
+            events: await this.googleCalendarManager.getUpcomingEvents(windowMinutes),
+          };
+        } catch (error) {
+          return { success: false, events: [] };
+        }
+      });
 
-    ipcMain.handle("gcal-get-event", async (_event, eventId) => {
-      try {
-        const event = this.databaseManager.getCalendarEventById(eventId);
-        return { success: true, event };
-      } catch (error) {
-        return { success: false, event: null };
-      }
-    });
+      ipcMain.handle("gcal-get-event", async (_event, eventId) => {
+        try {
+          const event = this.databaseManager.getCalendarEventById(eventId);
+          return { success: true, event };
+        } catch (error) {
+          return { success: false, event: null };
+        }
+      });
+    }
 
     ipcMain.handle("search-contacts", async (_event, query) => {
       try {

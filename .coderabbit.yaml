@@ -1,0 +1,71 @@
+# https://docs.coderabbit.ai/reference/yaml-template
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+early_access: false
+tone_instructions: "Be concise, technical, and direct. Skip pleasantries. Cite file:line."
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  path_filters:
+    - "!.planning/**"
+    - "!resources/bin/**"
+    - "!dist/**"
+    - "!out/**"
+    - "!release/**"
+    - "!build/**"
+    - "!**/node_modules/**"
+    - "!package-lock.json"
+    - "!**/*.min.js"
+    - "!**/*.min.css"
+    - "!**/*.lock"
+    - "!**/*.snap"
+    - "!**/*.gguf"
+    - "!**/*.onnx"
+    - "!**/*.bin"
+    - "!src/locales/!(en)/**"
+  path_instructions:
+    - path: "src/components/**/*.{tsx,jsx}"
+      instructions: |
+        All user-facing strings MUST use react-i18next via useTranslation() and translation keys in src/locales/en/translation.json.
+        Never hardcode UI text. Brand names (OpenWhispr), technical terms (Markdown, MP3), and AI system prompts are exempt.
+    - path: "src/helpers/**/*.{js,ts}"
+      instructions: |
+        Main-process code. Validate IPC arguments before use. Never expose Node APIs to renderer outside of preload.js contextBridge.
+        Sanitize file paths before fs.* operations. Never log API keys.
+    - path: "preload.js"
+      instructions: |
+        Keep IPC surface minimal. All exposures via contextBridge.exposeInMainWorld. Never expose ipcRenderer directly.
+    - path: "src/services/ai/inferenceProviders/**/*.ts"
+      instructions: |
+        New providers must implement the InferenceProvider interface from types.ts and be registered in index.ts.
+        Never hardcode model lists; reference src/models/modelRegistryData.json.
+    - path: "scripts/**/*.js"
+      instructions: |
+        Build scripts. Use scripts/lib/download-utils.js helpers. Support GITHUB_TOKEN for authenticated requests.
+        Handle download failures gracefully — sidecars should fall back to polling/manual install.
+    - path: "**/*.{ts,tsx,js,jsx}"
+      instructions: |
+        OpenWhispr is build-time configurable via env vars. Never hardcode backend URLs, OAuth client IDs, or provider lists.
+        Default build (no env) MUST behave identically to upstream.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  pull_requests:
+    scope: auto

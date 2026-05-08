@@ -1,0 +1,62 @@
+name: Verify Build-Time Gating
+
+# Runs the load-bearing verify-* gates from Phase 04/04.1 on every PR and push to main.
+# These gates physically grep the renderer + preload bundles to confirm that disabled
+# features (OAuth providers, Stripe billing, referrals, AssemblyAI/Deepgram streaming)
+# are NOT shipped when their build-time flags are off — and that they ARE shipped when on.
+#
+# This is the security contract for corporate-minimal builds: if a gate fails, a feature
+# the maintainer thought was disabled is actually leaking into the binary.
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+  workflow_dispatch:
+
+jobs:
+  verify-gating:
+    name: Verify gating gates pass
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install platform-specific native binaries
+        run: npm install @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu --no-save
+
+      - name: Generate build config (required for typecheck — generated.ts is gitignored)
+        run: node scripts/generate-build-config.js
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Verify pack regenerates build-config (CFG-08)
+        run: npm run verify:pack-regen
+
+      - name: Verify OAuth gating (CFG-07)
+        # Asserts gcalStartOAuth (and Apple/Microsoft equivalents) are tree-shaken
+        # from both renderer and preload bundles when their flags are off.
+        run: npm run verify:oauth-gating
+
+      - name: Verify feature gating (CFG-09)
+        # Asserts BILLING / REFERRALS / STREAMING symbols are absent in default-build
+        # and present when each respective flag is enabled.
+        run: npm run verify:feature-gating

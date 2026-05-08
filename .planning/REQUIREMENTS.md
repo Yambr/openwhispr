@@ -1,0 +1,65 @@
+# Requirements
+
+Scope: **Milestone v1 — Documentation + Build-time Configurability** for the Yambr OpenWhispr fork.
+
+Acceptance for v1 (whole milestone): A maintainer can run `npm run build` with a curated set of environment variables and produce an OpenWhispr binary that talks to their own backend and shows only the OAuth providers they choose. The default build (no env vars) is behaviorally identical to the current Yambr fork. Documentation in `docs/` is sufficient for a third party to implement a compatible server.
+
+---
+
+## v1 Requirements
+
+### Documentation (DOC)
+
+- [x] **DOC-01**: Backend wire spec — `docs/BACKEND_SPEC.md` enumerates every external HTTP call the app makes (OpenAI, Anthropic, Gemini, Google Calendar, OpenWhispr cloud, enterprise endpoints, LiteLLM-shaped URLs). For each call: method, URL pattern, request schema, response schema, auth header format, source file and function. Cloud-specific endpoints (OpenWhispr cloud, enterprise) are documented in enough detail for a third party to implement a drop-in replacement.
+- [x] **DOC-02**: OAuth provider spec — `docs/OAUTH_SPEC.md` lists every OAuth provider currently integrated. For each: authorization endpoint, token endpoint, scopes requested, redirect URI scheme, where the client ID lives in the source, how the resulting token is stored.
+- [x] **DOC-03**: Self-hosting guide — `docs/SELF_HOSTING.md` walks through standing up a minimal compatible backend: required endpoints, expected payloads, auth model, links to BACKEND_SPEC and OAUTH_SPEC.
+- [ ] **DOC-04**: Application architecture — `docs/ARCHITECTURE.md` covers process model (main / renderer / preload / ONNX worker), IPC surface (channels and contracts), secret storage (`safeStorage` + per-key files), model registry, transcription pipeline, embeddings pipeline, sidecar binaries (whisper.cpp, sherpa-onnx, Qdrant, key/mic listeners). May supplement existing `CLAUDE.md` rather than duplicate it.
+
+### Build-time Configurability (CFG)
+
+- [ ] **CFG-01**: Hardcode inventory — `docs/CONFIG_INVENTORY.md` lists every hardcoded backend URL, OAuth client ID, enterprise endpoint, default model registry override, and LiteLLM-shaped URL in the source tree. Each entry: file path, line, current value, proposed env-var name.
+- [ ] **CFG-02**: Refactor hardcodes to build-time env — every entry in CONFIG_INVENTORY is replaced with a build-time variable read via Vite `define` (renderer) and/or process.env at build time (main). No runtime reads of new env vars in production code paths.
+- [ ] **CFG-03**: Per-provider OAuth gating — each currently-shipped OAuth provider has a build flag (e.g., `OPENWHISPR_OAUTH_GOOGLE`, `OPENWHISPR_OAUTH_APPLE`). When `false` at build time, the provider is fully absent from the produced binary: not in UI, not in IPC handlers, not in bundled assets.
+- [ ] **CFG-04**: Backend URL override — `OPENWHISPR_BACKEND_URL` (and any per-service overrides identified in CFG-01) replaces the hardcoded OpenWhispr cloud base URL. Empty/unset env → current default URL.
+- [ ] **CFG-05**: Build-config documentation — `docs/BUILD_CONFIG.md` lists every build-time variable: name, purpose, default, allowed values, examples. Includes a worked example: building a self-hosted variant with custom backend + only LDAP-style auth (with placeholder URLs).
+- [ ] **CFG-06**: Default-build parity — built binary with no env vars set is behaviorally identical to current Yambr fork: same providers visible, same default endpoints, same OAuth options. Verified via a smoke checklist.
+
+---
+
+## v2 Requirements (Deferred)
+
+Tracked here for traceability; not built in this milestone.
+
+- Custom backend with LDAP authentication (separate downstream project)
+- LiteLLM proxy integration for diarization + realtime transcription
+- Calendar integration enhancements
+- Possible runtime backend reconfiguration (still TBD vs. keeping build-time only)
+
+---
+
+## Out of Scope
+
+- **Runtime backend reconfiguration UI** — v1 is build-time only by design; reduces attack surface and keeps each binary auditable.
+- **Removing existing cloud providers** — defaults must keep working; configurability is opt-in.
+- **Web/PWA port of OpenWhispr** — desktop-native is core to the product.
+- **Reverse-engineering third-party APIs (OpenAI / Anthropic / Gemini)** — these are public APIs documented by their vendors; only OpenWhispr's own cloud + enterprise endpoints need reverse-engineering.
+- **Implementing the actual self-hosted backend in this repo** — that's v2, in a separate repo. v1 only produces the *spec* and the *configurable client*.
+
+---
+
+## Traceability
+
+Filled by roadmap. Each requirement maps to exactly one phase.
+
+| REQ-ID  | Phase   |
+|---------|---------|
+| DOC-01  | Phase 1 |
+| DOC-02  | Phase 1 |
+| DOC-03  | Phase 1 |
+| DOC-04  | Phase 2 |
+| CFG-01  | Phase 2 |
+| CFG-02  | Phase 3 |
+| CFG-03  | Phase 4 |
+| CFG-04  | Phase 3 |
+| CFG-05  | Phase 4 |
+| CFG-06  | Phase 4 |

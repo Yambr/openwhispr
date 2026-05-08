@@ -255,6 +255,7 @@ const LinuxKeyManager = require("./src/helpers/linuxKeyManager");
 const TextEditMonitor = require("./src/helpers/textEditMonitor");
 const WhisperCudaManager = require("./src/helpers/whisperCudaManager");
 const GoogleCalendarManager = require("./src/helpers/googleCalendarManager");
+const BuildConfig = require("./src/config/build-config.generated.cjs");
 const MeetingProcessDetector = require("./src/helpers/meetingProcessDetector");
 const AudioActivityDetector = require("./src/helpers/audioActivityDetector");
 const AudioTapManager = require("./src/helpers/audioTapManager");
@@ -354,7 +355,9 @@ function initializeCoreManagers() {
   }
   parakeetManager = new ParakeetManager();
   diarizationManager = new DiarizationManager();
-  googleCalendarManager = new GoogleCalendarManager(databaseManager, windowManager);
+  if (BuildConfig.OAUTH_GOOGLE_ENABLED) {
+    googleCalendarManager = new GoogleCalendarManager(databaseManager, windowManager);
+  }
   meetingDetectionEngine = new MeetingDetectionEngine(
     googleCalendarManager,
     new MeetingProcessDetector(),
@@ -450,7 +453,7 @@ function initializeDeferredManagers() {
     });
   }
 
-  googleCalendarManager.start();
+  if (googleCalendarManager) googleCalendarManager.start();
   meetingDetectionEngine.start();
 }
 

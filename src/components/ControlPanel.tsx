@@ -41,11 +41,23 @@ import {
 import { fetchProviders as fetchStreamingProviders } from "../stores/streamingProvidersStore";
 import HistoryView from "./HistoryView";
 import { syncService } from "../services/SyncService.js";
+import { REFERRALS_ENABLED } from "../config/defaults";
+import ReferralEntry from "./ReferralEntry";
 
 const platform = getCachedPlatform();
 
 const SettingsModal = React.lazy(() => import("./SettingsModal"));
-const ReferralModal = React.lazy(() => import("./ReferralModal"));
+// Phase 04.1 PLAN-04: ReferralEntry uses a STATIC import of ReferralModal
+// (NOT React.lazy() — see PLAN-04 SUMMARY deviation #1). When the parent gate
+// `{REFERRALS_ENABLED && <ReferralEntry ... />}` evaluates to literal `false`,
+// Rolldown propagates the literal across the named-re-export boundary
+// (`src/config/defaults.ts`), drops the JSX, drops the unused import to
+// ReferralEntry, and the entire downstream static graph (including
+// ReferralModal and the `getReferralStats` / `sendReferralInvite` /
+// `getReferralInvites` IPC literals) becomes unreachable and is not emitted.
+// Do NOT switch ReferralEntry to React.lazy() — Vite/Rolldown emits an orphan
+// chunk for any `import(...)` expression encountered during parsing,
+// regardless of whether the containing module is reachable.
 const PersonalNotesView = React.lazy(() => import("./notes/PersonalNotesView"));
 const DictionaryView = React.lazy(() => import("./DictionaryView"));
 const UploadAudioView = React.lazy(() => import("./notes/UploadAudioView"));
@@ -645,10 +657,8 @@ export default function ControlPanel() {
         </Suspense>
       )}
 
-      {showReferrals && (
-        <Suspense fallback={null}>
-          <ReferralModal open={showReferrals} onOpenChange={setShowReferrals} />
-        </Suspense>
+      {REFERRALS_ENABLED && (
+        <ReferralEntry open={showReferrals} onOpenChange={setShowReferrals} />
       )}
 
       {showSearch && (
@@ -682,7 +692,7 @@ export default function ControlPanel() {
               setSettingsSection(undefined);
               setShowSettings(true);
             }}
-            onOpenReferrals={() => setShowReferrals(true)}
+            onOpenReferrals={REFERRALS_ENABLED ? () => setShowReferrals(true) : undefined}
             onUpgrade={() => {
               setSettingsSection("plansBilling");
               setShowSettings(true);

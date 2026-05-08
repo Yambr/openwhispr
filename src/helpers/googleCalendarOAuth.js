@@ -2,13 +2,18 @@ const http = require("http");
 const https = require("https");
 const crypto = require("crypto");
 const { shell } = require("electron");
+const {
+  OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL,
+  OPENWHISPR_OAUTH_GOOGLE_AUTH_URL,
+  OPENWHISPR_OAUTH_GOOGLE_TOKEN_URL,
+  OPENWHISPR_OAUTH_GOOGLE_REVOKE_URL,
+} = require("../config/build-config.generated.cjs");
 
-const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
-const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_AUTH_URL = OPENWHISPR_OAUTH_GOOGLE_AUTH_URL;
+const GOOGLE_TOKEN_URL = OPENWHISPR_OAUTH_GOOGLE_TOKEN_URL;
 const CALENDAR_SCOPE =
   "openid email https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 const OAUTH_TIMEOUT_MS = 120000;
-const DEFAULT_DESKTOP_CALLBACK_URL = "https://openwhispr.com/auth/desktop-callback";
 
 const PROTOCOL_BY_CHANNEL = {
   development: "openwhispr-dev",
@@ -30,7 +35,7 @@ class GoogleCalendarOAuth {
   }
 
   _getDesktopCallbackUrl() {
-    return process.env.VITE_OPENWHISPR_OAUTH_CALLBACK_URL || DEFAULT_DESKTOP_CALLBACK_URL;
+    return OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL;
   }
 
   _getProtocol() {
@@ -220,7 +225,7 @@ class GoogleCalendarOAuth {
   async revokeToken(token) {
     const body = new URLSearchParams({ token }).toString();
     try {
-      await this._httpsPost("https://oauth2.googleapis.com/revoke", body);
+      await this._httpsPost(OPENWHISPR_OAUTH_GOOGLE_REVOKE_URL, body);
     } catch {
       // Best-effort — token may already be revoked or network unavailable
     }

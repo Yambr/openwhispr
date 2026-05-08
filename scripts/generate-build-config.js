@@ -1,0 +1,436 @@
+#!/usr/bin/env node
+// Phase 3 build-time config generator.
+//
+// Reads process.env.OPENWHISPR_* at build/dev time and emits TWO frozen modules:
+//   - src/config/build-config.generated.ts  (renderer/TS consumers; imported by src/config/defaults.ts)
+//   - src/config/build-config.generated.cjs (main-process CommonJS consumers; required directly)
+//
+// Both files are .gitignored. The default-build (no env vars) values match the pre-refactor
+// hardcoded literals — see docs/CONFIG_INVENTORY.md for the source-of-truth mapping.
+
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+
+// 16 logical string env-var keys with their parity defaults.
+// Empty string ("") is a valid intended default for OPENWHISPR_BACKEND_URL — DO NOT coerce.
+const DEFAULTS = Object.freeze({
+  OPENWHISPR_AUTH_URL: "https://auth.openwhispr.com",
+  OPENWHISPR_BACKEND_URL: "",
+  OPENWHISPR_BACKEND_URL_PATTERN: "https://api.openwhispr.com/*",
+  OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL: "https://openwhispr.com/auth/desktop-callback",
+  OPENWHISPR_MCP_URL: "https://mcp.openwhispr.com/mcp",
+  OPENWHISPR_OAUTH_GOOGLE_AUTH_URL: "https://accounts.google.com/o/oauth2/v2/auth",
+  OPENWHISPR_OAUTH_GOOGLE_TOKEN_URL: "https://oauth2.googleapis.com/token",
+  OPENWHISPR_OAUTH_GOOGLE_REVOKE_URL: "https://oauth2.googleapis.com/revoke",
+  OPENWHISPR_OAUTH_GOOGLE_CALENDAR_API_URL: "https://www.googleapis.com/calendar/v3",
+  OPENWHISPR_OAUTH_RESET_PASSWORD_URL: "https://openwhispr.com/reset-password",
+  OPENWHISPR_OAUTH_PROTOCOL_SCHEME: "openwhispr",
+  OPENWHISPR_OPENAI_BASE_URL: "https://api.openai.com/v1",
+  OPENWHISPR_ANTHROPIC_URL: "https://api.anthropic.com/v1/messages",
+  OPENWHISPR_GEMINI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta",
+  OPENWHISPR_GROQ_BASE_URL: "https://api.groq.com/openai/v1",
+  OPENWHISPR_MISTRAL_BASE_URL: "https://api.mistral.ai/v1",
+});
+
+const KEYS = Object.keys(DEFAULTS);
+
+// Phase 4 OAuth gating: per-provider boolean defaults. User-facing env var is
+// OPENWHISPR_<KEY> (the trailing `_ENABLED` is dropped for the env name), but
+// the emitted constant uses _ENABLED for boolean-semantic clarity at
+// consumption sites.
+// Parse rule: explicit "false" → false; anything else (set with any other
+// value) → true. When the env var is UNSET we fall back to the BOOL_DEFAULTS
+// entry, so a flag with default `true` stays `true` until explicitly set to
+// "false", and a flag with default `false` stays `false` until set to anything
+// other than "false" (e.g., "true", "1").
+const BOOL_DEFAULTS = Object.freeze({
+  OAUTH_GOOGLE_ENABLED: true,
+  OAUTH_APPLE_ENABLED: true,
+  OAUTH_MICROSOFT_ENABLED: true,
+  // Phase 04.1 CFG-09 (PLAN-03): corporate-minimal default — Stripe billing UI
+  // and IPC physically removed from the bundle when this is false. Env var:
+  // OPENWHISPR_BILLING (any value other than "false" enables it; unset = false
+  // here because BOOL_DEFAULTS[boolKey] is consulted only when env is unset).
+  BILLING_ENABLED: false,
+  // Phase 04.1 CFG-09 (PLAN-04): corporate-minimal default — referral stats /
+  // invite UI and IPC physically removed from the bundle when this is false.
+  // Env var: OPENWHISPR_REFERRALS (any value other than "false" enables it;
+  // unset = false here because BOOL_DEFAULTS[boolKey] is consulted only when
+  // env is unset).
+  REFERRALS_ENABLED: false,
+  // Phase 04.1 CFG-09 (PLAN-05): corporate-minimal default — AssemblyAI /
+  // Deepgram WebSocket realtime ASR IPC + token-fetch endpoints + the 141kB
+  // useChatStreaming chat hook are all physically removed from the bundle
+  // when this is false. Env var: OPENWHISPR_STREAMING (any value other than
+  // "false" enables it; unset = false here because BOOL_DEFAULTS[boolKey] is
+  // consulted only when env is unset).
+  STREAMING_ENABLED: false,
+});
+
+const BOOL_KEYS = Object.keys(BOOL_DEFAULTS);
+
+function resolveValue(key) {
+  // Use hasOwnProperty so an explicit empty string still counts as "set" — important
+  // for OPENWHISPR_BACKEND_URL where empty is the documented default and any explicit
+  // override (including "") must be honored.
+  if (Object.prototype.hasOwnProperty.call(process.env, key)) {
+    return process.env[key];
+  }
+  return DEFAULTS[key];
+}
+
+function resolveBool(boolKey) {
+  // Map boolKey -> env var name. OAUTH_GOOGLE_ENABLED → OPENWHISPR_OAUTH_GOOGLE
+  const envKey = "OPENWHISPR_" + boolKey.replace(/_ENABLED$/, "");
+  if (Object.prototype.hasOwnProperty.call(process.env, envKey)) {
+    return process.env[envKey] !== "false";
+  }
+  return BOOL_DEFAULTS[boolKey];
+}
+
+function buildResolved() {
+  const resolved = {};
+  for (const key of KEYS) {
+    resolved[key] = resolveValue(key);
+  }
+  for (const boolKey of BOOL_KEYS) {
+    resolved[boolKey] = resolveBool(boolKey);
+  }
+  resolved.OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN = Object.prototype.hasOwnProperty.call(
+    process.env,
+    "OPENWHISPR_OAUTH_PROTOCOL_SCHEME"
+  );
+  return resolved;
+}
+
+function emitTs(resolved, outPath) {
+  const lines = [
+    "// AUTO-GENERATED — do not edit. Produced by scripts/generate-build-config.js at build time.",
+    "// Renderer/TS consumers should NOT import this file directly — import src/config/defaults.ts instead.",
+    "",
+  ];
+  for (const key of KEYS) {
+    lines.push(`export const ${key} = ${JSON.stringify(resolved[key])};`);
+  }
+  for (const boolKey of BOOL_KEYS) {
+    lines.push(`export const ${boolKey} = ${JSON.stringify(resolved[boolKey])};`);
+  }
+  lines.push(
+    `export const OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN = ${JSON.stringify(resolved.OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN)};`
+  );
+  lines.push("");
+  fs.writeFileSync(outPath, lines.join("\n"), "utf8");
+}
+
+function emitCjs(resolved, outPath) {
+  const entries = [];
+  for (const key of KEYS) {
+    entries.push(`  ${key}: ${JSON.stringify(resolved[key])}`);
+  }
+  for (const boolKey of BOOL_KEYS) {
+    entries.push(`  ${boolKey}: ${JSON.stringify(resolved[boolKey])}`);
+  }
+  entries.push(
+    `  OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN: ${JSON.stringify(resolved.OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN)}`
+  );
+  const body = [
+    "// AUTO-GENERATED — do not edit. Produced by scripts/generate-build-config.js at build time.",
+    "// Main-process / CommonJS consumers require this module directly — DO NOT require defaults.ts.",
+    "",
+    '"use strict";',
+    "",
+    "module.exports = Object.freeze({",
+    entries.join(",\n"),
+    "});",
+    "",
+  ].join("\n");
+  fs.writeFileSync(outPath, body, "utf8");
+}
+
+// Phase 04.1 PLAN-02 Task 3: emit preload-gcal.generated.cjs.
+//
+// preload.js is shipped verbatim by electron-builder, so a runtime
+// `BuildConfig.OAUTH_GOOGLE_ENABLED ? {...} : {}` conditional spread would
+// leave the literal `gcalStartOAuth` / `gcalDisconnect` /
+// `onGcalConnectionChanged` strings in the shipped preload source — defeating
+// CFG-07 at the preload trust boundary.
+//
+// Instead we code-generate this preload-gcal factory: when Google is enabled
+// the file contains the full IPC method block; when disabled it is a no-op
+// returning {}. The literal method names physically exist in the build only
+// when the provider is enabled.
+//
+// preload.js consumes via:
+//   const buildGcalApi = require("./preload-gcal.generated.cjs");
+//   ...buildGcalApi(ipcRenderer, registerListener),
+function emitPreloadGcal(resolved, outPath) {
+  const enabled = resolved.OAUTH_GOOGLE_ENABLED === true;
+  const header = [
+    "// AUTO-GENERATED — do not edit. Produced by scripts/generate-build-config.js at build time.",
+    "// Phase 04.1 CFG-07: build-time gate over the Google Calendar preload IPC method",
+    "// exposures. When OAUTH_GOOGLE_ENABLED=false the factory returns {} and the literal",
+    "// method names are physically absent from this file (verified by",
+    "// scripts/verify-oauth-gating.js#PRELOAD_TARGETS).",
+    "",
+    '"use strict";',
+    "",
+  ].join("\n");
+
+  let body;
+  if (enabled) {
+    body = [
+      "module.exports = function buildGcalApi(ipcRenderer, registerListener) {",
+      "  return {",
+      '    gcalStartOAuth: () => ipcRenderer.invoke("gcal-start-oauth"),',
+      '    gcalDisconnect: (email) => ipcRenderer.invoke("gcal-disconnect", email),',
+      '    gcalGetConnectionStatus: () => ipcRenderer.invoke("gcal-get-connection-status"),',
+      '    gcalGetCalendars: () => ipcRenderer.invoke("gcal-get-calendars"),',
+      "    gcalSetCalendarSelection: (calendarId, isSelected) =>",
+      '      ipcRenderer.invoke("gcal-set-calendar-selection", calendarId, isSelected),',
+      '    gcalSyncEvents: () => ipcRenderer.invoke("gcal-sync-events"),',
+      "    gcalGetUpcomingEvents: (windowMinutes) =>",
+      '      ipcRenderer.invoke("gcal-get-upcoming-events", windowMinutes),',
+      '    gcalGetEvent: (eventId) => ipcRenderer.invoke("gcal-get-event", eventId),',
+      "    onGcalMeetingStarting: registerListener(",
+      '      "gcal-meeting-starting",',
+      "      (callback) => (_event, data) => callback(data)",
+      "    ),",
+      "    onGcalMeetingEnded: registerListener(",
+      '      "gcal-meeting-ended",',
+      "      (callback) => (_event, data) => callback(data)",
+      "    ),",
+      "    onGcalStartRecording: registerListener(",
+      '      "gcal-start-recording",',
+      "      (callback) => (_event, data) => callback(data)",
+      "    ),",
+      "    onGcalConnectionChanged: registerListener(",
+      '      "gcal-connection-changed",',
+      "      (callback) => (_event, data) => callback(data)",
+      "    ),",
+      "    onGcalEventsSynced: registerListener(",
+      '      "gcal-events-synced",',
+      "      (callback) => (_event, data) => callback(data)",
+      "    ),",
+      "  };",
+      "};",
+      "",
+    ].join("\n");
+  } else {
+    body = [
+      "// OAUTH_GOOGLE_ENABLED=false at build time — no Google Calendar preload methods exposed.",
+      "module.exports = function buildGcalApi() {",
+      "  return {};",
+      "};",
+      "",
+    ].join("\n");
+  }
+
+  fs.writeFileSync(outPath, header + body, "utf8");
+}
+
+// Phase 04.1 PLAN-03 Task 2: emit preload-billing.generated.cjs.
+//
+// Mirrors emitPreloadGcal: when BILLING_ENABLED=true the file exports a
+// factory returning the four Stripe IPC method bindings; when false it
+// returns {} and contains zero `cloud*` literals. preload.js does:
+//   const buildBillingApi = require("./preload-billing.generated.cjs");
+//   ...buildBillingApi(ipcRenderer),
+function emitPreloadBilling(resolved, outPath) {
+  const enabled = resolved.BILLING_ENABLED === true;
+  const header = [
+    "// AUTO-GENERATED — do not edit. Produced by scripts/generate-build-config.js at build time.",
+    "// Phase 04.1 CFG-09 (PLAN-03): build-time gate over the Stripe billing preload IPC method",
+    "// exposures. When BILLING_ENABLED=false the factory returns {} and the literal method",
+    "// names are physically absent from this file (verified by",
+    "// scripts/verify-feature-gating.js).",
+    "",
+    '"use strict";',
+    "",
+  ].join("\n");
+
+  let body;
+  if (enabled) {
+    body = [
+      "module.exports = function buildBillingApi(ipcRenderer) {",
+      "  return {",
+      '    cloudCheckout: (opts) => ipcRenderer.invoke("cloud-checkout", opts),',
+      '    cloudBillingPortal: () => ipcRenderer.invoke("cloud-billing-portal"),',
+      '    cloudSwitchPlan: (opts) => ipcRenderer.invoke("cloud-switch-plan", opts),',
+      '    cloudPreviewSwitch: (opts) => ipcRenderer.invoke("cloud-preview-switch", opts),',
+      "  };",
+      "};",
+      "",
+    ].join("\n");
+  } else {
+    body = [
+      "// BILLING_ENABLED=false at build time — no Stripe billing preload methods exposed.",
+      "module.exports = function buildBillingApi() {",
+      "  return {};",
+      "};",
+      "",
+    ].join("\n");
+  }
+
+  fs.writeFileSync(outPath, header + body, "utf8");
+}
+
+// Phase 04.1 PLAN-04 (CFG-09 REFERRALS_ENABLED): mirrors emitPreloadBilling.
+// When REFERRALS_ENABLED=true the file exports a factory returning the three
+// referral IPC method bindings; when false it returns {} and contains zero
+// referral literals. preload.js does:
+//   const buildReferralsApi = require("./preload-referrals.generated.cjs");
+//   ...buildReferralsApi(ipcRenderer),
+function emitPreloadReferrals(resolved, outPath) {
+  const enabled = resolved.REFERRALS_ENABLED === true;
+  const header = [
+    "// AUTO-GENERATED — do not edit. Produced by scripts/generate-build-config.js at build time.",
+    "// Phase 04.1 CFG-09 (PLAN-04): build-time gate over the referral preload IPC method",
+    "// exposures. When REFERRALS_ENABLED=false the factory returns {} and the literal method",
+    "// names are physically absent from this file (verified by",
+    "// scripts/verify-feature-gating.js).",
+    "",
+    '"use strict";',
+    "",
+  ].join("\n");
+
+  let body;
+  if (enabled) {
+    body = [
+      "module.exports = function buildReferralsApi(ipcRenderer) {",
+      "  return {",
+      '    getReferralStats: () => ipcRenderer.invoke("get-referral-stats"),',
+      '    sendReferralInvite: (email) => ipcRenderer.invoke("send-referral-invite", email),',
+      '    getReferralInvites: () => ipcRenderer.invoke("get-referral-invites"),',
+      "  };",
+      "};",
+      "",
+    ].join("\n");
+  } else {
+    body = [
+      "// REFERRALS_ENABLED=false at build time — no referral preload methods exposed.",
+      "module.exports = function buildReferralsApi() {",
+      "  return {};",
+      "};",
+      "",
+    ].join("\n");
+  }
+
+  fs.writeFileSync(outPath, header + body, "utf8");
+}
+
+// Phase 04.1 PLAN-05 (CFG-09 STREAMING_ENABLED): mirrors emitPreloadBilling /
+// emitPreloadReferrals. When STREAMING_ENABLED=true the file exports a factory
+// returning the AssemblyAI + Deepgram WebSocket streaming IPC method bindings;
+// when false it returns {} and contains zero streaming literals. preload.js does:
+//   const buildStreamingApi = require("./preload-streaming.generated.cjs");
+//   ...buildStreamingApi(ipcRenderer, registerListener),
+function emitPreloadStreaming(resolved, outPath) {
+  const enabled = resolved.STREAMING_ENABLED === true;
+  const header = [
+    "// AUTO-GENERATED — do not edit. Produced by scripts/generate-build-config.js at build time.",
+    "// Phase 04.1 CFG-09 (PLAN-05): build-time gate over the AssemblyAI + Deepgram WebSocket",
+    "// realtime ASR preload IPC method exposures. When STREAMING_ENABLED=false the factory",
+    "// returns {} and the literal method names are physically absent from this file (verified",
+    "// by scripts/verify-feature-gating.js).",
+    "",
+    '"use strict";',
+    "",
+  ].join("\n");
+
+  let body;
+  if (enabled) {
+    body = [
+      "module.exports = function buildStreamingApi(ipcRenderer, registerListener) {",
+      "  return {",
+      '    assemblyAiStreamingWarmup: (options) => ipcRenderer.invoke("assemblyai-streaming-warmup", options),',
+      '    assemblyAiStreamingStart: (options) => ipcRenderer.invoke("assemblyai-streaming-start", options),',
+      '    assemblyAiStreamingSend: (audioBuffer) => ipcRenderer.send("assemblyai-streaming-send", audioBuffer),',
+      '    assemblyAiStreamingForceEndpoint: () => ipcRenderer.send("assemblyai-streaming-force-endpoint"),',
+      '    assemblyAiStreamingStop: () => ipcRenderer.invoke("assemblyai-streaming-stop"),',
+      '    assemblyAiStreamingStatus: () => ipcRenderer.invoke("assemblyai-streaming-status"),',
+      "    onAssemblyAiPartialTranscript: registerListener(",
+      '      "assemblyai-partial-transcript",',
+      "      (callback) => (_event, text) => callback(text)",
+      "    ),",
+      "    onAssemblyAiFinalTranscript: registerListener(",
+      '      "assemblyai-final-transcript",',
+      "      (callback) => (_event, text) => callback(text)",
+      "    ),",
+      "    onAssemblyAiError: registerListener(",
+      '      "assemblyai-error",',
+      "      (callback) => (_event, error) => callback(error)",
+      "    ),",
+      "    onAssemblyAiSessionEnd: registerListener(",
+      '      "assemblyai-session-end",',
+      "      (callback) => (_event, data) => callback(data)",
+      "    ),",
+      '    deepgramStreamingWarmup: (options) => ipcRenderer.invoke("deepgram-streaming-warmup", options),',
+      '    deepgramStreamingStart: (options) => ipcRenderer.invoke("deepgram-streaming-start", options),',
+      '    deepgramStreamingSend: (audioBuffer) => ipcRenderer.send("deepgram-streaming-send", audioBuffer),',
+      '    deepgramStreamingFinalize: () => ipcRenderer.send("deepgram-streaming-finalize"),',
+      '    deepgramStreamingStop: () => ipcRenderer.invoke("deepgram-streaming-stop"),',
+      '    deepgramStreamingStatus: () => ipcRenderer.invoke("deepgram-streaming-status"),',
+      "    onDeepgramPartialTranscript: registerListener(",
+      '      "deepgram-partial-transcript",',
+      "      (callback) => (_event, text) => callback(text)",
+      "    ),",
+      "    onDeepgramFinalTranscript: registerListener(",
+      '      "deepgram-final-transcript",',
+      "      (callback) => (_event, text) => callback(text)",
+      "    ),",
+      "    onDeepgramError: registerListener(",
+      '      "deepgram-error",',
+      "      (callback) => (_event, error) => callback(error)",
+      "    ),",
+      "    onDeepgramSessionEnd: registerListener(",
+      '      "deepgram-session-end",',
+      "      (callback) => (_event, data) => callback(data)",
+      "    ),",
+      "  };",
+      "};",
+      "",
+    ].join("\n");
+  } else {
+    body = [
+      "// STREAMING_ENABLED=false at build time — no realtime ASR preload methods exposed.",
+      "module.exports = function buildStreamingApi() {",
+      "  return {};",
+      "};",
+      "",
+    ].join("\n");
+  }
+
+  fs.writeFileSync(outPath, header + body, "utf8");
+}
+
+function main() {
+  const repoRoot = path.resolve(__dirname, "..");
+  const tsOut = path.join(repoRoot, "src", "config", "build-config.generated.ts");
+  const cjsOut = path.join(repoRoot, "src", "config", "build-config.generated.cjs");
+  const preloadGcalOut = path.join(repoRoot, "preload-gcal.generated.cjs");
+  const preloadBillingOut = path.join(repoRoot, "preload-billing.generated.cjs");
+  const preloadReferralsOut = path.join(repoRoot, "preload-referrals.generated.cjs");
+  const preloadStreamingOut = path.join(repoRoot, "preload-streaming.generated.cjs");
+
+  const outDir = path.dirname(tsOut);
+  if (!fs.existsSync(outDir)) {
+    fs.mkdirSync(outDir, { recursive: true });
+  }
+
+  const resolved = buildResolved();
+  emitTs(resolved, tsOut);
+  emitCjs(resolved, cjsOut);
+  emitPreloadGcal(resolved, preloadGcalOut);
+  emitPreloadBilling(resolved, preloadBillingOut);
+  emitPreloadReferrals(resolved, preloadReferralsOut);
+  emitPreloadStreaming(resolved, preloadStreamingOut);
+
+  // eslint-disable-next-line no-console
+  console.log(
+    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming}.generated.cjs (16 string keys + 6 booleans)"
+  );
+}
+
+main();

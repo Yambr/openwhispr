@@ -715,3 +715,374 @@ const { t } = useTranslation();
 - Cloud model selection
 - Batch transcription
 - Export formats beyond clipboard
+
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+
+**Yambr OpenWhispr Fork**
+
+A self-hostable fork of OpenWhispr (Electron-based dictation desktop app) that allows organizations to point the build at their own backend, model providers, and identity provider — configured at build time via environment variables. The first milestone reverse-engineers the existing OpenWhispr cloud backend, documents the wire-level contract directly in the repository so third parties can implement compatible servers, and replaces hardcoded URLs / OAuth client configs / provider lists with build-time configurable variables.
+
+**Core Value:** **A maintainer can run `npm run build` with a set of env vars and get a fully-working OpenWhispr binary that talks to their own backend and shows only the OAuth providers they want — without touching source code.** Default build (no env vars) must continue to behave identically to the upstream Yambr fork.
+
+### Constraints
+
+- **Tech stack**: Existing — must not introduce new core deps without strong reason. Node 24 / Electron 41 / Vite are pinned.
+- **Behavior**: Default build (no env) MUST be identical to current upstream Yambr binary — no behavioral drift for existing users.
+- **Build-time only**: All v1 configurability happens at build time, NOT runtime. Reduces attack surface and keeps the binary auditable.
+- **Documentation lives in repo**: Backend / OAuth / build-config docs must be in `docs/` (committed), not just `.planning/` — third parties need them.
+- **Signing**: Existing Developer ID signing flow (`afterSign.js`, electron-builder) must continue working with env-driven config.
+- **Secrets**: API keys remain user-provided at runtime via Electron `safeStorage` — build-time vars are for *defaults and endpoints*, never for secret material.
+<!-- GSD:project-end -->
+
+<!-- GSD:stack-start source:codebase/STACK.md -->
+## Technology Stack
+
+## Languages
+- TypeScript 6.0.2 - React components, services, configuration, type definitions
+- JavaScript (Node.js) - Electron main process, build scripts, helpers
+- Swift - macOS-specific utilities (Globe key listener, mic listener, audio tap)
+- C - Windows low-level keyboard hook (Push-to-Talk)
+- JSON - Configuration, model registry data
+- CSS/SCSS - Styling via Tailwind CSS v4
+- Markdown - Documentation, translations via react-i18next
+## Runtime
+- Node.js 24 (pinned in `.nvmrc` — CI uses Node 24, do NOT regenerate `package-lock.json` with different major version)
+- Electron 41.2.0 - Desktop framework with context isolation enabled
+- npm (lockfile: `package-lock.json` present)
+## Frameworks
+- React 19.1.0 - UI framework for both dictation overlay and settings panel
+- Electron 41.2.0 - Desktop application framework
+- Vite 8.0.7 - Build tool and dev server (TypeScript + JSX support via `@vitejs/plugin-react`)
+- TailwindCSS 4.1.10 - Utility-first CSS framework
+- shadcn/ui 0.9.5 - Component library built on Radix UI primitives
+- Radix UI - Unstyled accessible primitives (`react-dialog`, `react-dropdown-menu`, `react-select`, `react-tabs`, `react-accordion`, `react-label`, `react-popover`, `react-progress`, `react-slot`)
+- Tiptap 3.22.3 - Rich text editor for note editing (`@tiptap/core`, `@tiptap/react`, `@tiptap/starter-kit`, `@tiptap/extension-task-list`, `@tiptap/extension-placeholder`)
+- Lucide React 1.7.0 - Icon library (React components)
+- React Markdown 10.1.0 - Markdown rendering
+- ai 6.0.116 - Vercel AI SDK for streamText, tool calls, and multi-provider LLM abstraction
+- @ai-sdk/openai 3.0.41 - OpenAI integration (Responses API, Chat Completions)
+- @ai-sdk/anthropic 3.0.58 - Anthropic Claude models
+- @ai-sdk/google 3.0.43 - Google Gemini API
+- @ai-sdk/groq 3.0.29 - Groq inference platform
+- @ai-sdk/amazon-bedrock 4.0.93 - AWS Bedrock models
+- @ai-sdk/azure 3.0.53 - Azure OpenAI
+- @ai-sdk/google-vertex 4.0.108 - GCP Vertex AI
+- i18next 26.0.4 - i18n core
+- react-i18next 17.0.2 - React integration
+- Translation files: `src/locales/{en,es,fr,de,pt,it,ru,zh-CN,zh-TW}/translation.json` (9 languages)
+- Zustand 5.0.11 - Lightweight state management (`src/stores/settingsStore.ts`)
+- better-auth 1.6.9 - Authentication system
+- better-sqlite3 12.8.0 - SQLite wrapper for transcription history and notes (unpacked via ASAR)
+- Kysely 0.28.14 - Type-safe SQL query builder
+- Qdrant JS Client 1.12.0 - Vector database client for semantic search (`@qdrant/js-client-rest`)
+- onnxruntime-node 1.21.0 - ONNX Runtime for local embeddings (unpacked via ASAR)
+- ffmpeg-static 5.2.0 - FFmpeg binaries (unpacked via ASAR for audio processing)
+- onnxruntime-node 1.21.0 - For embeddings and speech models (ONNX Runtime)
+- Zod 4.3.6 - Schema validation and TypeScript type inference
+- flatted 3.4.2 - Serialize/deserialize circular structures
+- class-variance-authority 0.7.1 - Component variant management
+- clsx 2.1.1 - Conditional CSS class utilities
+- tailwind-merge 3.3.1 - Intelligent Tailwind class merging
+- ps-list 9.0.0 - Get running processes (for meeting detection)
+- @tanstack/react-virtual 3.13.2 - Virtualization for large note lists
+- ws 8.19.0 - WebSocket client
+- tar 7.4.3 - TAR archive extraction
+- unzipper 0.12.3 - ZIP archive extraction
+- unbzip2-stream 1.4.3 - BZIP2 decompression
+- electron-updater 6.6.2 - Electron app auto-update framework
+- @napi-rs/keyring 1.3.0 - OS keychain access for secure credential storage (unpacked via ASAR)
+- dbus-next 0.10.2 - D-Bus communication (GNOME Wayland shortcuts)
+- @electron/notarize 3.0.1 - macOS notarization
+- @aws-sdk/credential-providers 3.1029.0 - AWS credential handling for Bedrock
+## Configuration
+- `src/vite.config.mjs` - Vite build configuration with React plugin, Tailwind CSS v4 plugin, path aliases
+- `src/tsconfig.json` - TypeScript configuration (ES2022, DOM, strict: false, path alias `@/*`)
+- `electron-builder.json` - App packaging configuration with platform-specific targets
+- `.nvmrc` - Node.js version pinning (24)
+- `.env` (root) - Development environment variables
+- `userData/.env` (runtime) - User-configured API keys and settings (loaded first via EnvironmentManager)
+- Environment variables passed to Vite via `loadEnv()` in vite.config.mjs
+- Secret keys encrypted at rest via Electron `safeStorage` → OS keychain (Keychain/DPAPI/libsecret), stored as per-key `.enc` files in `userData/secure-keys/`
+- `.prettierrc` - Prettier configuration (100 char print width, 2-space tabs, trailing commas, LF line endings)
+- ESLint (npm eslint 10.2.1) with TypeScript support and React Hooks rules
+## Platform Requirements
+- Node.js >= 24 (pinned in `.nvmrc`)
+- npm (lockfile: package-lock.json)
+- TypeScript 6.0.2 (dev dependency)
+- Electron 41.2.0 (dev dependency)
+- Native build tools (for better-sqlite3, onnxruntime-node, @napi-rs/keyring compilation)
+- macOS 10.13+ (Intel x64 or Apple Silicon arm64)
+- Windows 7+ (x64)
+- Linux (x64, glibc 2.29+)
+- 2GB+ RAM for whisper.cpp models, 4GB+ for larger models
+- Audio input device (microphone)
+- `whisper-server-{platform}-{arch}` - Whisper.cpp HTTP server (GitHub: OpenWhispr/whisper.cpp)
+- `llama-server-{platform}-{arch}` - Llama.cpp HTTP server (GitHub: ggerganov/llama.cpp)
+- `sherpa-onnx-{platform}-{arch}` - NVIDIA Parakeet ASR (GitHub: k2-fsa/sherpa-onnx)
+- `qdrant-{platform}-{arch}` - Vector database (GitHub: qdrant/qdrant)
+- `macos-globe-listener`, `macos-mic-listener`, `macos-fast-paste`, etc. (compiled from Swift source)
+- `windows-key-listener.exe`, `windows-mic-listener.exe` (GitHub releases)
+- `linux-fast-paste`, `linux-key-listener`, etc. (compiled from C source)
+- `all-MiniLM-L6-v2/` - ONNX embedding model (384-dim, auto-downloaded on first launch)
+- `diarization-models/` - Pyannote speaker segmentation and CAM++ speaker embedding
+- Vite 8.0.7 + @vitejs/plugin-react 6.0.1
+- ESLint 10.2.1 with TypeScript support
+- Prettier 3.8.3
+- Electron Builder 26.4.0
+- @electron/notarize 3.0.1 (macOS signing/notarization)
+## Key Dependencies Summary
+| Package | Version | Purpose |
+|---------|---------|---------|
+| react | 19.1.0 | UI framework |
+| electron | 41.2.0 | Desktop app framework |
+| vite | 8.0.7 | Build tool |
+| ai | 6.0.116 | Vercel AI SDK (multi-provider LLM) |
+| better-sqlite3 | 12.8.0 | Local transcription history DB |
+| onnxruntime-node | 1.21.0 | Local embeddings via ONNX |
+| @qdrant/js-client-rest | 1.12.0 | Vector search client |
+| ffmpeg-static | 5.2.0 | Audio processing |
+| tailwindcss | 4.1.10 | CSS framework |
+| zustand | 5.0.11 | State management |
+| i18next | 26.0.4 | Internationalization core |
+| @radix-ui/* | various | Accessible component primitives |
+| @tiptap/* | 3.22.3 | Rich text editing |
+<!-- GSD:stack-end -->
+
+<!-- GSD:conventions-start source:CONVENTIONS.md -->
+## Conventions
+
+## Naming Patterns
+- React components: PascalCase with `.tsx` extension (e.g., `ErrorBoundary.tsx`, `ControlPanel.tsx`)
+- Helper modules: camelCase with `.js` or `.ts` extension (e.g., `hotkeyManager.js`, `database.js`)
+- Services: PascalCase with `.ts` extension (e.g., `ReasoningService.ts`, `NotesService.ts`)
+- Stores: camelCase with `.ts` extension ending in "Store" (e.g., `settingsStore.ts`, `actionStore.ts`)
+- Hooks: camelCase with `.ts` or `.js` extension starting with "use" (e.g., `useSettings.ts`, `useAudioRecording.js`)
+- Test files: match source filename with `.test.*` suffix (e.g., `transcriptText.test.js`)
+- Exported functions: camelCase (e.g., `initializeActions()`, `transcriptsOverlap()`, `normalizeUiLanguage()`)
+- Event handlers: camelCase starting with "handle" or action verb (e.g., `handleReload()`, `ensureIpcListeners()`)
+- Zustand action functions: simple camelCase verbs (e.g., `addActionToStore()`, `updateActionInStore()`)
+- Private/internal functions: camelCase with leading underscore when needed (e.g., `_asyncVectorUpsert()`)
+- Constants: UPPER_SNAKE_CASE (e.g., `HOTKEY_REGISTRATION_DELAY_MS`, `DEFAULT_HOTKEY`, `GNOME_NATIVE_SLOTS`)
+- Module state (top-level): camelCase prefixed with "has" or condition (e.g., `hasBoundIpcListeners`)
+- Class properties: camelCase (e.g., `this.slots`, `this.db`, `this.currentHotkey`)
+- React hook state: camelCase from destructure (e.g., `const { actions } = useActionStore()`)
+- Exported interfaces: PascalCase with suffix or complete naming (e.g., `ErrorBoundaryProps`, `TranscriptionSettings`, `NoteInput`, `SearchResult`)
+- Type aliases: PascalCase (e.g., `LocalTranscriptionProvider`, `InferenceMode`, `TranscriptionStatus`)
+- Union types: PascalCase joined by pipe (e.g., `"personal" | "meeting" | "upload"`)
+## Code Style
+- Formatter: Prettier v3.8.3
+- Key settings: `printWidth: 100`, `tabWidth: 2`, `semi: true`, `singleQuote: false`, `trailingComma: "es5"`, `arrowParens: "always"`
+- End-of-line: LF
+- Bracket spacing: enabled
+- ESLint v10.2.1 with typescript-eslint
+- Separate configs for root (CommonJS, main process) and `/src` (ES modules, React + TypeScript)
+- Root config: `eslint.config.js` (CJS, Node globals)
+- Renderer config: `src/eslint.config.js` (ES modules, React-specific rules)
+- `no-unused-vars`: Warn with patterns `^_`, `^event`, `^err`, `^error` ignored (root) or `^[A-Z_]` (src)
+- `react-hooks/rules-of-hooks`: Error
+- `react-hooks/exhaustive-deps`: Warn
+- `no-console`: Off (enabled for debugging in Electron)
+- `no-empty`: Error except empty catch blocks
+- `react-refresh/only-export-components`: Warn for non-component exports
+- Target: ES2022
+- Module: ESNext
+- JSX: react-jsx
+- `strict: false` (lenient for gradual migration)
+- `skipLibCheck: true`, `isolatedModules: true`, `forceConsistentCasingInFileNames: true`
+- Path alias: `@/*` → current directory (used minimally)
+## Import Organization
+- React hooks from "react" imported explicitly when needed
+- i18next hooked via `useTranslation()` from "react-i18next"
+- Window API accessed via `window.electronAPI` (preload bridge)
+## Error Handling
+- Try/catch blocks wrap async operations, IPC calls, and file I/O
+- Errors logged via `debugLogger.log()` or `logger.logReasoning()`
+- Graceful fallbacks: if native binary missing → fallback to polling, if API fails → retry or skip
+- Column-add errors in database migrations: wrapped with "duplicate column" check (example: `database.js` lines 34–38)
+- IPC error propagation: errors from main process handlers thrown to renderer via Promise rejection
+## Logging
+- `debugLogger.log()` for general logging
+- Conditional on `OPENWHISPR_LOG_LEVEL=debug` or `--log-level=debug`
+- Logs written to app-specific directory on disk
+- `logger.logReasoning(stage, details)` for AI reasoning pipeline
+- Format: structured events with key-value pairs (not just strings)
+- Example: `logger.logReasoning("CUSTOM_KEY_RETRIEVAL", { provider, hasKey, keyLength })`
+- IPC handler entry/exit
+- Error conditions with context
+- Audio pipeline state changes (recording start/stop, processing)
+- External API calls (provider routing, key retrieval)
+- Fallback activation (e.g., "Qdrant unavailable, using FTS5 fallback")
+## Comments
+- Non-obvious algorithm logic (e.g., speech gate thresholds, echo detection)
+- Complex regexes (e.g., `RIGHT_SIDE_MODIFIER_PATTERN`)
+- Platform-specific workarounds ("macOS: CoreAudio listeners for event-driven detection")
+- Important constants with justification ("HOTKEY_REGISTRATION_DELAY_MS = 1000 to ensure localStorage access")
+- Service methods with complex return types
+- Hook contracts (what props/state they manage)
+- Type definitions with non-obvious fields
+## Function Design
+- Single objects for >2 params: `function process(config: { model, provider, timeout })`
+- IPC handlers accept `(event, ...args)` from Electron's `ipcMain.handle()`
+- Async: use `async/await`, not `.then()` chains
+- Promise<T> for async operations
+- Type unions for conditional returns (e.g., `{ suppress: boolean; reason: string }` from `shouldSuppressMicSegment()`)
+- Throw errors instead of returning error objects (except IPC, where errors automatically propagate)
+## Module Design
+- Class: export via `module.exports = ClassName` (CommonJS) or `export class ClassName` (ES modules)
+- Functions: named exports (e.g., `export async function create(note)`)
+- Singletons: exported as default (e.g., `export default hotkeyManager`)
+- Constructor initializes state
+- Public methods for API surface
+- Private methods (prefixed `_` or `#` comment) for internal logic
+- Zustand stores: export hooks, keep state mutation internal via store actions
+## Internationalization (i18n) — MANDATORY
+- Initialization in `src/i18n.ts`
+- Translation files: `src/locales/{lang}/translation.json`
+- Supported languages: en, es, fr, de, pt, it, ru, ja, zh-CN, zh-TW (10 total)
+## IPC Patterns
+- Registered via `ipcMain.handle(channel, handler)`
+- Channel naming: kebab-case (e.g., `db-save-transcription`, `get-openai-key`)
+- Handler signature: `async (event, ...args) => result`
+- Error handling: throw errors, Electron automatically converts to Promise rejection in renderer
+- Via `window.electronAPI.methodName()` (preload bridge in `preload.js`)
+- Returns Promise (all IPC is async)
+- Error handling: `.catch()` or `try/await`
+- Defines all exposed IPC methods in `window.electronAPI` object
+- Context isolation enabled (secure)
+- Validates arguments when needed
+## State Management
+- `create<StateInterface>()(initializer)` factory pattern
+- Immutable updates via `setState({ ... })`
+- Hooks extracted as separate functions (e.g., `export function useActions()`)
+- Initialization: async functions called on app startup (e.g., `initializeActions()`)
+- Persisted to localStorage and `.env` file
+- Large interface combining multiple setting categories (Transcription, Cleanup, Hotkey, etc.)
+- Selector function: `selectResolvedLLMConfig(state, scope)` for multi-scope inference setup
+<!-- GSD:conventions-end -->
+
+<!-- GSD:architecture-start source:ARCHITECTURE.md -->
+## Architecture
+
+## Pattern Overview
+- Electron main/renderer/preload separation with context isolation
+- Separate ONNX utility worker process for inference (text embeddings, speaker embeddings, fbank processing)
+- Dual-window UI architecture (overlay dictation panel + full control panel)
+- Message-based IPC bridge between processes
+- React 19 with Zustand stores for state management
+- TypeScript for type safety across application boundary
+## Layers
+- Purpose: Electron lifecycle, native OS integration, IPC handlers, database, file I/O, hotkey registration
+- Location: `main.js` (1497 lines)
+- Contains: Window management, audio device enumeration, clipboard integration, native binary spawning (whisper, parakeet, qdrant)
+- Depends on: Electron, better-sqlite3, child_process, native OS APIs
+- Used by: Renderer process (via IPC), ONNX worker (via parent-child process message passing)
+- Purpose: Expose safe IPC methods to renderer with context isolation enforced
+- Location: `preload.js` (879 lines)
+- Contains: `contextBridge.exposeInMainWorld("electronAPI", {...})` wrapper around ipcRenderer invokes/on/send
+- Depends on: Electron contextBridge, ipcRenderer
+- Used by: Renderer process (via window.electronAPI)
+- Purpose: UI rendering, user interaction, audio recording via MediaRecorder API
+- Location: `src/main.jsx`, `src/App.jsx`, `src/AppRouter.jsx`
+- Contains: React components, hooks, stores, services, UI logic
+- Depends on: React 19, react-i18next, Zustand, Vite dev server
+- Used by: Main process (sends IPC), ONNX worker (receives inference results)
+- Purpose: Isolated inference for text embeddings (all-MiniLM-L6-v2), speaker embeddings (3D-Speaker-mini), fbank processing
+- Location: `src/workers/onnxWorker.js`
+- Spawning: `src/helpers/onnxWorkerClient.js` → lazy spawn on first use (warmup)
+- Lifecycle: Spawned with `detached: process.platform !== "win32"` (own process group on Unix), killed on app quit via `sidecarReaper.js`
+- Contains: ONNX Runtime session setup, mel filterbank computation, text tokenization, model inference
+- Depends on: onnxruntime-node (native binding), child_process parent message passing
+- Used by: Main process (via message port for text embedding requests)
+## Data Flow
+## Key Abstractions
+- Purpose: Unified audio recording + processing orchestration
+- Abstracts: MediaRecorder API, transcription APIs (local/cloud/streaming), reasoning service, clipboard paste
+- Pattern: Single instance per renderer process, methods for startRecording/stopRecording/transcribeAudio
+- State: isRecording, isProcessing, isStreaming (booleans), transcript/partialTranscript (strings)
+- Purpose: Centralized application state with localStorage persistence
+- Key stores:
+- Purpose: AI processing for cleanup, formatting, and agent-addressed commands
+- Pattern: Singleton service with static methods for streamText, calculateMaxTokens, getSystemPrompt
+- Supports: 8 inference providers (OpenAI, Anthropic, Gemini, Groq, local LLM via llama.cpp, enterprise, LAN, OpenWhispr cloud)
+- Integrates: Tool system for note search, action execution, diarization
+- Purpose: Centralized registration of all ipcMain.handle/on/send listeners
+- Pattern: Main process registers handlers at startup, renderer invokes via window.electronAPI methods
+- Key handlers: db-*, transcribe-audio, save-transcription, cloud-reason, paste-text, hotkey-*, window-*
+- Purpose: Create and manage Electron BrowserWindow instances
+- Pattern: createDictationWindow, createControlPanelWindow, createAgentPanelWindow
+- Features: Always-on-top overlay, preload script injection, URL-based routing (window.location.pathname)
+## Entry Points
+- Location: `/Users/ngyambroskin/Documents/openwhispr/main.js`
+- Triggers: `npm start` or `npm run dev` (spawned by Vite via `run-electron.js`)
+- Responsibilities: Initialize app, register hotkeys, create windows, set up IPC handlers, spawn sidecars (whisper, qdrant)
+- Location: `src/main.jsx` (renders to `root` DOM element)
+- Imports: `src/App.jsx`, `src/AppRouter.jsx`, global CSS
+- Responsibilities: Bootstrap React, context providers (I18nextProvider, SettingsProvider, ToastProvider)
+- `main.html?panel=true` or `main.html?panel=true` → ControlPanel + OnboardingFlow (full settings)
+- `main.html?agent=true` → AgentOverlay (AI chat window)
+- `main.html` (default) → App.jsx (dictation overlay)
+- Meeting/update/transcription preview: query params determine which overlay to show
+## Error Handling
+- Transcription: local whisper → fallback to cloud OpenAI if local disabled
+- Clipboard: native XTest (Linux) → xdotool (X11) → wtype (Wayland) → PowerShell (Windows) → manual copy fallback
+- Hotkey registration: Windows native key listener → Electron globalShortcut → GNOME shortcuts (Wayland) → Hyprland shortcuts → UI message
+- Meeting detection: Event-driven (macOS subscriptions, Windows WASAPI, Linux pactl) → polling fallback
+- Vector search: Qdrant semantic → FTS5 keyword fallback
+- Reasoning: Cloud model → local LLM → skip if unavailable
+- `src/helpers/recordingErrors.ts` — Error classification by provider/status
+- `src/utils/retry.ts` — Retry strategy with exponential backoff
+- `src/helpers/networkErrors.ts` — Network error classification and handling
+- Error boundaries: `src/components/ErrorBoundary.tsx`
+## Cross-Cutting Concerns
+- Frontend: `src/utils/logger.ts` (logs to console + optionally localStorage)
+- Backend: `src/helpers/debugLogger.js` (writes to app data directory + console)
+- Streaming: Stage-based logging (AUDIO_RECORD, TRANSCRIPTION_RECEIVED, REASONING_STARTED, etc.)
+- Enable with `--log-level=debug` or `OPENWHISPR_LOG_LEVEL=debug`
+- Settings: Type-safe via TypeScript interfaces (`TranscriptionSettings`, `CleanupSettings`, etc. in `src/hooks/useSettings.ts`)
+- IPC arguments: Validated in main.js before processing (file paths, API keys, database IDs)
+- Models: Registry validation in `src/models/ModelRegistry.ts` (checks provider/model pairs exist)
+- OAuth flow: Custom protocol handler (openwhispr://) → sign-in window → token stored in secure keychain
+- API keys: 12 secret keys encrypted at rest via `safeStorage` (OS keychain on macOS/Windows, libsecret on Linux, plaintext fallback)
+- Session refresh: `src/lib/auth.ts` — withSessionRefresh() wrapper for API calls with token refresh
+- Framework: react-i18next v15, i18next v25
+- Strings: `src/locales/{lang}/translation.json` for 10 languages
+- Usage: `const { t } = useTranslation()` hook in components
+- Key groups: notes.*, chat.*, settings.*, hotkeys.*, errors.*
+- Code splitting: React.lazy() for ControlPanel, OnboardingFlow, AgentOverlay
+- Memoization: useMemo/useCallback in hooks to prevent re-renders
+- IPC batching: Multiple setting updates debounced before IPC
+- Process pooling: ONNX worker spawned once, reused for all embedding requests
+- Audio chunking: Cloud uploads split into 4MB chunks for large files
+- Context isolation: Renderer cannot access Node.js APIs directly
+- Preload: Limited surface area (database methods, window control, audio, clipboard)
+- File paths: Sanitized before passing to fs.* operations
+- API keys: Never logged, encrypted at rest, only loaded into process.env at startup
+- CORS: No remote code execution, all API requests go through main process or Vite dev proxy
+<!-- GSD:architecture-end -->
+
+<!-- GSD:skills-start source:skills/ -->
+## Project Skills
+
+No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
+<!-- GSD:skills-end -->
+
+<!-- GSD:workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- GSD:workflow-end -->
+
+<!-- GSD:profile-start -->
+## Developer Profile
+
+> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
+> This section is managed by `generate-claude-profile` -- do not edit manually.
+<!-- GSD:profile-end -->

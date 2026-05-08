@@ -11,7 +11,10 @@ class MeetingDetectionEngine {
     windowManager,
     databaseManager
   ) {
-    this.googleCalendarManager = googleCalendarManager;
+    // Phase 4: googleCalendarManager may be null when OAUTH_GOOGLE_ENABLED=false
+    // (see main.js around `BuildConfig.OAUTH_GOOGLE_ENABLED`). All call sites in
+    // this class MUST use optional chaining (?.) when accessing it.
+    this.googleCalendarManager = googleCalendarManager || null;
     this.meetingProcessDetector = meetingProcessDetector;
     this.audioActivityDetector = audioActivityDetector;
     this.windowManager = windowManager;
