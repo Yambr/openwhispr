@@ -355,3 +355,66 @@ These are the client-observable behaviors a backend implementer needs to be awar
 - **Live runtime trace validation.** This spec is reverse-engineered from source, not from runtime traces. If drift between client expectations and a deployed cloud is suspected later, capture-and-diff tooling could be added as a v1.x patch or v2 prereq. Not a Phase 1 deliverable.
 - **OpenAPI / JSON Schema machine-readable spec.** Not adopted for v1. The deliverables are markdown tables + JSON examples. A future enhancement could generate machine-readable artifacts from the existing endpoint cards if v2 wants typed client / server stubs.
 - **Hidden / undocumented OpenWhispr cloud endpoints** (admin, webhooks, internal APIs the current desktop client does not call). Out of scope. The wire surface this spec describes is **client-driven**: a v2 backend only needs to satisfy what the current desktop binary sends.
+
+---
+
+## Phase 3 Smoke Checklist
+
+This checklist verifies that a default `npm run build` (no `OPENWHISPR_*` env vars set) produces a binary whose network behavior is byte-for-byte identical to the pre-Phase-3 Yambr fork. Use it as the manual second tier of the parity proof — `npm run verify:parity` is the mechanical first tier (source-level grep gate); this checklist is the runtime-level confirmation that the resolved values reach the wire.
+
+A maintainer publishing a build with custom env values should also run the checklist with the customised expected URLs (see [Custom-build smoke (optional)](#custom-build-smoke-optional) below) to confirm their overrides are being honoured.
+
+### Default-build flows
+
+| Flow | Action | Expected outcome | CONFIG_INVENTORY rows |
+|------|--------|------------------|-----------------------|
+| Sign-in (email) | Build with no env vars; launch; click "Sign in" → "Continue with Email" | Browser navigates to `https://auth.openwhispr.com/api/auth/...` | rows 1, 2, 3 (`OPENWHISPR_AUTH_URL` × 3 sites) |
+| Sign-in (Google social) | From the sign-in screen, click "Continue with Google" | Browser opens `https://accounts.google.com/o/oauth2/v2/auth?...` and (after consent) lands on `https://openwhispr.com/auth/desktop-callback?protocol=openwhispr&...` | rows 7, 8, 10, 16 (desktop callback + Google auth URL + protocol scheme) |
+| Calendar OAuth | Settings → Integrations → "Connect Google Calendar" → grant scopes | Token exchange POSTs to `https://oauth2.googleapis.com/token`; calendar list GET is `https://www.googleapis.com/calendar/v3/users/me/calendarList` | rows 11, 13 (Google token URL + Calendar API base) |
+| Transcription (cloud OpenAI) | Set OpenAI key in Settings; record a 2-second clip; observe debug log | Outbound POST to `https://api.openai.com/v1/audio/transcriptions` | rows 17, 21 (OpenAI base × registry + constants) |
+| Transcription (Groq) | Switch transcription provider to Groq; record a 2-second clip | Outbound POST to `https://api.groq.com/openai/v1/audio/transcriptions` | rows 18, 23 (Groq base × registry + constants) |
+| MCP UI | Open Settings → Integrations → MCP card | Card displays `https://mcp.openwhispr.com/mcp`; "Copy" places the same URL on the clipboard | row 9 (`OPENWHISPR_MCP_URL`) |
+| Custom protocol | After build, inspect the packaged Info.plist (macOS) or registry (Windows) | `CFBundleURLSchemes` (macOS) / Registered URL handlers (Windows) include `openwhispr://` | row 16 (`OPENWHISPR_OAUTH_PROTOCOL_SCHEME`) |
+
+In addition to the seven flows, confirm the **webRequest pattern check**: with `OPENWHISPR_LOG_LEVEL=debug`, the main-process startup log should record the `session.defaultSession.webRequest.onBeforeSendHeaders` filter being registered with `https://api.openwhispr.com/*` (the default value of `OPENWHISPR_BACKEND_URL_PATTERN`). This is the byte-identical proof of the Plan 2 split between `OPENWHISPR_BACKEND_URL` (default `""`) and `OPENWHISPR_BACKEND_URL_PATTERN` (default `https://api.openwhispr.com/*`).
+
+### How to inspect URLs without instrumenting
+
+You should not need to add `console.log` calls or attach a debugger to verify any of the rows above. Use the existing surfaces:
+
+- **Debug logger.** Set `OPENWHISPR_LOG_LEVEL=debug` in the project root `.env` (or the launched user-data `.env`) before starting the binary. The main-process logger already records auth URL resolution, transcription endpoint construction, OAuth redirect targets, and webRequest filter registration. Logs land in the platform's app data directory (see `docs/ARCHITECTURE.md` for paths).
+- **macOS protocol registration.** Inspect the packaged `Info.plist` directly:
+  ```bash
+  defaults read "$(find dist -name '*.app' -maxdepth 3 | head -1)/Contents/Info.plist" CFBundleURLTypes
+  ```
+  Look for a dictionary entry whose `CFBundleURLSchemes` array contains `openwhispr` (default) or your override.
+- **Network-level inspection.** When the debug log isn't sufficient (rare), run the binary behind Charles Proxy / mitmproxy / mitmweb. Trust the proxy's CA in the system keychain so TLS interception works for the OpenWhispr cloud endpoints.
+
+### Custom-build smoke (optional)
+
+To prove a custom-env build also routes to the configured endpoints, repeat the seven flows above with overrides applied at build time. Example:
+
+```bash
+OPENWHISPR_AUTH_URL=https://auth.example.com \
+OPENWHISPR_BACKEND_URL=https://api.example.com \
+OPENWHISPR_BACKEND_URL_PATTERN="https://api.example.com/*" \
+OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL=https://example.com/auth/desktop-callback \
+OPENWHISPR_MCP_URL=https://mcp.example.com/mcp \
+OPENWHISPR_OAUTH_RESET_PASSWORD_URL=https://example.com/reset-password \
+OPENWHISPR_OAUTH_PROTOCOL_SCHEME=examplecorp \
+OPENWHISPR_LOG_LEVEL=debug \
+CSC_IDENTITY_AUTO_DISCOVERY=false \
+npm run pack
+```
+
+Expected behaviour, flow by flow:
+
+- Email and Google sign-in → traffic goes to `auth.example.com` (no `auth.openwhispr.com` in the debug log).
+- Desktop callback → `https://example.com/auth/desktop-callback?protocol=examplecorp&...`.
+- Reset password → `https://example.com/reset-password`.
+- MCP UI → card displays `https://mcp.example.com/mcp`.
+- webRequest filter → main-process startup log records the filter registered with `https://api.example.com/*` (proves `OPENWHISPR_BACKEND_URL_PATTERN` flowed through; CONFIG_INVENTORY row 5).
+- Custom protocol → `CFBundleURLSchemes` contains `examplecorp`, NOT `openwhispr`.
+
+If any of these fail, run `npm run verify:parity` first — a leaked literal will both fail the gate and corrupt the runtime override path.
+
