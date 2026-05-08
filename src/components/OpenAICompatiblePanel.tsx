@@ -5,6 +5,7 @@ import { Input } from "./ui/input";
 import ApiKeyInput from "./ui/ApiKeyInput";
 import ModelCardList from "./ui/ModelCardList";
 import { buildApiUrl, normalizeBaseUrl } from "../config/constants";
+import { OPENWHISPR_OPENAI_BASE_URL } from "../config/defaults";
 import { isSecureEndpoint } from "../utils/urlUtils";
 
 interface ModelOption {
@@ -34,7 +35,7 @@ export default function OpenAICompatiblePanel({
   model,
   setModel,
   defaultBaseUrl,
-  baseUrlPlaceholder = "https://api.openai.com/v1",
+  baseUrlPlaceholder = OPENWHISPR_OPENAI_BASE_URL,
   helpExamples,
 }: OpenAICompatiblePanelProps) {
   const { t } = useTranslation();

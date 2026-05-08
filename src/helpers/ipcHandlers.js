@@ -7,6 +7,7 @@ const {
   OPENWHISPR_ANTHROPIC_URL,
   OPENWHISPR_GROQ_BASE_URL,
   OPENWHISPR_MISTRAL_BASE_URL,
+  OPENWHISPR_OPENAI_BASE_URL,
 } = require("../config/build-config.generated.cjs");
 const os = require("os");
 const http = require("http");
@@ -3585,10 +3586,10 @@ class IPCHandlers {
               ? /\/audio\/(transcriptions|translations)$/i.test(base)
                 ? base
                 : `${base}/audio/transcriptions`
-              : "https://api.openai.com/v1/audio/transcriptions";
+              : `${OPENWHISPR_OPENAI_BASE_URL}/audio/transcriptions`;
           } else {
             apiKey = this.environmentManager.getOpenAIKey();
-            endpoint = "https://api.openai.com/v1/audio/transcriptions";
+            endpoint = `${OPENWHISPR_OPENAI_BASE_URL}/audio/transcriptions`;
           }
           if (!apiKey && provider !== "custom") {
             throw new Error(`${provider} API key not configured`);
