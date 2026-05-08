@@ -31,6 +31,14 @@ const http = require("http");
 const tls = require("tls");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
+const {
+  OPENWHISPR_AUTH_URL,
+  OPENWHISPR_BACKEND_URL_PATTERN,
+} = require("./src/config/build-config.generated.cjs");
+
+// Normalize trailing slashes so `${AUTH_URL}/*` doesn't produce `//*` patterns.
+const ensureNoTrailingSlash = (u) => u.replace(/\/+$/, "");
+
 // Extend Node's TLS trust with the OS store so ws and https.get see corporate
 // CAs that Chromium already trusts.
 try {
@@ -472,18 +480,7 @@ app.on("open-url", (event, url) => {
 });
 
 function resolveAuthUrl() {
-  const fs = require("fs");
-  const envPath = path.join(__dirname, "src", "dist", "runtime-env.json");
-  let runtimeEnv = {};
-  try {
-    if (fs.existsSync(envPath)) runtimeEnv = JSON.parse(fs.readFileSync(envPath, "utf8"));
-  } catch {}
-  return (
-    process.env.AUTH_URL ||
-    process.env.VITE_AUTH_URL ||
-    runtimeEnv.VITE_AUTH_URL ||
-    "https://auth.openwhispr.com"
-  );
+  return OPENWHISPR_AUTH_URL;
 }
 
 function getOauthCookieName() {
@@ -712,8 +709,8 @@ async function startApp() {
   session.defaultSession.webRequest.onBeforeSendHeaders(
     {
       urls: [
-        "https://auth.openwhispr.com/*",
-        "https://api.openwhispr.com/*",
+        `${ensureNoTrailingSlash(OPENWHISPR_AUTH_URL)}/*`,
+        OPENWHISPR_BACKEND_URL_PATTERN,
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*",
       ],
