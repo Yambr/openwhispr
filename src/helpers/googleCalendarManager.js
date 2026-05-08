@@ -2,8 +2,11 @@ const https = require("https");
 const { Notification, BrowserWindow } = require("electron");
 const debugLogger = require("./debugLogger");
 const GoogleCalendarOAuth = require("./googleCalendarOAuth");
+const {
+  OPENWHISPR_OAUTH_GOOGLE_CALENDAR_API_URL,
+} = require("../config/build-config.generated.cjs");
 
-const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
+const CALENDAR_API_BASE = OPENWHISPR_OAUTH_GOOGLE_CALENDAR_API_URL;
 
 class GoogleCalendarManager {
   constructor(databaseManager, windowManager) {
