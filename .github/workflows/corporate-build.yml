@@ -1,0 +1,217 @@
+name: Corporate Minimal Build
+
+# Builds the corporate-minimal binary (default build, no Stripe/Referrals/Streaming)
+# for all 3 platforms. Triggered manually or by tag push (v*-corp).
+#
+# Per the 2026-05-08 corporate-minimal pivot:
+# - OAuth providers default ON (set OPENWHISPR_OAUTH_*=false to disable per-provider)
+# - Stripe billing OFF (OPENWHISPR_BILLING=true to enable)
+# - Referrals OFF (OPENWHISPR_REFERRALS=true to enable)
+# - Streaming ASR OFF (OPENWHISPR_STREAMING=true to enable)
+#
+# To produce an upstream-parity build instead, push a v*-upstream tag or run the
+# regular Build and Notarize workflow.
+
+on:
+  push:
+    tags:
+      - "v*-corp"
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: "VITE_OPENWHISPR_API_URL (corporate backend base URL, leave empty for offline-only)"
+        required: false
+        type: string
+        default: ""
+      auth_url:
+        description: "VITE_OPENWHISPR_AUTH_URL (corporate better-auth backend)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  verify-gates:
+    # Run gating gates first as a hard precondition — no point building if gates fail
+    uses: ./.github/workflows/verify-gating.yml
+
+  build-mac:
+    needs: verify-gates
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache native binaries
+        uses: actions/cache@v4
+        with:
+          path: resources/bin
+          key: mac-arm64-bin-${{ hashFiles('scripts/download-*.js') }}
+
+      - name: Download all sidecar binaries (macOS arm64)
+        run: |
+          node scripts/download-whisper-cpp.js --current
+          node scripts/download-llama-server.js --current
+          node scripts/download-sherpa-onnx.js --current
+          node scripts/download-qdrant.js --current
+          node scripts/download-meeting-aec-helper.js --current
+          node scripts/download-diarization-models.js --output-dir resources/bin/diarization-models
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Build macOS (corporate-minimal, all flags default false except OAuth)
+        run: npm run build:mac:arm64 -- --publish never
+        env:
+          # Corporate-minimal defaults — explicitly set for clarity / audit log
+          OPENWHISPR_BILLING: "false"
+          OPENWHISPR_REFERRALS: "false"
+          OPENWHISPR_STREAMING: "false"
+          # Corporate backend URLs (workflow_dispatch inputs or empty)
+          VITE_OPENWHISPR_API_URL: ${{ inputs.backend_url }}
+          VITE_OPENWHISPR_AUTH_URL: ${{ inputs.auth_url }}
+          # Don't sign — pack-style unsigned for testing. Real release pipeline
+          # uses build-and-notarize.yml with the full signing flow.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Verify built artifact has corporate-minimal posture
+        run: |
+          npm run verify:oauth-gating
+          npm run verify:feature-gating
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwhispr-corp-mac-arm64
+          path: dist/*.dmg
+          retention-days: 30
+
+  build-linux:
+    needs: verify-gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install platform-specific native binaries
+        run: npm install @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu --no-save
+
+      - name: Cache native binaries
+        uses: actions/cache@v4
+        with:
+          path: resources/bin
+          key: linux-x64-bin-${{ hashFiles('scripts/download-*.js') }}
+
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm libx11-dev libxtst-dev libatspi2.0-dev libglib2.0-dev
+
+      - name: Download all sidecar binaries (Linux x64)
+        run: |
+          node scripts/download-whisper-cpp.js --current
+          node scripts/download-llama-server.js --current
+          node scripts/download-sherpa-onnx.js --current
+          node scripts/download-qdrant.js --current
+          node scripts/download-meeting-aec-helper.js --current
+          node scripts/download-diarization-models.js --output-dir resources/bin/diarization-models
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Build Linux (corporate-minimal)
+        run: npm run build:linux -- --publish never
+        env:
+          OPENWHISPR_BILLING: "false"
+          OPENWHISPR_REFERRALS: "false"
+          OPENWHISPR_STREAMING: "false"
+          VITE_OPENWHISPR_API_URL: ${{ inputs.backend_url }}
+          VITE_OPENWHISPR_AUTH_URL: ${{ inputs.auth_url }}
+
+      - name: Verify built artifact
+        run: |
+          npm run verify:oauth-gating
+          npm run verify:feature-gating
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwhispr-corp-linux-x64
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.tar.gz
+          retention-days: 30
+
+  build-windows:
+    needs: verify-gates
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache native binaries
+        uses: actions/cache@v4
+        with:
+          path: resources/bin
+          key: win-x64-bin-${{ hashFiles('scripts/download-*.js') }}
+
+      - name: Download all sidecar binaries (Windows x64)
+        run: |
+          node scripts/download-whisper-cpp.js --current
+          node scripts/download-llama-server.js --current
+          node scripts/download-sherpa-onnx.js --current
+          node scripts/download-qdrant.js --current
+          node scripts/download-meeting-aec-helper.js --current
+          node scripts/download-diarization-models.js --output-dir resources/bin/diarization-models
+          node scripts/download-nircmd.js
+          node scripts/download-windows-fast-paste.js
+          node scripts/download-windows-key-listener.js
+          node scripts/download-windows-mic-listener.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Build Windows (corporate-minimal)
+        run: npm run build:win -- --publish never
+        env:
+          OPENWHISPR_BILLING: "false"
+          OPENWHISPR_REFERRALS: "false"
+          OPENWHISPR_STREAMING: "false"
+          VITE_OPENWHISPR_API_URL: ${{ inputs.backend_url }}
+          VITE_OPENWHISPR_AUTH_URL: ${{ inputs.auth_url }}
+
+      - name: Verify built artifact
+        run: |
+          npm run verify:oauth-gating
+          npm run verify:feature-gating
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwhispr-corp-win-x64
+          path: dist/*.exe
+          retention-days: 30
