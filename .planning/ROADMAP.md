@@ -101,3 +101,23 @@ Plans:
 - [x] 04.1-04-PLAN.md — Add OPENWHISPR_REFERRALS flag (CFG-09 part 2)
 - [x] 04.1-05-PLAN.md — Add OPENWHISPR_STREAMING flag (CFG-09 part 3)
 - [x] 04.1-06-PLAN.md — Update docs/BUILD_CONFIG.md and docs/SELF_HOSTING.md
+
+### Phase 5: Route all realtime ASR/diarization streaming through corporate backend (no direct AssemblyAI/Deepgram from client). Adapt to Yambr's speeches/audio server. Remove hardcoded Deepgram key vulnerability. Replace upstream's three streaming providers with single Yambr-protocol WebSocket pointed at corporate backend.
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 4
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 5 to break down)
+
+### Phase 6: Merge upstream OpenWhispr v1.7.2 (and ongoing). Resolve conflicts with our build-time gating + corporate-minimal default. Verify all gates still pass after merge. Ongoing process — repeat for each upstream release.
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 5
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 6 to break down)
