@@ -234,7 +234,7 @@ OS keychain backing by platform:
 - **Windows**: DPAPI (via `@napi-rs/keyring` → Windows Credential Manager)
 - **Linux**: libsecret (via `@napi-rs/keyring`) when a keyring daemon (GNOME Keyring, KWallet) is available
 
-**Linux plaintext fallback**: On Linux without a running keyring daemon, `@napi-rs/keyring` fails to load or store the master key. In this case `src/helpers/secretCrypto.js` logs a warning and the encrypted files are effectively unreadable across sessions. Electron's `safeStorage` is used as a secondary check (`src/helpers/secretCrypto.js:2`). This is a known limitation on headless or minimal Linux setups.
+**Linux plaintext fallback**: On Linux without a running keyring daemon, `@napi-rs/keyring` fails to acquire the master key and `_initKeychain()` returns `false` (`src/helpers/secretCrypto.js:39-46`). `_ensureInit()` then falls back to Electron's `safeStorage` mode (`src/helpers/secretCrypto.js:49-56`). On Linux without any keyring backend, `safeStorage` itself degrades to plaintext storage — encrypted files remain readable across sessions but the secrets are no longer strongly encrypted at rest. Only when neither `@napi-rs/keyring` nor `safeStorage.isEncryptionAvailable()` succeeds does the mode become `"unavailable"` and writes throw. This is a known limitation on headless or minimal Linux setups; CLAUDE.md flags it explicitly under "Security Considerations".
 
 ### Startup loading
 
