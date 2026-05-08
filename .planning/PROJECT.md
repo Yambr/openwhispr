@@ -47,7 +47,7 @@ The first milestone reverse-engineers the existing OpenWhispr cloud backend, doc
 - [ ] **CFG-09**: Three new feature flags, **all default `false`** (corporate-minimal posture):
   - `OPENWHISPR_BILLING_ENABLED` — Stripe checkout/portal/switch-plan UI + `/api/stripe/*` calls
   - `OPENWHISPR_REFERRALS_ENABLED` — referral stats / invite UI + `/api/referrals/*` calls
-  - `OPENWHISPR_STREAMING_ENABLED` — AssemblyAI / Deepgram WebSocket live dictation + `/api/{streaming,deepgram-streaming}-token` calls
+  - `OPENWHISPR_STREAMING_ENABLED` — Realtime ASR via WebSocket. **Phase 05 amendment (2026-05-09):** default flipped `false` → `true` because streaming now routes through the corporate backend's `WSS /v1/realtime` (Speaches+LiteLLM, OpenAI-Realtime-compatible) rather than direct third-party WebSockets. The original corporate-minimal privacy rationale for default-off no longer applies. **B1 auto-disable**: when the user did not explicitly set `OPENWHISPR_STREAMING` AND no realtime URL is resolvable (no backend, no override), the generator forces `STREAMING_ENABLED=false` so a default offline build does not crash on first record. Maintainers can still opt out explicitly via `OPENWHISPR_STREAMING=false` (escape hatch preserved). Related new var: `OPENWHISPR_REALTIME_WSS_URL` (Phase 05).
 
   Each flag must tree-shake its UI and IPC handlers when `false` (verified via grep gate analogous to CFG-07).
 
@@ -94,6 +94,7 @@ The first milestone reverse-engineers the existing OpenWhispr cloud backend, doc
 | **Pivot 2026-05-08: Corporate-minimal default** | Project goal narrowed to "minimalist binary for corporate self-hosting." Stripe billing UI, referral program, and third-party streaming ASR (AssemblyAI, Deepgram) are removed from the default build to reduce surface area, audit burden, and accidental data flows to consumer endpoints. Upstream parity is now an explicit opt-in (set every `OPENWHISPR_*_ENABLED=true`), not the default. CFG-06 superseded by CFG-09. | Active |
 | OAuth providers gated individually (per-provider flags), not globally | Allows a deployment to keep some providers while removing others (e.g., LDAP-only later) | — Pending |
 | Coarse phase granularity (3-5 phases) | Scope is well-defined and brownfield; over-slicing adds overhead without value | — Pending |
+| **Pivot 2026-05-09 (Phase 05 amendment): STREAMING default true again, with B1 auto-disable** | Phase 04.1's default-off was conservative because streaming meant direct third-party WebSocket connections (AssemblyAI, Deepgram, OpenAI). Phase 05 routes realtime through the corporate backend (Speaches+LiteLLM) so the privacy/audit rationale for default-off no longer holds. Default flipped to `true`; `OPENWHISPR_STREAMING=false` remains as an explicit escape hatch. To preserve "default-build-works" for offline builds, an auto-disable rule forces STREAMING_ENABLED=false when the user did not explicitly opt in AND no realtime URL is resolvable. New build var `OPENWHISPR_REALTIME_WSS_URL` derives from `OPENWHISPR_BACKEND_URL`. | Active |
 
 ## Evolution
 
@@ -113,4 +114,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-08 after Phase 3 (Build-time Env Refactor) complete — runtime parity smoke walk deferred to Phase 4*
+*Last updated: 2026-05-09 after Phase 05 plan-time amendment to CFG-09 (STREAMING default flipped true + B1 auto-disable)*
