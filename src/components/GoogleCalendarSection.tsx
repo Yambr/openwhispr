@@ -57,6 +57,11 @@ export default function GoogleCalendarSection({
           { email: result.email },
         ]);
       }
+    } catch (err) {
+      // CR-02: surface OAuth failures instead of silently swallowing them.
+      // The IPC handler can throw if the OAuth flow is cancelled, the
+      // renderer-side window closes, or the network call fails.
+      console.error("[GoogleCalendarSection] OAuth failed:", err);
     } finally {
       setIsConnecting(false);
     }
