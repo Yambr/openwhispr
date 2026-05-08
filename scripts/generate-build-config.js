@@ -32,6 +32,13 @@ const DEFAULTS = Object.freeze({
   OPENWHISPR_GEMINI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta",
   OPENWHISPR_GROQ_BASE_URL: "https://api.groq.com/openai/v1",
   OPENWHISPR_MISTRAL_BASE_URL: "https://api.mistral.ai/v1",
+  // Phase 05 D-01: realtime WebSocket URL. Default empty — when
+  // OPENWHISPR_BACKEND_URL is set and this var is unset, buildResolved()
+  // derives `<wss|ws>://<host><path>/v1/realtime` (path-preserving). Empty
+  // value keeps realtime unavailable (STREAMING_ENABLED guard handles the
+  // unavailable case). Maintainers override explicitly when realtime lives on
+  // a different host (e.g., a separate WSS-only ingress).
+  OPENWHISPR_REALTIME_WSS_URL: "",
 });
 
 const KEYS = Object.keys(DEFAULTS);
@@ -90,6 +97,30 @@ function resolveBool(boolKey) {
   return BOOL_DEFAULTS[boolKey];
 }
 
+// Phase 05 D-01: derive REALTIME_WSS_URL from BACKEND_URL when caller did not
+// provide an explicit override. Empty BACKEND_URL keeps REALTIME_WSS_URL empty
+// (offline-safe — STREAMING_ENABLED guard handles the unavailable case).
+//
+// Rules:
+//   - https:// → wss://, http:// → ws:// (preserve TLS-vs-plaintext choice).
+//   - Preserve any path prefix on BACKEND_URL (maintainers running a backend
+//     at a sub-path, e.g., https://api.example.com/v1, get
+//     wss://api.example.com/v1/v1/realtime — the second /v1 is the realtime
+//     mount; the first is their existing API root).
+//   - Trailing slash on the path is stripped before appending /v1/realtime.
+//   - Malformed URL → realtime URL stays empty (STREAMING guard kicks in).
+function deriveRealtimeWssUrl(backendUrl) {
+  if (!backendUrl) return "";
+  try {
+    const u = new URL(backendUrl);
+    const protocol = u.protocol === "http:" ? "ws:" : "wss:";
+    const pathPrefix = u.pathname.replace(/\/$/, "");
+    return `${protocol}//${u.host}${pathPrefix}/v1/realtime`;
+  } catch {
+    return "";
+  }
+}
+
 function buildResolved() {
   const resolved = {};
   for (const key of KEYS) {
@@ -102,6 +133,19 @@ function buildResolved() {
     process.env,
     "OPENWHISPR_OAUTH_PROTOCOL_SCHEME"
   );
+  // Phase 05 D-01: apply derivation only when caller did not explicitly set
+  // OPENWHISPR_REALTIME_WSS_URL (resolveValue returns "" both when unset
+  // (DEFAULT) and when explicitly set to ""; either way derivation is safe to
+  // run because explicit "" + non-empty BACKEND_URL is a documented "I want
+  // realtime through my backend" intent).
+  if (
+    !resolved.OPENWHISPR_REALTIME_WSS_URL &&
+    resolved.OPENWHISPR_BACKEND_URL
+  ) {
+    resolved.OPENWHISPR_REALTIME_WSS_URL = deriveRealtimeWssUrl(
+      resolved.OPENWHISPR_BACKEND_URL
+    );
+  }
   return resolved;
 }
 
@@ -429,7 +473,7 @@ function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming}.generated.cjs (16 string keys + 6 booleans)"
+    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming}.generated.cjs (17 string keys + 6 booleans)"
   );
 }
 
