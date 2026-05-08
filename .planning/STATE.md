@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-08T08:11:05.620Z"
-last_activity: 2026-05-08 -- Phase 1 planning complete
+stopped_at: Completed 01-01-backend-spec-PLAN.md
+last_updated: "2026-05-08T08:20:50.008Z"
+last_activity: 2026-05-08
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 33
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-08)
 
 **Core value:** A maintainer can run `npm run build` with a set of env vars and get a fully-working OpenWhispr binary that talks to their own backend and shows only the OAuth providers they want — without touching source code. Default build (no env vars) must be behaviorally identical to the current Yambr fork.
-**Current focus:** Phase 1 — Wire Contract Documentation
+**Current focus:** Phase 01 — wire-contract-documentation
 
 ## Current Position
 
-Phase: 1 of 4 (Wire Contract Documentation)
-Plan: 0 of TBD in current phase
+Phase: 01 (wire-contract-documentation) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-05-08 -- Phase 1 planning complete
+Last activity: 2026-05-08
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01 P01 | 6min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,8 @@ Recent decisions affecting current work:
 - Init: v1 = docs + build-time config only; v2 = own backend separately (avoids coupling client refactor to backend invention)
 - Init: Build-time configuration via Vite `define` + electron-builder env (not runtime config files) — smaller attack surface
 - Init: Default build behavior unchanged when no env vars set — zero risk to existing Yambr fork users
+- [Phase 01]: BACKEND_SPEC.md uses endpoint-card template (method/URL/auth/fetch-site/IPC-site + JSON request + JSON response + error deviations) — pattern for OAUTH_SPEC.md to mirror
+- [Phase 01]: Source-only reverse engineering with file:line drift detection — no live HTTP traces, source is the contract
 
 ### Pending Todos
 
@@ -74,6 +77,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-08T07:56:33.413Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-wire-contract-documentation/01-CONTEXT.md
+Last session: 2026-05-08T08:20:50.006Z
+Stopped at: Completed 01-01-backend-spec-PLAN.md
+Resume file: None
