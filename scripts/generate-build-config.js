@@ -122,9 +122,12 @@ function deriveRealtimeWssUrl(backendUrl) {
   if (!backendUrl) return "";
   try {
     const u = new URL(backendUrl);
-    const protocol = u.protocol === "http:" ? "ws:" : "wss:";
+    let protocol;
+    if (u.protocol === "https:") protocol = "wss:";
+    else if (u.protocol === "http:") protocol = "ws:";
+    else return ""; // non-http(s) — let STREAMING auto-disable handle it
     const pathPrefix = u.pathname.replace(/\/$/, "");
-    return `${protocol}//${u.host}${pathPrefix}/v1/realtime`;
+    return `${protocol}//${u.host}${pathPrefix}/v1/realtime${u.search}${u.hash}`;
   } catch {
     return "";
   }
