@@ -27,7 +27,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. `docs/BACKEND_SPEC.md` exists and covers every external HTTP call (method, URL, request schema, response schema, auth header, source file+function) including OpenWhispr cloud and enterprise endpoints in enough detail to implement a drop-in replacement
   2. `docs/OAUTH_SPEC.md` exists and covers every OAuth provider currently in the codebase — authorization endpoint, token endpoint, scopes, redirect URI scheme, where the client ID lives in source, how the token is stored
   3. `docs/SELF_HOSTING.md` exists and walks a third party through standing up a minimal compatible backend: required endpoints, expected payloads, auth model, and links to BACKEND_SPEC and OAUTH_SPEC
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Reverse-engineer and write docs/BACKEND_SPEC.md
+- [ ] 01-02-PLAN.md — Reverse-engineer and write docs/OAUTH_SPEC.md
+- [ ] 01-03-PLAN.md — Write docs/SELF_HOSTING.md walkthrough
 
 ### Phase 2: Architecture Doc + Hardcode Inventory
 **Goal**: The application's internal process model and IPC surface are documented, and every hardcoded value targeted for replacement is catalogued with its proposed env-var name
