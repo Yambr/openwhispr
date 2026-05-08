@@ -136,7 +136,6 @@
     {
       "id": "openai",
       "name": "OpenAI",
-      "baseUrl": "https://api.openai.com/v1",
       "models": [
         {
           "id": "gpt-4o-mini-transcribe",
@@ -163,7 +162,6 @@
     {
       "id": "groq",
       "name": "Groq",
-      "baseUrl": "https://api.groq.com/openai/v1",
       "models": [
         {
           "id": "whisper-large-v3",
@@ -182,7 +180,6 @@
     {
       "id": "mistral",
       "name": "Mistral",
-      "baseUrl": "https://api.mistral.ai/v1",
       "models": [
         {
           "id": "voxtral-mini-latest",

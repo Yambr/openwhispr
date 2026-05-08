@@ -1,5 +1,10 @@
 import modelDataRaw from "./modelRegistryData.json";
 import { isCloudCleanupMode, getSettings } from "../stores/settingsStore";
+import {
+  OPENWHISPR_OPENAI_BASE_URL,
+  OPENWHISPR_GROQ_BASE_URL,
+  OPENWHISPR_MISTRAL_BASE_URL,
+} from "../config/defaults";
 
 export interface ModelDefinition {
   id: string;
@@ -65,9 +70,14 @@ export interface TranscriptionModelDefinition {
 export interface TranscriptionProviderData {
   id: string;
   name: string;
+  // baseUrl is injected at runtime from src/config/defaults.ts (build-time env-driven).
+  // ModelRegistry.ts is the SOLE injection site; modelRegistryData.json holds pure data.
   baseUrl: string;
   models: TranscriptionModelDefinition[];
 }
+
+// Shape of the raw JSON before runtime baseUrl injection.
+type RawTranscriptionProviderData = Omit<TranscriptionProviderData, "baseUrl">;
 
 export interface WhisperModelInfo {
   name: string;
@@ -103,6 +113,15 @@ export interface ParakeetModelInfo {
 
 export type ParakeetModelsMap = Record<string, ParakeetModelInfo>;
 
+interface ModelRegistryRawData {
+  parakeetModels: ParakeetModelsMap;
+  whisperModels: WhisperModelsMap;
+  transcriptionProviders: RawTranscriptionProviderData[];
+  cloudProviders: CloudProviderData[];
+  enterpriseProviders: EnterpriseProviderData[];
+  localProviders: LocalProviderData[];
+}
+
 interface ModelRegistryData {
   parakeetModels: ParakeetModelsMap;
   whisperModels: WhisperModelsMap;
@@ -112,7 +131,29 @@ interface ModelRegistryData {
   localProviders: LocalProviderData[];
 }
 
-const modelData: ModelRegistryData = modelDataRaw as ModelRegistryData;
+// Inject transcription-provider baseUrls from build-time defaults.
+// modelRegistryData.json is pure data — baseUrl is sourced from defaults.ts so
+// maintainers can override via OPENWHISPR_*_BASE_URL env vars at build time.
+// This is the SOLE injection site; other consumers route through ModelRegistry.
+const TRANSCRIPTION_PROVIDER_BASE_URLS: Record<string, string> = {
+  openai: OPENWHISPR_OPENAI_BASE_URL,
+  groq: OPENWHISPR_GROQ_BASE_URL,
+  mistral: OPENWHISPR_MISTRAL_BASE_URL,
+};
+
+function injectTranscriptionBaseUrls(raw: ModelRegistryRawData): ModelRegistryData {
+  const transcriptionProviders: TranscriptionProviderData[] = raw.transcriptionProviders.map(
+    (p) => ({
+      ...p,
+      baseUrl: TRANSCRIPTION_PROVIDER_BASE_URLS[p.id] ?? "",
+    })
+  );
+  return { ...raw, transcriptionProviders };
+}
+
+const modelData: ModelRegistryData = injectTranscriptionBaseUrls(
+  modelDataRaw as unknown as ModelRegistryRawData
+);
 
 function createPromptFormatter(template: string): (text: string, systemPrompt: string) => string {
   return (text: string, systemPrompt: string) => {
