@@ -64,7 +64,8 @@ class OpenAIRealtimeStreaming {
           "or disable streaming with OPENWHISPR_STREAMING=false."
       );
     }
-    const url = `${OPENWHISPR_REALTIME_WSS_URL}?intent=transcription`;
+    const sep = OPENWHISPR_REALTIME_WSS_URL.includes("?") ? "&" : "?";
+    const url = `${OPENWHISPR_REALTIME_WSS_URL}${sep}intent=transcription`;
     debugLogger.debug("OpenAI Realtime connecting", { model: this.model });
 
     return new Promise((resolve, reject) => {
