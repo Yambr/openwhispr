@@ -101,28 +101,49 @@ function presentTargets(feature) {
 
 const SCENARIOS = [
   {
-    name: "default",
+    // Phase 05 B1 fix: a default `npm run build` with NO env vars (no
+    // backend, no realtime URL) must auto-disable STREAMING so the binary
+    // doesn't crash on first record. The auto-disable rule in
+    // generate-build-config.js's buildResolved() handles this.
+    name: "default-no-backend",
     env: {},
     expectPresent: [],
     expectAbsent: ["BILLING", "REFERRALS", "STREAMING"],
   },
   {
+    // Phase 05 D-02: default flipped to true once a backend URL is present
+    // (streaming routes through the corporate backend's WSS /v1/realtime).
+    name: "default-with-backend",
+    env: { OPENWHISPR_BACKEND_URL: "https://api.example.com" },
+    expectPresent: ["STREAMING"],
+    expectAbsent: ["BILLING", "REFERRALS"],
+  },
+  {
     name: "billing-enabled",
-    env: { OPENWHISPR_BILLING: "true" },
-    expectPresent: ["BILLING"],
-    expectAbsent: ["REFERRALS", "STREAMING"],
+    env: {
+      OPENWHISPR_BILLING: "true",
+      OPENWHISPR_BACKEND_URL: "https://api.example.com",
+    },
+    expectPresent: ["BILLING", "STREAMING"],
+    expectAbsent: ["REFERRALS"],
   },
   {
     name: "referrals-enabled",
-    env: { OPENWHISPR_REFERRALS: "true" },
-    expectPresent: ["REFERRALS"],
-    expectAbsent: ["BILLING", "STREAMING"],
+    env: {
+      OPENWHISPR_REFERRALS: "true",
+      OPENWHISPR_BACKEND_URL: "https://api.example.com",
+    },
+    expectPresent: ["REFERRALS", "STREAMING"],
+    expectAbsent: ["BILLING"],
   },
   {
-    name: "streaming-enabled",
-    env: { OPENWHISPR_STREAMING: "true" },
-    expectPresent: ["STREAMING"],
-    expectAbsent: ["BILLING", "REFERRALS"],
+    // Phase 05 D-02 escape hatch: maintainers whose backend hasn't yet
+    // deployed the realtime relay can opt out explicitly. This scenario
+    // replaces the pre-Phase-05 `streaming-enabled` scenario.
+    name: "streaming-disabled",
+    env: { OPENWHISPR_STREAMING: "false" },
+    expectPresent: [],
+    expectAbsent: ["BILLING", "REFERRALS", "STREAMING"],
   },
 ];
 
