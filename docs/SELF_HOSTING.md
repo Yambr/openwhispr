@@ -2,6 +2,8 @@
 
 This document is a top-to-bottom walkthrough for an external implementer (third party / OSS contributor) who wants to stand up a drop-in compatible **OpenWhispr cloud backend**. It explains the client architecture, the authentication contract, the OAuth round-trip, and the wire format of every cloud endpoint the desktop client calls — sufficient to build a minimum viable backend without reading source code.
 
+> **Default build is corporate-minimal (2026-05-08 pivot).** As of the 2026-05-08 pivot, `npm run build` (no env vars) produces a *minimal corporate-self-hosted* binary, NOT an upstream-parity binary. Three feature flags default OFF — Stripe billing UI, the referral program, and live (WebSocket) third-party ASR (AssemblyAI / Deepgram) — and only dictation, transcription (whisper.cpp + OpenAI Whisper file mode), reasoning (multi-provider via runtime BYOK API keys), and Google / Microsoft / Apple OAuth ship by default. **Self-hosters whose backend does NOT implement `/api/stripe/*`, `/api/referrals/*`, `/api/streaming-token`, or `/api/deepgram-streaming-token` should ship the default build — the client will not call those endpoints.** To recreate upstream-parity behavior, see the *Upstream Parity Build* section below and `docs/BUILD_CONFIG.md` for the full variable reference.
+
 This file is the **human walkthrough**. Two sibling documents are the **machine-readable wire references** and are linked extensively from here:
 
 - [`./BACKEND_SPEC.md`](./BACKEND_SPEC.md) — per-endpoint contract with method, URL, auth header, request JSON, response JSON, error semantics, and source-pointer (file:line) annotations for every cloud endpoint the client calls.
@@ -135,6 +137,8 @@ The client only checks `res.ok`. The body is ignored.
 ### Operational / quota endpoints (recommended)
 
 These are called by the active client at runtime. A minimum-viable backend can stub them as no-ops (returning empty 200 bodies or 503) for first-launch testing, but full functionality requires them. Wire detail and response shapes live in [`BACKEND_SPEC.md`](./BACKEND_SPEC.md).
+
+> **Default-build endpoint scope (post-2026-05-08 pivot).** The corporate-minimal default build does NOT call `/api/stripe/*`, `/api/referrals/*`, `/api/streaming-token`, or `/api/deepgram-streaming-token` — those preload methods, IPC handlers, and URL fragments are physically absent from the bundle. A backend serving only the default build can omit those endpoints entirely (no stub, no 503, no implementation needed). They re-enter the call surface only when a build is produced with `OPENWHISPR_BILLING=true`, `OPENWHISPR_REFERRALS=true`, or `OPENWHISPR_STREAMING=true`. The table below is the *full upstream-parity* surface; the *Selective opt-in* section near the end of this document maps each opt-in flag back to the endpoints it re-introduces.
 
 | Endpoint | Purpose | Auth | Cross-link |
 |---|---|---|---|
@@ -355,3 +359,120 @@ These are the client-observable behaviors a backend implementer needs to be awar
 - **Live runtime trace validation.** This spec is reverse-engineered from source, not from runtime traces. If drift between client expectations and a deployed cloud is suspected later, capture-and-diff tooling could be added as a v1.x patch or v2 prereq. Not a Phase 1 deliverable.
 - **OpenAPI / JSON Schema machine-readable spec.** Not adopted for v1. The deliverables are markdown tables + JSON examples. A future enhancement could generate machine-readable artifacts from the existing endpoint cards if v2 wants typed client / server stubs.
 - **Hidden / undocumented OpenWhispr cloud endpoints** (admin, webhooks, internal APIs the current desktop client does not call). Out of scope. The wire surface this spec describes is **client-driven**: a v2 backend only needs to satisfy what the current desktop binary sends.
+
+---
+
+## Phase 4 OAuth Gating Smoke Checklist
+
+This checklist verifies that setting `OPENWHISPR_OAUTH_<P>=false` at build time fully removes the named provider from the produced binary. It complements (does not duplicate) any earlier parity smoke checklist above.
+
+### Prerequisite
+
+Run the automated gate first:
+
+```bash
+npm run verify:oauth-gating
+```
+
+If it exits 0, you can skip the manual checks below — they're covered automatically. Runtime is ~2-4 minutes (4 sequential renderer builds). The manual checklist exists for cases where you want to inspect the produced binary visually (e.g., before a release).
+
+### Per-provider manual flows
+
+| Flow | Build command | Expected UI | Expected bundle |
+|------|---------------|-------------|-----------------|
+| Google disabled | `OPENWHISPR_OAUTH_GOOGLE=false npm run pack` | "Continue with Google" button absent in onboarding | `grep -RF 'oauth2.googleapis.com' src/dist/` returns 0 lines |
+| Apple disabled | `OPENWHISPR_OAUTH_APPLE=false npm run pack` | "Continue with Apple" button absent on macOS | `grep -RF 'signInWithSocial("apple")' src/dist/` returns 0 lines |
+| Microsoft disabled | `OPENWHISPR_OAUTH_MICROSOFT=false npm run pack` | "Continue with Microsoft" button absent | `grep -RF 'signInWithSocial("microsoft")' src/dist/` returns 0 lines |
+
+For each flow:
+
+1. Run the build command.
+2. Run the binary (`open dist/mac-arm64/OpenWhispr.app` on macOS, equivalent on Win/Linux).
+3. Open the onboarding flow → Authentication step.
+4. Confirm the named provider's button is absent.
+5. Confirm the OTHER two providers' buttons remain visible.
+6. Run the corresponding `grep` against `src/dist/` (or the packed app's `dist/`) and confirm 0 matches.
+7. Restore default build: `unset OPENWHISPR_OAUTH_GOOGLE OPENWHISPR_OAUTH_APPLE OPENWHISPR_OAUTH_MICROSOFT && npm run pack`.
+
+> **Note on grep targets:** i18n translation keys (e.g. `auth.social.continueWithApple`) live in `src/locales/{lang}/translation.json` and are bundled wholesale regardless of build flag. They are NOT a valid absence signal. Use the OAuth literals (`signInWithSocial("...")`, provider URL constants) and minified-survivable domain literals only — these are what `verify-oauth-gating.js` checks.
+
+### Subset-build flow (combines backend override + Phase 4 OAuth gating)
+
+Mirrors Example 3 in `docs/BUILD_CONFIG.md`. Build command:
+
+```bash
+OPENWHISPR_BACKEND_URL=https://api.example.com \
+OPENWHISPR_AUTH_URL=https://auth.example.com \
+OPENWHISPR_BACKEND_URL_PATTERN="https://api.example.com/*" \
+OPENWHISPR_OAUTH_GOOGLE=true \
+OPENWHISPR_OAUTH_APPLE=false \
+OPENWHISPR_OAUTH_MICROSOFT=false \
+npm run pack
+```
+
+Expected: only Google button visible; backend traffic targets `api.example.com`; webRequest filter logs the new pattern.
+
+---
+
+## Phase 04.1 Feature Gating Smoke Checklist
+
+This checklist verifies that the three Phase 04.1 corporate-minimal feature flags (`OPENWHISPR_BILLING`, `OPENWHISPR_REFERRALS`, `OPENWHISPR_STREAMING`) physically remove their respective IPC literals, preload bridge methods, and main-process handler registrations from the produced binary. It complements the Phase 4 OAuth Gating Smoke Checklist above and the (still-applicable) Phase 3 Smoke Checklist (the per-flow parity walkthrough cross-linked from `docs/BUILD_CONFIG.md` § *Verifying parity*).
+
+### Prerequisite
+
+Run all three automated gates before any release:
+
+```bash
+npm run verify:oauth-gating
+npm run verify:feature-gating
+npm run verify:pack-regen
+```
+
+All three should exit 0. Combined runtime is roughly 5–8 minutes (sequential renderer builds across all scenarios). The manual checklist below exists for cases where a release engineer wants to inspect the produced binary visually.
+
+### Per-flag manual flows
+
+| Flag | Build command | Expected absence (default) | Expected presence (opt-in) |
+|------|---------------|----------------------------|----------------------------|
+| `OPENWHISPR_BILLING` | `npm run pack` (default, flag unset/false) | No Stripe checkout button reachable in Settings as a working CTA; `grep -RF '/api/stripe/' src/dist/` returns 0; `grep -F cloudCheckout preload.js preload-billing.generated.cjs` returns 0 | `OPENWHISPR_BILLING=true npm run pack` — Stripe checkout reachable; `/api/stripe/*` URL fragment present in bundle; `cloudCheckout` IPC literal present in `preload-billing.generated.cjs` |
+| `OPENWHISPR_REFERRALS` | `npm run pack` (default, flag unset/false) | No referral nav entry in sidebar; no `ReferralModal-*.js` chunk emitted in `src/dist/assets/`; `grep -RF '/api/referrals/' src/dist/` returns 0; `grep -F getReferralStats preload.js preload-referrals.generated.cjs` returns 0 | `OPENWHISPR_REFERRALS=true npm run pack` — referral nav entry visible; `ReferralModal-*.js` chunk emitted; `getReferralStats` IPC literal present in `preload-referrals.generated.cjs` |
+| `OPENWHISPR_STREAMING` | `npm run pack` (default, flag unset/false) | Live (WebSocket) streaming dictation unavailable; `grep -RF '/api/streaming-token' src/dist/` returns 0; `grep -F assemblyAiStreamingStart preload.js preload-streaming.generated.cjs` returns 0; `useChatStreaming-*.js` chunk replaced by `useChatStreaming.stub-*.js` (~5 kB vs ~141 kB) | `OPENWHISPR_STREAMING=true npm run pack` — AssemblyAI / Deepgram live ASR reachable; full 141 kB `useChatStreaming-*.js` chunk emitted; preload streaming methods present |
+
+For each flow:
+
+1. Run the build command.
+2. Run the binary (`open dist/mac-arm64/OpenWhispr.app` on macOS, equivalent on Win/Linux).
+3. Confirm the corresponding UI surface is absent (default) or visible (opt-in).
+4. Confirm the corresponding `grep` against `src/dist/` and the relevant `preload-*.generated.cjs` matches the table above.
+5. Restore default build: `unset OPENWHISPR_BILLING OPENWHISPR_REFERRALS OPENWHISPR_STREAMING && npm run pack`.
+
+> **Note on UI vs bundle absence (Phase 04.1 deviation):** for `OPENWHISPR_BILLING`, the bundle-grep contract is the v1 deliverable — the four Stripe IPC literals (`cloudCheckout` etc.) and the `/api/stripe/` URL fragment are physically absent from the renderer + preload bundles, and the main-process Stripe handlers are not registered. UI buttons in Settings / UpgradePrompt / UsageDisplay / UploadAudioView still *render* but invoke no-op stubs that return `{ success: false, error: "Billing is disabled in this build" }`. Hiding the JSX shells entirely is a deferred refinement; it does not affect the security/posture contract verified by `npm run verify:feature-gating`.
+
+---
+
+## Upstream Parity Build
+
+To recreate the pre-2026-05-08-pivot upstream Yambr fork behavior, set all three Phase 04.1 feature flags to `true`:
+
+```bash
+OPENWHISPR_BILLING=true \
+  OPENWHISPR_REFERRALS=true \
+  OPENWHISPR_STREAMING=true \
+  npm run build
+```
+
+This produces a binary identical to the pre-pivot surface — Stripe checkout reachable, referral nav entry visible, AssemblyAI / Deepgram live ASR available. A self-hosting backend that wants to support upstream-parity builds must implement the full `/api/stripe/*`, `/api/referrals/*`, `/api/streaming-token`, and `/api/deepgram-streaming-token` endpoints (see [`BACKEND_SPEC.md`](./BACKEND_SPEC.md) for wire detail).
+
+See [`docs/BUILD_CONFIG.md`](./BUILD_CONFIG.md) for the full variable reference and additional worked examples (custom backend, subset of OAuth providers, etc.).
+
+### Selective opt-in
+
+A self-hosting backend may want to enable some upstream features but not others — for example, billing for a paid tier without referrals or live ASR. Opt in to each flag independently:
+
+| Opt-in flag | Backend endpoints re-introduced | Notes |
+|-------------|----------------------------------|-------|
+| `OPENWHISPR_BILLING=true` | `POST /api/stripe/checkout`, `POST /api/stripe/portal`, `POST /api/stripe/switch-plan`, `POST /api/stripe/preview-switch` | Server must support Stripe (or a Stripe-compatible billing provider). All four endpoints become reachable; `cloudCheckout` / `cloudBillingPortal` / `cloudSwitchPlan` / `cloudPreviewSwitch` IPC methods are exposed in the renderer + preload. |
+| `OPENWHISPR_REFERRALS=true` | `GET /api/referrals/stats`, `POST /api/referrals/invite`, `GET /api/referrals/invites` | Sidebar nav entry "Referrals" appears; the `ReferralModal-*.js` chunk is emitted. Cloud must implement referral-tracking persistence. |
+| `OPENWHISPR_STREAMING=true` | `POST /api/streaming-token`, `POST /api/deepgram-streaming-token` (also `POST /api/openai-realtime-token` if that surface is wired) | Server-side proxy must mint short-lived AssemblyAI / Deepgram tokens (the desktop never holds those vendor keys directly). The full 141 kB `useChatStreaming` chunk re-enters the renderer bundle; main-process AssemblyAI + Deepgram WebSocket handlers (~480 lines) re-register. |
+
+The flags are independent: enabling one does not require enabling the others. A backend implementing Stripe billing without referrals or streaming should ship a binary built with `OPENWHISPR_BILLING=true` (only) and leave the other two unset.

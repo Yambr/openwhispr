@@ -9,6 +9,11 @@ import {
   type SocialProvider,
 } from "../lib/auth";
 import { OPENWHISPR_API_URL } from "../config/constants";
+import {
+  OAUTH_GOOGLE_ENABLED,
+  OAUTH_APPLE_ENABLED,
+  OAUTH_MICROSOFT_ENABLED,
+} from "../config/defaults";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { AlertCircle, ArrowRight, Check, Loader2, ChevronLeft } from "lucide-react";
@@ -478,7 +483,7 @@ export default function AuthenticationStep({
         </p>
       </div>
 
-      {isMacOS && (
+      {OAUTH_APPLE_ENABLED && isMacOS && (
         <Button
           type="button"
           variant="social"
@@ -503,51 +508,55 @@ export default function AuthenticationStep({
         </Button>
       )}
 
-      <Button
-        type="button"
-        variant="social"
-        onClick={() => handleSocialSignIn("google")}
-        disabled={isSocialLoading !== null || isCheckingEmail || !oauthProtocolRegistered}
-        title={!oauthProtocolRegistered ? t("auth.social.protocolUnavailable") : undefined}
-        className="w-full h-9"
-      >
-        {isSocialLoading === "google" ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-            <span className="text-sm font-medium text-muted-foreground">
-              {t("auth.social.completeInBrowser")}
-            </span>
-          </>
-        ) : (
-          <>
-            <GoogleIcon className="w-4 h-4" />
-            <span className="text-sm font-medium">{t("auth.social.continueWithGoogle")}</span>
-          </>
-        )}
-      </Button>
+      {OAUTH_GOOGLE_ENABLED && (
+        <Button
+          type="button"
+          variant="social"
+          onClick={() => handleSocialSignIn("google")}
+          disabled={isSocialLoading !== null || isCheckingEmail || !oauthProtocolRegistered}
+          title={!oauthProtocolRegistered ? t("auth.social.protocolUnavailable") : undefined}
+          className="w-full h-9"
+        >
+          {isSocialLoading === "google" ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              <span className="text-sm font-medium text-muted-foreground">
+                {t("auth.social.completeInBrowser")}
+              </span>
+            </>
+          ) : (
+            <>
+              <GoogleIcon className="w-4 h-4" />
+              <span className="text-sm font-medium">{t("auth.social.continueWithGoogle")}</span>
+            </>
+          )}
+        </Button>
+      )}
 
-      <Button
-        type="button"
-        variant="social"
-        onClick={() => handleSocialSignIn("microsoft")}
-        disabled={isSocialLoading !== null || isCheckingEmail || !oauthProtocolRegistered}
-        title={!oauthProtocolRegistered ? t("auth.social.protocolUnavailable") : undefined}
-        className="w-full h-9"
-      >
-        {isSocialLoading === "microsoft" ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-            <span className="text-sm font-medium text-muted-foreground">
-              {t("auth.social.completeInBrowser")}
-            </span>
-          </>
-        ) : (
-          <>
-            <MicrosoftIcon className="w-4 h-4" />
-            <span className="text-sm font-medium">{t("auth.social.continueWithMicrosoft")}</span>
-          </>
-        )}
-      </Button>
+      {OAUTH_MICROSOFT_ENABLED && (
+        <Button
+          type="button"
+          variant="social"
+          onClick={() => handleSocialSignIn("microsoft")}
+          disabled={isSocialLoading !== null || isCheckingEmail || !oauthProtocolRegistered}
+          title={!oauthProtocolRegistered ? t("auth.social.protocolUnavailable") : undefined}
+          className="w-full h-9"
+        >
+          {isSocialLoading === "microsoft" ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              <span className="text-sm font-medium text-muted-foreground">
+                {t("auth.social.completeInBrowser")}
+              </span>
+            </>
+          ) : (
+            <>
+              <MicrosoftIcon className="w-4 h-4" />
+              <span className="text-sm font-medium">{t("auth.social.continueWithMicrosoft")}</span>
+            </>
+          )}
+        </Button>
+      )}
 
       {!oauthProtocolRegistered && (
         <p className="text-xs text-muted-foreground/80 leading-tight text-center">

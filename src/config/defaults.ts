@@ -64,3 +64,34 @@ export const OPENWHISPR_MISTRAL_BASE_URL = pickAllowEmpty(
   "VITE_OPENWHISPR_MISTRAL_BASE_URL",
   Generated.OPENWHISPR_MISTRAL_BASE_URL
 );
+
+// Phase 4 OAuth gating: direct named re-export from the generated module so
+// Rolldown can trace the literal boolean across the module boundary and
+// constant-fold gates like `{OAUTH_*_ENABLED && (...)}` and
+// `if (!OAUTH_*_ENABLED)` to drop disabled-provider code paths from the
+// renderer bundle entirely.
+//
+// IMPORTANT: do NOT route through the `Generated.*` namespace import alias
+// (`export const X = Generated.X`) — Rolldown does not propagate literal
+// constants through namespace member reads, so the consumer-side gate
+// degrades to a runtime check and DCE no longer applies. The named
+// `export { ... } from "..."` form preserves the literal.
+//
+// See scripts/verify-defaults-parity.js (Phase 3) +
+//     scripts/verify-oauth-gating.js (Phase 4 + 4.1) for the bundle-grep gates.
+export {
+  OAUTH_GOOGLE_ENABLED,
+  OAUTH_APPLE_ENABLED,
+  OAUTH_MICROSOFT_ENABLED,
+  // Phase 04.1 CFG-09 PLAN-03: BILLING_ENABLED gates Stripe checkout/portal/
+  // switch-plan UI + IPC. Re-exported via the same direct named-re-export
+  // mechanism so Rolldown propagates the literal across the module boundary.
+  BILLING_ENABLED,
+  // Phase 04.1 CFG-09 PLAN-04: REFERRALS_ENABLED gates referral stats/invite
+  // UI + IPC. Same mechanism — direct named re-export for Rolldown DCE.
+  REFERRALS_ENABLED,
+  // Phase 04.1 CFG-09 PLAN-05: STREAMING_ENABLED gates AssemblyAI/Deepgram
+  // WebSocket realtime ASR + the 141kB useChatStreaming chat hook. Same
+  // mechanism — direct named re-export for Rolldown DCE.
+  STREAMING_ENABLED,
+} from "./build-config.generated";

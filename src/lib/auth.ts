@@ -1,5 +1,10 @@
 import { createAuthClient } from "better-auth/react";
 import { OPENWHISPR_API_URL } from "../config/constants";
+import {
+  OAUTH_GOOGLE_ENABLED,
+  OAUTH_APPLE_ENABLED,
+  OAUTH_MICROSOFT_ENABLED,
+} from "../config/defaults";
 import { openExternalLink } from "../utils/externalLinks";
 
 export const AUTH_URL = import.meta.env.VITE_AUTH_URL || "https://auth.openwhispr.com";
@@ -171,6 +176,18 @@ export async function withSessionRefresh<T>(operation: () => Promise<T>): Promis
 const DESKTOP_OAUTH_CALLBACK_URL = "https://openwhispr.com/auth/desktop-callback";
 
 export async function signInWithSocial(provider: SocialProvider): Promise<{ error?: Error }> {
+  // D-08 defensive guard: build flags short-circuit any disabled-provider invocation.
+  // UI never reaches this branch because the corresponding button is absent (AuthenticationStep.tsx),
+  // but stale localStorage / remote commands could still attempt the call.
+  if (provider === "google" && !OAUTH_GOOGLE_ENABLED) {
+    return { error: new Error("Provider not enabled in this build") };
+  }
+  if (provider === "apple" && !OAUTH_APPLE_ENABLED) {
+    return { error: new Error("Provider not enabled in this build") };
+  }
+  if (provider === "microsoft" && !OAUTH_MICROSOFT_ENABLED) {
+    return { error: new Error("Provider not enabled in this build") };
+  }
   try {
     const isElectron = Boolean((window as any).electronAPI);
 

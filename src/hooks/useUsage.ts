@@ -2,6 +2,15 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "./useAuth";
 import { CACHE_CONFIG } from "../config/constants";
 import { withSessionRefresh } from "../lib/auth";
+import { useBillingActions } from "./billingActions";
+
+// Phase 04.1 PLAN-03 (CFG-09 BILLING_ENABLED): the Stripe-touching IPC methods
+// (openCheckout, openBillingPortal, switchPlan, previewSwitchPlan) live in
+// ./billingActions.ts. When `OPENWHISPR_BILLING=false` (the default), Vite's
+// resolve.alias swaps that import to ./billingActions.stub which contains zero
+// `cloud*` literals — Rolldown then DCE's the entire billing subgraph from the
+// renderer bundle. See scripts/verify-feature-gating.js for the bundle-grep
+// gate and src/vite.config.mjs for the alias.
 
 interface UsageData {
   wordsUsed: number;
@@ -68,9 +77,8 @@ export function useUsage(): UseUsageResult | null {
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const checkoutInFlightRef = useRef(false);
   const lastFetchRef = useRef<number>(0);
+  const pendingRefetchRef = useRef(false);
 
   const fetchUsage = useCallback(async () => {
     if (!window.electronAPI?.cloudUsage) return;
@@ -111,7 +119,12 @@ export function useUsage(): UseUsageResult | null {
     }
   }, []);
 
-  const pendingRefetchRef = useRef(false);
+  const billing = useBillingActions({
+    onCheckoutPending: () => {
+      pendingRefetchRef.current = true;
+    },
+    onAfterSwitch: fetchUsage,
+  });
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) {
@@ -161,90 +174,6 @@ export function useUsage(): UseUsageResult | null {
     };
   }, [isLoaded, isSignedIn, fetchUsage]);
 
-  const openCheckout = useCallback(
-    async (opts?: {
-      plan?: "monthly" | "annual";
-      tier?: "pro" | "business";
-    }): Promise<{ success: boolean; error?: string }> => {
-      if (checkoutInFlightRef.current)
-        return { success: false, error: "Checkout already in progress" };
-      if (!window.electronAPI?.cloudCheckout || !window.electronAPI?.openExternal) {
-        return { success: false, error: "App not ready" };
-      }
-      checkoutInFlightRef.current = true;
-      setCheckoutLoading(true);
-      try {
-        const result = await window.electronAPI.cloudCheckout(opts);
-        if (result.success && result.url) {
-          pendingRefetchRef.current = true;
-          await window.electronAPI.openExternal(result.url);
-          return { success: true };
-        }
-        return { success: false, error: result.error || "Failed to start checkout" };
-      } finally {
-        checkoutInFlightRef.current = false;
-        setCheckoutLoading(false);
-      }
-    },
-    []
-  );
-
-  const openBillingPortal = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
-    if (checkoutInFlightRef.current) return { success: false, error: "Already loading" };
-    if (!window.electronAPI?.cloudBillingPortal || !window.electronAPI?.openExternal) {
-      return { success: false, error: "App not ready" };
-    }
-    checkoutInFlightRef.current = true;
-    setCheckoutLoading(true);
-    try {
-      const result = await window.electronAPI.cloudBillingPortal();
-      if (result.success && result.url) {
-        pendingRefetchRef.current = true;
-        await window.electronAPI.openExternal(result.url);
-        return { success: true };
-      }
-      return { success: false, error: result.error || "Failed to open billing portal" };
-    } finally {
-      checkoutInFlightRef.current = false;
-      setCheckoutLoading(false);
-    }
-  }, []);
-
-  const switchPlan = useCallback(
-    async (opts: {
-      plan: "monthly" | "annual";
-      tier: "pro" | "business";
-    }): Promise<{ success: boolean; alreadyOnPlan?: boolean; error?: string }> => {
-      if (checkoutInFlightRef.current) return { success: false, error: "Already loading" };
-      if (!window.electronAPI?.cloudSwitchPlan) {
-        return { success: false, error: "App not ready" };
-      }
-      checkoutInFlightRef.current = true;
-      setCheckoutLoading(true);
-      try {
-        const result = await window.electronAPI.cloudSwitchPlan(opts);
-        if (result.success) {
-          await fetchUsage();
-        }
-        return result;
-      } finally {
-        checkoutInFlightRef.current = false;
-        setCheckoutLoading(false);
-      }
-    },
-    [fetchUsage]
-  );
-
-  const previewSwitchPlan = useCallback(
-    async (opts: { plan: "monthly" | "annual"; tier: "pro" | "business" }) => {
-      if (!window.electronAPI?.cloudPreviewSwitch) {
-        return { success: false as const, error: "App not ready" };
-      }
-      return window.electronAPI.cloudPreviewSwitch(opts);
-    },
-    []
-  );
-
   if (!isSignedIn) return null;
 
   const wordsUsed = data?.wordsUsed ?? 0;
@@ -273,11 +202,11 @@ export function useUsage(): UseUsageResult | null {
     isLoading,
     hasLoaded,
     error,
-    checkoutLoading,
+    checkoutLoading: billing.checkoutLoading,
     refetch: fetchUsage,
-    openCheckout,
-    openBillingPortal,
-    switchPlan,
-    previewSwitchPlan,
+    openCheckout: billing.openCheckout,
+    openBillingPortal: billing.openBillingPortal,
+    switchPlan: billing.switchPlan,
+    previewSwitchPlan: billing.previewSwitchPlan,
   };
 }

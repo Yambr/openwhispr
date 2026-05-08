@@ -63,42 +63,12 @@ const isValidApiKey = (key, provider = "openai") => {
   return key !== placeholder;
 };
 
-const STREAMING_PROVIDERS = {
-  deepgram: {
-    warmup: (opts) => window.electronAPI.deepgramStreamingWarmup(opts),
-    start: (opts) => window.electronAPI.deepgramStreamingStart(opts),
-    send: (buf) => window.electronAPI.deepgramStreamingSend(buf),
-    finalize: () => window.electronAPI.deepgramStreamingFinalize(),
-    stop: () => window.electronAPI.deepgramStreamingStop(),
-    status: () => window.electronAPI.deepgramStreamingStatus(),
-    onPartial: (cb) => window.electronAPI.onDeepgramPartialTranscript(cb),
-    onFinal: (cb) => window.electronAPI.onDeepgramFinalTranscript(cb),
-    onError: (cb) => window.electronAPI.onDeepgramError(cb),
-    onSessionEnd: (cb) => window.electronAPI.onDeepgramSessionEnd(cb),
-  },
-  assemblyai: {
-    warmup: (opts) => window.electronAPI.assemblyAiStreamingWarmup(opts),
-    start: (opts) => window.electronAPI.assemblyAiStreamingStart(opts),
-    send: (buf) => window.electronAPI.assemblyAiStreamingSend(buf),
-    finalize: () => window.electronAPI.assemblyAiStreamingForceEndpoint(),
-    stop: () => window.electronAPI.assemblyAiStreamingStop(),
-    status: () => window.electronAPI.assemblyAiStreamingStatus(),
-    onPartial: (cb) => window.electronAPI.onAssemblyAiPartialTranscript(cb),
-    onFinal: (cb) => window.electronAPI.onAssemblyAiFinalTranscript(cb),
-    onError: (cb) => window.electronAPI.onAssemblyAiError(cb),
-    onSessionEnd: (cb) => window.electronAPI.onAssemblyAiSessionEnd(cb),
-  },
-  "openai-realtime": {
-    warmup: (opts) => window.electronAPI.dictationRealtimeWarmup(opts),
-    start: (opts) => window.electronAPI.dictationRealtimeStart(opts),
-    send: (buf) => window.electronAPI.dictationRealtimeSend(buf),
-    stop: () => window.electronAPI.dictationRealtimeStop(),
-    onPartial: (cb) => window.electronAPI.onDictationRealtimePartial(cb),
-    onFinal: (cb) => window.electronAPI.onDictationRealtimeFinal(cb),
-    onError: (cb) => window.electronAPI.onDictationRealtimeError(cb),
-    onSessionEnd: (cb) => window.electronAPI.onDictationRealtimeSessionEnd(cb),
-  },
-};
+// Phase 04.1 PLAN-05 (CFG-09 STREAMING_ENABLED): the streaming provider
+// bindings live in a separate leaf module so Vite can alias them to a stub
+// when STREAMING_ENABLED=false at build time, removing the AssemblyAI /
+// Deepgram / OpenAI-realtime preload method literals from the renderer bundle.
+import STREAMING_PROVIDERS from "./streamingProviders";
+import { STREAMING_ENABLED } from "../config/defaults";
 
 class AudioManager {
   constructor() {
@@ -2005,6 +1975,13 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
   }
 
   shouldUseStreaming(isSignedInOverride) {
+    // Phase 04.1 WR-01: explicit build-time gate. When STREAMING_ENABLED is the
+    // literal `false`, Rolldown constant-folds this branch and downstream
+    // streaming code (incl. STREAMING_PROVIDERS, startStreamingSession) becomes
+    // unreachable from this entry point — so a user with a realtime model
+    // configured in a corporate-minimal build silently falls back to
+    // file-upload transcription instead of hitting the stub's hard error.
+    if (!STREAMING_ENABLED) return false;
     const s = getSettings();
     if (s.useLocalWhisper) return false;
 
