@@ -4,6 +4,9 @@ const fs = require("fs");
 const {
   OPENWHISPR_AUTH_URL,
   OPENWHISPR_BACKEND_URL,
+  OPENWHISPR_ANTHROPIC_URL,
+  OPENWHISPR_GROQ_BASE_URL,
+  OPENWHISPR_MISTRAL_BASE_URL,
 } = require("../config/build-config.generated.cjs");
 const os = require("os");
 const http = require("http");
@@ -62,7 +65,7 @@ function parseAttendees(raw) {
   }
 }
 
-const MISTRAL_TRANSCRIPTION_URL = "https://api.mistral.ai/v1/audio/transcriptions";
+const MISTRAL_TRANSCRIPTION_URL = `${OPENWHISPR_MISTRAL_BASE_URL}/audio/transcriptions`;
 
 // Debounce delay: wait for user to stop typing before processing corrections
 const AUTO_LEARN_DEBOUNCE_MS = 1500;
@@ -2827,7 +2830,7 @@ class IPCHandlers {
             temperature: config?.temperature || 0.3,
           };
 
-          const response = await proxyFetch("https://api.anthropic.com/v1/messages", {
+          const response = await proxyFetch(OPENWHISPR_ANTHROPIC_URL, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -3571,7 +3574,7 @@ class IPCHandlers {
           let apiKey, endpoint;
           if (provider === "groq") {
             apiKey = this.environmentManager.getGroqKey();
-            endpoint = "https://api.groq.com/openai/v1/audio/transcriptions";
+            endpoint = `${OPENWHISPR_GROQ_BASE_URL}/audio/transcriptions`;
           } else if (provider === "mistral") {
             apiKey = this.environmentManager.getMistralKey();
             endpoint = MISTRAL_TRANSCRIPTION_URL;
