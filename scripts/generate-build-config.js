@@ -67,13 +67,22 @@ const BOOL_DEFAULTS = Object.freeze({
   // unset = false here because BOOL_DEFAULTS[boolKey] is consulted only when
   // env is unset).
   REFERRALS_ENABLED: false,
-  // Phase 04.1 CFG-09 (PLAN-05): corporate-minimal default — AssemblyAI /
-  // Deepgram WebSocket realtime ASR IPC + token-fetch endpoints + the 141kB
-  // useChatStreaming chat hook are all physically removed from the bundle
-  // when this is false. Env var: OPENWHISPR_STREAMING (any value other than
-  // "false" enables it; unset = false here because BOOL_DEFAULTS[boolKey] is
-  // consulted only when env is unset).
-  STREAMING_ENABLED: false,
+  // Phase 04.1 CFG-09 (PLAN-05): introduced STREAMING_ENABLED gate over the
+  // AssemblyAI / Deepgram WebSocket realtime ASR IPC + token-fetch endpoints
+  // and the 141 kB useChatStreaming chat hook.
+  //
+  // Phase 05 D-02 amendment: default flipped false → true. Realtime ASR is
+  // now routed through the corporate backend (Speaches+LiteLLM, see
+  // openaiRealtimeStreaming.js + OPENWHISPR_REALTIME_WSS_URL) rather than
+  // direct third-party WebSockets, so the original corporate-minimal
+  // privacy rationale for default-off no longer applies. Maintainers whose
+  // backend has NOT yet deployed the realtime relay can still opt out via
+  // OPENWHISPR_STREAMING=false.
+  //
+  // B1 auto-disable: see buildResolved() — when no backend AND user did not
+  // explicitly opt in, STREAMING_ENABLED is forced back to false so the
+  // default offline build does not crash on first record.
+  STREAMING_ENABLED: true,
 });
 
 const BOOL_KEYS = Object.keys(BOOL_DEFAULTS);
@@ -145,6 +154,26 @@ function buildResolved() {
     resolved.OPENWHISPR_REALTIME_WSS_URL = deriveRealtimeWssUrl(
       resolved.OPENWHISPR_BACKEND_URL
     );
+  }
+  // Phase 05 B1 auto-disable: a default `npm run build` with no env vars
+  // would otherwise produce a binary where STREAMING_ENABLED=true AND
+  // OPENWHISPR_REALTIME_WSS_URL="" — which crashes on first record (per
+  // openaiRealtimeStreaming.js's empty-URL guard). Default-build-works is
+  // a release-blocking principle (see 05-CONTEXT.md SC-5), so when the
+  // user did NOT explicitly opt in to streaming AND no realtime URL is
+  // resolvable, force STREAMING_ENABLED back to false. Explicit
+  // OPENWHISPR_STREAMING=true with no URL is the user's choice — we do
+  // not override it; the runtime guard will surface the error.
+  const userExplicitlyEnabledStreaming = Object.prototype.hasOwnProperty.call(
+    process.env,
+    "OPENWHISPR_STREAMING"
+  );
+  if (
+    !userExplicitlyEnabledStreaming &&
+    resolved.STREAMING_ENABLED &&
+    !resolved.OPENWHISPR_REALTIME_WSS_URL
+  ) {
+    resolved.STREAMING_ENABLED = false;
   }
   return resolved;
 }
