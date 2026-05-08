@@ -34,6 +34,8 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 const {
   OPENWHISPR_AUTH_URL,
   OPENWHISPR_BACKEND_URL_PATTERN,
+  OPENWHISPR_OAUTH_PROTOCOL_SCHEME,
+  OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN,
 } = require("./src/config/build-config.generated.cjs");
 
 // Normalize trailing slashes so `${AUTH_URL}/*` doesn't produce `//*` patterns.
@@ -54,6 +56,7 @@ try {
 }
 
 const VALID_CHANNELS = new Set(["development", "staging", "production"]);
+// Channel-specific defaults; OPENWHISPR_OAUTH_PROTOCOL_SCHEME (CONFIG_INVENTORY row 16) overrides all of these when OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN is true.
 const DEFAULT_OAUTH_PROTOCOL_BY_CHANNEL = {
   development: "openwhispr-dev",
   staging: "openwhispr-staging",
@@ -141,12 +144,13 @@ if (process.platform === "win32") {
 }
 
 function getOAuthProtocol() {
-  const fromEnv = (process.env.VITE_OPENWHISPR_PROTOCOL || process.env.OPENWHISPR_PROTOCOL || "")
-    .trim()
-    .toLowerCase();
-
-  if (/^[a-z][a-z0-9+.-]*$/.test(fromEnv)) {
-    return fromEnv;
+  // Build-time env override wins regardless of channel — detected via the
+  // OVERRIDDEN boolean from build-config.generated.cjs (hasOwnProperty-based
+  // in the generator). DO NOT replace this with a string compare against
+  // "openwhispr": that would false-negative when a maintainer explicitly sets
+  // OPENWHISPR_OAUTH_PROTOCOL_SCHEME=openwhispr (the default).
+  if (OPENWHISPR_OAUTH_PROTOCOL_SCHEME_OVERRIDDEN) {
+    return OPENWHISPR_OAUTH_PROTOCOL_SCHEME;
   }
 
   return (
