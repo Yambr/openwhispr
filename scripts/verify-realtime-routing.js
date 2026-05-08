@@ -26,12 +26,88 @@
 // SKIP_RESTORE=1.
 "use strict";
 
-const { spawnSync } = require("child_process");
+const { spawnSync, execSync } = require("child_process");
 const path = require("path");
+const fs = require("fs");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const GEN = path.join(REPO_ROOT, "scripts", "generate-build-config.js");
 const CJS = path.join(REPO_ROOT, "src", "config", "build-config.generated.cjs");
+
+// Phase 05 PLAN-02: source + bundle no-leak gate.
+// openaiRealtimeStreaming.js (main process) is the canonical streaming code path
+// for the corporate backend (Speaches+LiteLLM is OpenAI-Realtime-compatible per
+// 05-CONTEXT D-04). It must read its WSS URL from build-config.generated.cjs at
+// module load time, NOT hardcode `wss://api.openai.com/v1/realtime`.
+const SOURCE_NO_LEAK_FILES = [
+  path.join(REPO_ROOT, "src", "helpers", "openaiRealtimeStreaming.js"),
+];
+const LEGACY_LITERAL = "api.openai.com/v1/realtime";
+
+function checkSourceNoLeak() {
+  const violations = [];
+  for (const f of SOURCE_NO_LEAK_FILES) {
+    if (!fs.existsSync(f)) continue;
+    const txt = fs.readFileSync(f, "utf8");
+    if (txt.includes(LEGACY_LITERAL)) {
+      violations.push(
+        `source-no-leak: ${path
+          .relative(REPO_ROOT, f)
+          .split(path.sep)
+          .join("/")} contains literal "${LEGACY_LITERAL}"`
+      );
+    }
+  }
+  return violations;
+}
+
+function checkBundleNoLeakWithBackend() {
+  const violations = [];
+  const baseEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => !k.startsWith("OPENWHISPR_"))
+  );
+  const env = {
+    ...baseEnv,
+    OPENWHISPR_BACKEND_URL: "https://api.example.com",
+    NODE_ENV: "production",
+  };
+  const dist = path.join(REPO_ROOT, "src", "dist");
+  if (fs.existsSync(dist)) fs.rmSync(dist, { recursive: true, force: true });
+  const g = spawnSync(process.execPath, [GEN], {
+    cwd: REPO_ROOT,
+    env,
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  if (g.status !== 0) return [`bundle-no-leak-with-backend: generator exited ${g.status}`];
+  const b = spawnSync("npm", ["run", "build:renderer"], {
+    cwd: REPO_ROOT,
+    env,
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  if (b.status !== 0) return [`bundle-no-leak-with-backend: build:renderer exited ${b.status}`];
+  if (!fs.existsSync(dist)) {
+    return [`bundle-no-leak-with-backend: dist/ not produced after build:renderer`];
+  }
+  try {
+    const out = execSync(
+      `grep -RF -- ${JSON.stringify(LEGACY_LITERAL)} ${JSON.stringify(dist)}`,
+      { encoding: "utf8" }
+    );
+    if (out.trim()) {
+      violations.push(
+        `bundle-no-leak-with-backend: literal "${LEGACY_LITERAL}" found in dist:\n    ${out
+          .trim()
+          .split("\n")[0]}`
+      );
+    }
+  } catch (e) {
+    // grep exit 1 = no matches = good
+    if (e.status !== 1) {
+      return [`bundle-no-leak-with-backend: grep failed (status ${e.status}): ${e.message}`];
+    }
+  }
+  return violations;
+}
 
 const SCENARIOS = [
   { name: "no-backend", env: {}, expect: "" },
@@ -95,6 +171,8 @@ function main() {
         violations.push(`${s.name}: ${r.reason}`);
       }
     }
+    violations.push(...checkSourceNoLeak());
+    violations.push(...checkBundleNoLeakWithBackend());
   } finally {
     if (process.env.SKIP_RESTORE !== "1") {
       const baseEnv = Object.fromEntries(
@@ -109,12 +187,12 @@ function main() {
   }
   if (violations.length === 0) {
     console.log(
-      `[verify-realtime-routing] OK — ${SCENARIOS.length} scenarios, 0 violations.`
+      `[verify-realtime-routing] OK — ${SCENARIOS.length} derivation scenarios + source-no-leak + bundle-no-leak, 0 violations.`
     );
     process.exit(0);
   } else {
     console.error(
-      `[verify-realtime-routing] FAIL — ${violations.length}/${SCENARIOS.length} scenarios regressed:`
+      `[verify-realtime-routing] FAIL — ${violations.length} violation(s):`
     );
     for (const v of violations) console.error(`  - ${v}`);
     process.exit(1);
