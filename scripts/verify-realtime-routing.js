@@ -61,6 +61,78 @@ function checkSourceNoLeak() {
   return violations;
 }
 
+// Phase 05 SC-8: regression scan over src/ for hardcoded API keys + unauthorized
+// third-party realtime WSS URLs. Catches accidental key pastes and ensures the
+// api.openai.com/v1/realtime literal cannot creep back into ANY src/ file (not
+// just openaiRealtimeStreaming.js).
+//
+// Allow-list (D-03): BYOK-direct helpers may keep their direct WSS URLs because
+// the user provides the key at runtime; these are NOT corp-routed and the URL
+// is part of the third-party API contract.
+const SECRET_PATTERNS = [
+  { name: "openai-key-shape", regex: /\bsk-[A-Za-z0-9]{20,}\b/, allow: [] },
+  { name: "stripe-live-or-test-key", regex: /\bsk_(?:live|test)_[A-Za-z0-9]{20,}\b/, allow: [] },
+  {
+    name: "openai-realtime-wss",
+    regex: /wss:\/\/api\.openai\.com\/v1\/realtime/,
+    allow: [], // No allow-list — Phase 05 D-04 makes this a hard ban.
+  },
+  {
+    name: "deepgram-wss",
+    regex: /wss:\/\/api\.deepgram\.com/,
+    allow: ["src/helpers/deepgramStreaming.js"],
+  },
+  {
+    name: "assemblyai-wss",
+    regex: /wss:\/\/streaming\.assemblyai\.com/,
+    allow: ["src/helpers/assemblyAiStreaming.js"],
+  },
+];
+
+function walkSrc(root) {
+  const out = [];
+  const SKIP_DIR = new Set(["dist", "node_modules"]);
+  const SKIP_FILE = new Set(["build-config.generated.ts", "build-config.generated.cjs"]);
+  function recur(dir) {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (ent.isDirectory()) {
+        if (SKIP_DIR.has(ent.name)) continue;
+        recur(path.join(dir, ent.name));
+      } else if (ent.isFile()) {
+        if (SKIP_FILE.has(ent.name)) continue;
+        if (!/\.(ts|tsx|js|jsx|cjs|mjs)$/.test(ent.name)) continue;
+        out.push(path.join(dir, ent.name));
+      }
+    }
+  }
+  recur(root);
+  return out;
+}
+
+function checkNoHardcodedSecrets() {
+  const violations = [];
+  const srcRoot = path.join(REPO_ROOT, "src");
+  const files = walkSrc(srcRoot);
+  for (const abs of files) {
+    const rel = path.relative(REPO_ROOT, abs).split(path.sep).join("/");
+    const txt = fs.readFileSync(abs, "utf8");
+    const lines = txt.split("\n");
+    for (const pat of SECRET_PATTERNS) {
+      if (pat.allow.includes(rel)) continue;
+      for (let i = 0; i < lines.length; i++) {
+        if (pat.regex.test(lines[i])) {
+          violations.push(
+            `hardcoded-secrets: ${rel}:${i + 1} matches pattern "${pat.name}" — ${lines[i]
+              .trim()
+              .slice(0, 120)}`
+          );
+        }
+      }
+    }
+  }
+  return violations;
+}
+
 function checkBundleNoLeakWithBackend() {
   const violations = [];
   const baseEnv = Object.fromEntries(
@@ -173,6 +245,7 @@ function main() {
     }
     violations.push(...checkSourceNoLeak());
     violations.push(...checkBundleNoLeakWithBackend());
+    violations.push(...checkNoHardcodedSecrets());
   } finally {
     if (process.env.SKIP_RESTORE !== "1") {
       const baseEnv = Object.fromEntries(
@@ -187,7 +260,7 @@ function main() {
   }
   if (violations.length === 0) {
     console.log(
-      `[verify-realtime-routing] OK — ${SCENARIOS.length} derivation scenarios + source-no-leak + bundle-no-leak, 0 violations.`
+      `[verify-realtime-routing] OK — ${SCENARIOS.length} derivation scenarios + source-no-leak + bundle-no-leak + SC-8 hardcoded-secrets, 0 violations.`
     );
     process.exit(0);
   } else {
