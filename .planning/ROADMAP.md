@@ -55,7 +55,14 @@ Plans:
   2. `OPENWHISPR_BACKEND_URL` (and any per-service URL overrides from CFG-01) controls the backend base URL at build time — setting it to a custom value produces a binary that contacts that URL instead of the default
   3. All new env variables are consumed via Vite `define` (renderer) or `process.env` at build time (main process) — none are read at runtime in production code paths
   4. Default build (no env vars set) produces a binary whose network behavior is identical to pre-refactor — same URLs, same endpoints
-**Plans**: TBD
+**Plans:** 6 plans
+Plans:
+- [ ] 03-01-PLAN.md — Create src/config/defaults.ts SoT, generated build-config module, Vite define extension
+- [ ] 03-02-PLAN.md — Refactor auth cluster (src/lib/auth.ts, main.js, ipcHandlers.js) — CFG-04 anchor lands here
+- [ ] 03-03-PLAN.md — Convert electron-builder.json → electron-builder.config.js + protocol scheme env override
+- [ ] 03-04-PLAN.md — Refactor Google OAuth cluster (googleCalendarOAuth.js, googleCalendarManager.js)
+- [ ] 03-05-PLAN.md — Refactor model-registry + LiteLLM bucket (constants.ts, modelRegistryData.json, ModelRegistry.ts, McpIntegrationCard.tsx, ipcHandlers.js mirrors)
+- [ ] 03-06-PLAN.md — Ship scripts/verify-defaults-parity.js gate + Phase 3 smoke checklist in SELF_HOSTING.md
 
 ### Phase 4: OAuth Gating, Build Docs, and Parity Gate
 **Goal**: Each OAuth provider can be individually disabled at build time, every build-time variable is documented with examples, and the default build is verified to be behaviorally identical to the current Yambr fork
