@@ -82,9 +82,19 @@ export default function GoogleCalendarSection({
     async (email: string) => {
       setDisconnectingEmail(email);
       try {
-        await window.electronAPI?.gcalDisconnect?.(email);
-        const current = useSettingsStore.getState().gcalAccounts;
-        setGcalAccounts(current.filter((a) => a.email !== email));
+        // CR-03: gate UI removal on a non-failure response. If the IPC handler
+        // resolves with `{ success: false }` (soft failure), keep the account
+        // in the UI so it doesn't visually disappear while still connected
+        // server-side. The `onGcalConnectionChanged` listener will resync if
+        // the server later removes it.
+        const result = await window.electronAPI?.gcalDisconnect?.(email);
+        if (result?.success !== false) {
+          const current = useSettingsStore.getState().gcalAccounts;
+          setGcalAccounts(current.filter((a) => a.email !== email));
+        }
+      } catch (err) {
+        // CR-02 mirror: surface disconnect failures instead of swallowing.
+        console.error("[GoogleCalendarSection] Disconnect failed:", err);
       } finally {
         setDisconnectingEmail(null);
       }
