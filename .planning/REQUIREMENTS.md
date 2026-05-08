@@ -11,7 +11,7 @@ Acceptance for v1 (whole milestone): A maintainer can run `npm run build` with a
 ### Documentation (DOC)
 
 - [x] **DOC-01**: Backend wire spec — `docs/BACKEND_SPEC.md` enumerates every external HTTP call the app makes (OpenAI, Anthropic, Gemini, Google Calendar, OpenWhispr cloud, enterprise endpoints, LiteLLM-shaped URLs). For each call: method, URL pattern, request schema, response schema, auth header format, source file and function. Cloud-specific endpoints (OpenWhispr cloud, enterprise) are documented in enough detail for a third party to implement a drop-in replacement.
-- [ ] **DOC-02**: OAuth provider spec — `docs/OAUTH_SPEC.md` lists every OAuth provider currently integrated. For each: authorization endpoint, token endpoint, scopes requested, redirect URI scheme, where the client ID lives in the source, how the resulting token is stored.
+- [x] **DOC-02**: OAuth provider spec — `docs/OAUTH_SPEC.md` lists every OAuth provider currently integrated. For each: authorization endpoint, token endpoint, scopes requested, redirect URI scheme, where the client ID lives in the source, how the resulting token is stored.
 - [ ] **DOC-03**: Self-hosting guide — `docs/SELF_HOSTING.md` walks through standing up a minimal compatible backend: required endpoints, expected payloads, auth model, links to BACKEND_SPEC and OAUTH_SPEC.
 - [ ] **DOC-04**: Application architecture — `docs/ARCHITECTURE.md` covers process model (main / renderer / preload / ONNX worker), IPC surface (channels and contracts), secret storage (`safeStorage` + per-key files), model registry, transcription pipeline, embeddings pipeline, sidecar binaries (whisper.cpp, sherpa-onnx, Qdrant, key/mic listeners). May supplement existing `CLAUDE.md` rather than duplicate it.
 

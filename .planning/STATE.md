@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-backend-spec-PLAN.md
-last_updated: "2026-05-08T08:20:50.008Z"
+stopped_at: Completed 01-02-oauth-spec-PLAN.md
+last_updated: "2026-05-08T08:27:39.961Z"
 last_activity: 2026-05-08
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-08)
 ## Current Position
 
 Phase: 01 (wire-contract-documentation) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-08
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 6min | 1 tasks | 1 files |
+| Phase 01 P02 | 5min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,8 @@ Recent decisions affecting current work:
 - Init: Default build behavior unchanged when no env vars set — zero risk to existing Yambr fork users
 - [Phase 01]: BACKEND_SPEC.md uses endpoint-card template (method/URL/auth/fetch-site/IPC-site + JSON request + JSON response + error deviations) — pattern for OAUTH_SPEC.md to mirror
 - [Phase 01]: Source-only reverse engineering with file:line drift detection — no live HTTP traces, source is the contract
+- [Phase 01]: OAUTH_SPEC.md uses provider-card template (Authorization/Token/Refresh/Revoke/Scopes/Redirect/ClientID/Secret/Storage/RefreshTrigger/IPC/SourceFiles) — same shape per provider, mechanical Phase 4 CFG-03 gating
+- [Phase 01]: Apple/Microsoft sign-in buttons are NOT independent OAuth flows in the desktop client — they tunnel through the OpenWhispr cloud-sign-in shim; CFG-03 only needs flags for cloud-sign-in + Google Calendar
 
 ### Pending Todos
 
@@ -77,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-08T08:20:50.006Z
-Stopped at: Completed 01-01-backend-spec-PLAN.md
+Last session: 2026-05-08T08:27:30.693Z
+Stopped at: Completed 01-02-oauth-spec-PLAN.md
 Resume file: None
