@@ -260,7 +260,7 @@ src/models/modelRegistryData.json
         +---> src/utils/languages.ts                (derives REASONING_PROVIDERS)
 ```
 
-`src/models/modelRegistryData.json:1` contains top-level keys: `parakeetModels`, `diarizationModels`, `whisperModels`, and cloud provider model lists. For local GGUF models (llama.cpp), each entry includes `hfRepo` (HuggingFace repository) and `promptTemplate` (chat format: ChatML / Llama / Mistral). Download URLs are constructed as `{baseUrl}/{hfRepo}/resolve/main/{fileName}`.
+`src/models/modelRegistryData.json:1` contains 8 top-level keys: `parakeetModels`, `diarizationModels`, `whisperModels`, `transcriptionProviders`, `cloudProviders`, `enterpriseProviders`, `localProviders`, and `openwhisprCloudModels`. CONFIG_INVENTORY.md rows that cite `transcriptionProviders[*]` reference this same registry. For local GGUF models (llama.cpp), each entry includes `hfRepo` (HuggingFace repository) and `promptTemplate` (chat format: ChatML / Llama / Mistral). Download URLs are constructed as `{baseUrl}/{hfRepo}/resolve/main/{fileName}`.
 
 `src/models/ModelRegistry.ts:1` provides TypeScript helper methods for filtering models by provider, capability, and platform. Registry validation in this file checks that provider/model pairs exist before routing inference requests.
 
