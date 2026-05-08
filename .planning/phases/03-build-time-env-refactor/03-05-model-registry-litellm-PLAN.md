@@ -10,17 +10,21 @@ files_modified:
   - src/models/ModelRegistry.ts
   - src/components/McpIntegrationCard.tsx
   - src/helpers/ipcHandlers.js
+  - src/config/aiProvidersConfig.ts
+  - src/utils/languages.ts
+  - src/helpers/modelManagerBridge.js
 autonomous: true
 requirements: [CFG-02, CFG-04]
 
 must_haves:
   truths:
     - "src/config/constants.ts has zero literal API URLs (OPENAI_BASE/ANTHROPIC/GEMINI/GROQ/MISTRAL all read from defaults.ts)"
-    - "src/models/modelRegistryData.json no longer contains literal baseUrl strings for the three transcription providers (OpenAI, Groq, Mistral)"
+    - "src/models/modelRegistryData.json no longer contains literal baseUrl strings for the three transcription providers"
     - "ModelRegistry.ts injects baseUrls from defaults.ts when constructing the in-memory registry"
+    - "Only ModelRegistry.ts reads .baseUrl on transcriptionProviders entries — other consumers (aiProvidersConfig.ts, languages.ts, modelManagerBridge.js) route through ModelRegistry"
     - "src/components/McpIntegrationCard.tsx reads OPENWHISPR_MCP_URL from defaults.ts"
-    - "src/helpers/ipcHandlers.js Mistral/Groq/Anthropic URL constants read from defaults.ts (no inline literals)"
-    - "Setting OPENWHISPR_OPENAI_BASE_URL=https://my-proxy.example.com/v1 changes both renderer (constants.ts) and main (modelRegistry, ipcHandlers) consumers"
+    - "src/helpers/ipcHandlers.js Mistral/Groq/Anthropic URL constants read from build-config.generated.cjs (no inline literals)"
+    - "Setting OPENWHISPR_OPENAI_BASE_URL=https://my-proxy.example.com/v1 changes both renderer and main consumers"
   artifacts:
     - path: "src/config/constants.ts"
       provides: "Re-exports/derives API endpoint constants from defaults.ts; no inline URL literals"
@@ -28,13 +32,13 @@ must_haves:
     - path: "src/models/modelRegistryData.json"
       provides: "Pure data — baseUrl fields removed from the three transcription providers"
     - path: "src/models/ModelRegistry.ts"
-      provides: "Injects baseUrls from defaults.ts into the in-memory registry at construction time"
+      provides: "Sole consumer of injected baseUrls; injects from defaults.ts at construction time"
       contains: "OPENWHISPR_OPENAI_BASE_URL"
     - path: "src/components/McpIntegrationCard.tsx"
       provides: "MCP URL displayed in UI from defaults.ts"
       contains: "OPENWHISPR_MCP_URL"
     - path: "src/helpers/ipcHandlers.js"
-      provides: "Anthropic/Groq/Mistral URL constants from defaults.ts"
+      provides: "Anthropic/Groq/Mistral URL constants from build-config.generated.cjs"
   key_links:
     - from: "src/models/ModelRegistry.ts"
       to: "src/config/defaults.ts"
@@ -48,16 +52,22 @@ must_haves:
       to: "src/config/defaults.ts"
       via: "re-export / direct import"
       pattern: "from .*defaults"
+    - from: "src/helpers/ipcHandlers.js"
+      to: "src/config/build-config.generated.cjs"
+      via: "require() — destructure ANTHROPIC/GROQ/MISTRAL keys"
+      pattern: "build-config.generated"
 ---
 
 <objective>
-Wave 4 (depends on Plan 1 foundation + Plan 2 to avoid the constants.ts/auth.ts edit collision) — finish the refactor by handling the model-registry + LiteLLM bucket. This is the largest remaining slice (rows 6, 9, 17–23 in CONFIG_INVENTORY) but mechanically the simplest now that the pattern is proven.
+Wave 4 — finish the refactor by handling the model-registry + LiteLLM bucket. Largest remaining slice (rows 6, 9, 17–23) but mechanically simplest now that the pattern is proven.
 
-Per RESEARCH.md §Single source of truth, Option b: move the three baseUrl values out of `modelRegistryData.json` entirely and inject them in `ModelRegistry.ts` at construction time. The JSON becomes pure data.
+Per RESEARCH.md §Single source of truth, Option b: move the three baseUrl values out of `modelRegistryData.json` and inject them in `ModelRegistry.ts` at construction time. The JSON becomes pure data.
 
-Per D-05: consolidate the three Groq sites and three Mistral sites and the constants.ts:116 BACKEND_URL site into single defaults.ts imports.
+**Revision note (iteration 1):**
+- Per Warning 5, this plan now includes an explicit consumer-audit sub-step ensuring ONLY `ModelRegistry.ts` reads `.baseUrl` on `transcriptionProviders` entries. The CommonJS helper `modelManagerBridge.js` and any other consumers route through `ModelRegistry` (or receive injection identical to step 2 of Task 2).
+- Per Blocker 2, CommonJS files (`ipcHandlers.js`, `modelManagerBridge.js`) `require("../config/build-config.generated.cjs")`.
 
-CONFIG_INVENTORY rows handled: 6 (constants.ts:116 BACKEND_URL — CFG-04 anchor renderer side), 9 (McpIntegrationCard MCP URL), 17/18/19 (registry baseUrls), 21 (constants.ts OPENAI_BASE), 22 (constants.ts ANTHROPIC), 23 (constants.ts GEMINI), and the constants.ts:77/78 GROQ_BASE/MISTRAL_BASE entries plus the ipcHandlers.js:61/2826/3589 mirror sites.
+CONFIG_INVENTORY rows handled: 6 (constants.ts:116 BACKEND_URL — CFG-04 anchor renderer side), 9 (McpIntegrationCard MCP URL), 17/18/19 (registry baseUrls), 21 (constants.ts OPENAI_BASE), 22 (constants.ts ANTHROPIC), 23 (constants.ts GEMINI), constants.ts:77/78 GROQ_BASE/MISTRAL_BASE, ipcHandlers.js:61/2826/3589 mirror sites.
 </objective>
 
 <execution_context>
@@ -72,14 +82,9 @@ CONFIG_INVENTORY rows handled: 6 (constants.ts:116 BACKEND_URL — CFG-04 anchor
 @.planning/phases/03-build-time-env-refactor/03-01-defaults-source-of-truth-PLAN.md
 
 <interfaces>
-After Plan 1, src/config/defaults.ts exports:
-  OPENWHISPR_BACKEND_URL: string  (default "")
-  OPENWHISPR_MCP_URL: string
-  OPENWHISPR_OPENAI_BASE_URL: string
-  OPENWHISPR_ANTHROPIC_URL: string
-  OPENWHISPR_GEMINI_BASE_URL: string
-  OPENWHISPR_GROQ_BASE_URL: string
-  OPENWHISPR_MISTRAL_BASE_URL: string
+After Plan 1:
+  Renderer (TS): import { OPENWHISPR_OPENAI_BASE_URL, ... } from "@/config/defaults";
+  Main / CJS:    const { OPENWHISPR_ANTHROPIC_URL, OPENWHISPR_GROQ_BASE_URL, OPENWHISPR_MISTRAL_BASE_URL } = require("../config/build-config.generated.cjs");
 
 CONFIG_INVENTORY rows handled:
   Row 6:  src/config/constants.ts:116           "" (empty default)               → OPENWHISPR_BACKEND_URL  (CFG-04 anchor renderer)
@@ -91,19 +96,24 @@ CONFIG_INVENTORY rows handled:
   Row 22: src/config/constants.ts:75            "https://api.anthropic.com/v1/messages" → OPENWHISPR_ANTHROPIC_URL
   Row 23: src/config/constants.ts:76            "https://generativelanguage.googleapis.com/v1beta" → OPENWHISPR_GEMINI_BASE_URL
 
-Mirror sites (Phase 3 must touch but NOT separate inventory rows — mentioned in inventory notes):
+Mirror sites:
   src/config/constants.ts:77   GROQ_BASE       → OPENWHISPR_GROQ_BASE_URL
   src/config/constants.ts:78   MISTRAL_BASE    → OPENWHISPR_MISTRAL_BASE_URL
   src/helpers/ipcHandlers.js:61    MISTRAL_TRANSCRIPTION_URL  → OPENWHISPR_MISTRAL_BASE_URL
   src/helpers/ipcHandlers.js:2826  Anthropic proxy URL        → OPENWHISPR_ANTHROPIC_URL
   src/helpers/ipcHandlers.js:3589  Groq URL                   → OPENWHISPR_GROQ_BASE_URL
+
+Additional consumers (Warning 5 — must be audited and routed through ModelRegistry):
+  src/config/aiProvidersConfig.ts   (derives AI_MODES from registry)
+  src/utils/languages.ts            (derives REASONING_PROVIDERS from registry)
+  src/helpers/modelManagerBridge.js (handles local model downloads)
 </interfaces>
 </context>
 
 <tasks>
 
 <task type="auto" tdd="false">
-  <name>Task 1: Refactor src/config/constants.ts + src/components/McpIntegrationCard.tsx (rows 6, 9, 21, 22, 23 + GROQ/MISTRAL mirrors)</name>
+  <name>Task 1: Refactor src/config/constants.ts + src/components/McpIntegrationCard.tsx (rows 6, 9, 21, 22, 23 + mirrors)</name>
   <files>src/config/constants.ts, src/components/McpIntegrationCard.tsx</files>
   <read_first>
     - src/config/constants.ts (full file — confirm lines 46-125, especially 60, 75, 76, 77, 78, 116)
@@ -123,12 +133,12 @@ Mirror sites (Phase 3 must touch but NOT separate inventory rows — mentioned i
          OPENWHISPR_MISTRAL_BASE_URL,
        } from "./defaults";
        ```
-    2. Replace `DEFAULT_OPENAI_BASE` (line 60) and the surrounding `computeBaseUrl` env-fallback chain (lines 59-69 if separate) with a one-liner: `export const DEFAULT_OPENAI_BASE = OPENWHISPR_OPENAI_BASE_URL;`. Delete the now-unused `computeBaseUrl` helper if it has no other callers (grep first).
+    2. Replace `DEFAULT_OPENAI_BASE` (line 60) and surrounding `computeBaseUrl` env-fallback chain with: `export const DEFAULT_OPENAI_BASE = OPENWHISPR_OPENAI_BASE_URL;`. Delete `computeBaseUrl` if it has no other callers (grep first).
     3. Replace `API_ENDPOINTS.ANTHROPIC` (line 75) literal with `OPENWHISPR_ANTHROPIC_URL`.
     4. Replace `API_ENDPOINTS.GEMINI` (line 76) literal with `OPENWHISPR_GEMINI_BASE_URL`.
     5. Replace `API_ENDPOINTS.GROQ_BASE` (line 77) literal with `OPENWHISPR_GROQ_BASE_URL`.
     6. Replace `API_ENDPOINTS.MISTRAL_BASE` (line 78) literal with `OPENWHISPR_MISTRAL_BASE_URL`.
-    7. Replace `OPENWHISPR_API_URL` (line 116, currently `(env.VITE_OPENWHISPR_API_URL as string) || ""`) with: `export const OPENWHISPR_API_URL = OPENWHISPR_BACKEND_URL;`. The empty-default semantic is preserved by `pickAllowEmpty` in defaults.ts.
+    7. Replace `OPENWHISPR_API_URL` (line 116, currently `(env.VITE_OPENWHISPR_API_URL as string) || ""`) with: `export const OPENWHISPR_API_URL = OPENWHISPR_BACKEND_URL;`. Empty-default semantic preserved by `pickAllowEmpty` in defaults.ts.
     8. After all changes: `grep -cE "https://(api\\.openai\\.com|api\\.anthropic\\.com|generativelanguage\\.googleapis\\.com|api\\.groq\\.com|api\\.mistral\\.ai)" src/config/constants.ts` must return 0.
     9. In `src/components/McpIntegrationCard.tsx`:
        - Add `import { OPENWHISPR_MCP_URL } from "@/config/defaults";` (or relative path matching project convention).
@@ -149,23 +159,29 @@ Mirror sites (Phase 3 must touch but NOT separate inventory rows — mentioned i
 </task>
 
 <task type="auto" tdd="false">
-  <name>Task 2: Move baseUrls out of modelRegistryData.json + inject in ModelRegistry.ts (rows 17, 18, 19)</name>
-  <files>src/models/modelRegistryData.json, src/models/ModelRegistry.ts</files>
+  <name>Task 2: Move baseUrls out of modelRegistryData.json + inject in ModelRegistry.ts + AUDIT consumers (rows 17, 18, 19 + Warning 5 fix)</name>
+  <files>src/models/modelRegistryData.json, src/models/ModelRegistry.ts, src/config/aiProvidersConfig.ts, src/utils/languages.ts, src/helpers/modelManagerBridge.js</files>
   <read_first>
-    - src/models/modelRegistryData.json (lines 130-200 — transcriptionProviders array structure)
+    - src/models/modelRegistryData.json (lines 130-200 — transcriptionProviders array)
     - src/models/ModelRegistry.ts (full file — find where transcriptionProviders is read/used)
+    - src/config/aiProvidersConfig.ts (find how it reads transcriptionProviders)
+    - src/utils/languages.ts (find how it reads transcriptionProviders)
+    - src/helpers/modelManagerBridge.js (find how it reads transcriptionProviders)
     - src/config/defaults.ts (exports list)
     - docs/CONFIG_INVENTORY.md (rows 17, 18, 19)
     - .planning/phases/03-build-time-env-refactor/03-RESEARCH.md (§Single source of truth, "Recommend Option b")
   </read_first>
   <action>
+    **Step A — JSON cleanup:**
     1. In `src/models/modelRegistryData.json`:
-       - Find the three `transcriptionProviders` entries (currently with `baseUrl: "https://api.openai.com/v1"` etc.).
+       - Find the three `transcriptionProviders` entries (currently with `baseUrl: "..."`).
        - DELETE the `baseUrl` field from all three entries (OpenAI, Groq, Mistral). The JSON becomes pure data.
-       - Add a top-level `"_baseUrlInjectedAtRuntime": true` marker (optional documentation aid, no functional effect).
+       - Optionally add a top-level `"_baseUrlInjectedAtRuntime": true` marker (documentation aid only).
+
+    **Step B — ModelRegistry.ts becomes sole baseUrl injector:**
     2. In `src/models/ModelRegistry.ts`:
-       - Add: `import { OPENWHISPR_OPENAI_BASE_URL, OPENWHISPR_GROQ_BASE_URL, OPENWHISPR_MISTRAL_BASE_URL } from "@/config/defaults";` (or relative path).
-       - Find the constructor / load method that reads `modelRegistryData.json`. After loading, inject `baseUrl` on each transcription provider by `id`:
+       - Add: `import { OPENWHISPR_OPENAI_BASE_URL, OPENWHISPR_GROQ_BASE_URL, OPENWHISPR_MISTRAL_BASE_URL } from "@/config/defaults";`.
+       - In the constructor / load method that reads `modelRegistryData.json`, after loading inject `baseUrl` on each transcription provider by `id`:
          ```ts
          const providerBaseUrls: Record<string, string> = {
            openai: OPENWHISPR_OPENAI_BASE_URL,
@@ -177,34 +193,56 @@ Mirror sites (Phase 3 must touch but NOT separate inventory rows — mentioned i
            if (url) provider.baseUrl = url;
          }
          ```
-         Use the actual provider ID strings as they appear in the JSON (`openai`, `groq`, `mistral` — confirm by reading the JSON first).
-    3. After changes: `grep -cE "https://(api\\.openai\\.com|api\\.groq\\.com|api\\.mistral\\.ai)" src/models/modelRegistryData.json` must return 0.
-    4. `npx tsc --noEmit -p src/tsconfig.json` must pass for ModelRegistry.ts.
-    5. Sanity check: `node -e "const r=require('./src/models/modelRegistryData.json'); const tp=r.transcriptionProviders||[]; if(tp.some(p=>p.baseUrl)) { console.error('JSON still contains baseUrl', tp); process.exit(1); }"` must exit 0.
+       - Confirm provider IDs (`openai`, `groq`, `mistral`) by reading the JSON first.
+
+    **Step C — Consumer audit (Warning 5 fix):**
+    3. Run an explicit grep audit:
+       ```bash
+       grep -rn "transcriptionProviders" src/ --include="*.ts" --include="*.tsx" --include="*.js"
+       ```
+       For EVERY hit outside `src/models/ModelRegistry.ts` AND outside `src/models/modelRegistryData.json`:
+       - If the consumer accesses `.baseUrl` on a transcription provider entry → refactor it to obtain the provider through `ModelRegistry` (which has the injected `baseUrl`), NOT by directly importing the JSON.
+       - If the consumer only reads non-`baseUrl` fields (id, name, supportedLanguages, etc.) → no action needed (still acceptable to import the JSON).
+
+    4. Specific files to inspect (per Warning 5):
+       - `src/config/aiProvidersConfig.ts` — derives AI_MODES from registry. If it reads `.baseUrl`, route through ModelRegistry.
+       - `src/utils/languages.ts` — derives REASONING_PROVIDERS from registry. If it reads `.baseUrl`, route through ModelRegistry.
+       - `src/helpers/modelManagerBridge.js` — handles local model downloads. CommonJS file. If it accesses `.baseUrl` on transcriptionProviders, refactor: either (a) require ModelRegistry's compiled output if possible, OR (b) have it `require("../config/build-config.generated.cjs")` and use the same injection table as ModelRegistry.ts. Prefer option (a) for SoT; pick (b) only if circular-import or runtime constraints block (a).
+
+    5. **Acceptance grep:** After audit:
+       ```bash
+       grep -rn "\.baseUrl" src/ --include="*.ts" --include="*.tsx" --include="*.js" | grep -i "transcriptionProvider"
+       ```
+       Output MUST contain hits ONLY in `src/models/ModelRegistry.ts` (the injection site). All other files either don't access `.baseUrl` on transcription providers, or obtain the provider object via ModelRegistry. Document the audit output in the SUMMARY.
+
+    **Step D — sanity checks:**
+    6. `grep -cE "https://(api\\.openai\\.com|api\\.groq\\.com|api\\.mistral\\.ai)" src/models/modelRegistryData.json` must return 0.
+    7. `npx tsc --noEmit -p src/tsconfig.json` must pass for ModelRegistry.ts and any modified consumer files.
+    8. JSON sanity: `node -e "const r=require('./src/models/modelRegistryData.json'); const tp=r.transcriptionProviders||[]; if(tp.some(p=>p.baseUrl)) process.exit(1)"` must exit 0.
   </action>
   <verify>
-    <automated>test "$(grep -cE 'https://(api\.openai\.com|api\.groq\.com|api\.mistral\.ai)' src/models/modelRegistryData.json)" = "0" && node -e "const r=require('./src/models/modelRegistryData.json'); const tp=r.transcriptionProviders||[]; if(tp.some(p=>p.baseUrl)) process.exit(1)" && grep -q "OPENWHISPR_OPENAI_BASE_URL" src/models/ModelRegistry.ts && npx tsc --noEmit -p src/tsconfig.json 2>&1 | grep -E "ModelRegistry\.ts" | grep -v "^$" && exit 1; exit 0</automated>
+    <automated>test "$(grep -cE 'https://(api\.openai\.com|api\.groq\.com|api\.mistral\.ai)' src/models/modelRegistryData.json)" = "0" && node -e "const r=require('./src/models/modelRegistryData.json'); const tp=r.transcriptionProviders||[]; if(tp.some(p=>p.baseUrl)) process.exit(1)" && grep -q "OPENWHISPR_OPENAI_BASE_URL" src/models/ModelRegistry.ts && AUDIT="$(grep -rn '\.baseUrl' src/ --include='*.ts' --include='*.tsx' --include='*.js' | grep -i 'transcriptionProvider' | grep -v 'src/models/ModelRegistry.ts' || true)"; test -z "$AUDIT" && npx tsc --noEmit -p src/tsconfig.json 2>&1 | grep -E "ModelRegistry\.ts" | grep -v "^$" && exit 1; exit 0</automated>
   </verify>
   <acceptance_criteria>
     - `grep -cE "https://(api\.openai\.com|api\.groq\.com|api\.mistral\.ai)" src/models/modelRegistryData.json` outputs `0`.
     - JSON parses; no `transcriptionProviders[*].baseUrl` field present.
     - `ModelRegistry.ts` references `OPENWHISPR_OPENAI_BASE_URL`, `OPENWHISPR_GROQ_BASE_URL`, `OPENWHISPR_MISTRAL_BASE_URL`.
-    - In-memory registry (after construction) has `baseUrl` populated on each transcription provider — verifiable by adding a quick `console.log(JSON.stringify(registry.getTranscriptionProviders()))` in a test stub if needed (not required for grep gate).
+    - **Audit grep:** `grep -rn '\.baseUrl' src/ ... | grep -i 'transcriptionProvider' | grep -v 'src/models/ModelRegistry.ts'` returns ZERO matches.
     - TypeScript compile passes.
   </acceptance_criteria>
-  <done>JSON is pure data; ModelRegistry.ts injects baseUrls from defaults.ts.</done>
+  <done>JSON is pure data; ModelRegistry.ts is the sole injector; all transcriptionProviders.baseUrl consumers route through ModelRegistry.</done>
 </task>
 
 <task type="auto" tdd="false">
   <name>Task 3: Refactor src/helpers/ipcHandlers.js mirror sites (Anthropic/Groq/Mistral inline literals)</name>
   <files>src/helpers/ipcHandlers.js</files>
   <read_first>
-    - src/helpers/ipcHandlers.js (lines 60-65 for MISTRAL_TRANSCRIPTION_URL; lines 2820-2830 for Anthropic; lines 3585-3595 for Groq — confirm exact line numbers)
-    - src/config/defaults.ts (exports list)
+    - src/helpers/ipcHandlers.js (lines 60-65 for MISTRAL_TRANSCRIPTION_URL; 2820-2830 for Anthropic; 3585-3595 for Groq)
+    - src/config/build-config.generated.cjs (exports list)
     - docs/CONFIG_INVENTORY.md (rows 22, 23 notes about ipcHandlers mirrors; row 19 note about Mistral)
   </read_first>
   <action>
-    1. Extend the existing `require("config/defaults")` destructure (added in Plan 2 Task 3) to also include:
+    1. Extend the existing `require("../config/build-config.generated.cjs")` destructure (added in Plan 2 Task 3) to also include:
        ```js
        const {
          OPENWHISPR_AUTH_URL,
@@ -212,12 +250,11 @@ Mirror sites (Phase 3 must touch but NOT separate inventory rows — mentioned i
          OPENWHISPR_ANTHROPIC_URL,
          OPENWHISPR_GROQ_BASE_URL,
          OPENWHISPR_MISTRAL_BASE_URL,
-       } = require("../dist/config/defaults");
+       } = require("../config/build-config.generated.cjs");
        ```
-       (Path style must match Plan 2's choice.)
-    2. Line ~61 (`MISTRAL_TRANSCRIPTION_URL`): replace literal `"https://api.mistral.ai/v1"` (or whatever full path is there) with `OPENWHISPR_MISTRAL_BASE_URL`. If the existing literal includes a path suffix like `/audio/transcriptions`, preserve the suffix: `` `${OPENWHISPR_MISTRAL_BASE_URL}/audio/transcriptions` ``.
+    2. Line ~61 (`MISTRAL_TRANSCRIPTION_URL`): replace literal `"https://api.mistral.ai/v1"` (or full path) with `OPENWHISPR_MISTRAL_BASE_URL`. Preserve any path suffix: `` `${OPENWHISPR_MISTRAL_BASE_URL}/audio/transcriptions` ``.
     3. Line ~2826 (Anthropic proxy URL): replace literal `"https://api.anthropic.com/v1/messages"` with `OPENWHISPR_ANTHROPIC_URL`.
-    4. Line ~3589 (Groq URL): replace literal `"https://api.groq.com/openai/v1"` (or with path suffix) with `OPENWHISPR_GROQ_BASE_URL` (preserving any path suffix as in step 2).
+    4. Line ~3589 (Groq URL): replace literal `"https://api.groq.com/openai/v1"` (or full path) with `OPENWHISPR_GROQ_BASE_URL` (preserving suffix as in step 2).
     5. After changes: `grep -cE "https://(api\\.anthropic\\.com|api\\.groq\\.com|api\\.mistral\\.ai)" src/helpers/ipcHandlers.js` must return 0.
     6. `node --check src/helpers/ipcHandlers.js` must pass.
   </action>
@@ -226,10 +263,10 @@ Mirror sites (Phase 3 must touch but NOT separate inventory rows — mentioned i
   </verify>
   <acceptance_criteria>
     - `grep -cE "https://(api\.anthropic\.com|api\.groq\.com|api\.mistral\.ai)" src/helpers/ipcHandlers.js` outputs `0`.
-    - File destructure includes the three new keys.
+    - File destructure includes the three new keys from `../config/build-config.generated.cjs`.
     - `node --check` exits 0.
   </acceptance_criteria>
-  <done>ipcHandlers.js Anthropic/Groq/Mistral mirror sites all use defaults.ts imports.</done>
+  <done>ipcHandlers.js Anthropic/Groq/Mistral mirror sites all use build-config.generated.cjs requires.</done>
 </task>
 
 </tasks>
@@ -240,36 +277,41 @@ Mirror sites (Phase 3 must touch but NOT separate inventory rows — mentioned i
 | Boundary | Description |
 |----------|-------------|
 | App → Third-party LLM/transcription APIs | OPENAI/ANTHROPIC/GEMINI/GROQ/MISTRAL base URLs control where user prompts and audio go. |
-| Renderer ↔ Main IPC | Anthropic IPC bridge passes through main; URL must be authoritative from defaults.ts. |
+| Renderer ↔ Main IPC | Anthropic IPC bridge passes through main; URL must be authoritative from build-config.generated.cjs. |
 
 ## STRIDE Threat Register
 
 | Threat ID | Category | Component | Disposition | Mitigation Plan |
 |-----------|----------|-----------|-------------|-----------------|
 | T-03-14 | Spoofing | Maintainer-overrideable LLM endpoints | accept | Documented use case (LiteLLM proxy / self-hosted gateway). Defaults preserved. |
-| T-03-15 | Tampering | JSON registry no longer holding URLs | mitigate | Removing baseUrl from JSON eliminates the JSON-template attack surface. URLs come from typed TS module. |
-| T-03-16 | Information Disclosure | constants.ts re-exports | accept | Re-exports preserve import-graph stability for existing call sites; no new disclosure. |
+| T-03-15 | Tampering | JSON registry no longer holding URLs | mitigate | Removing baseUrl from JSON eliminates JSON-template attack surface. |
+| T-03-16 | Information Disclosure | constants.ts re-exports | accept | Re-exports preserve import-graph stability; no new disclosure. |
+| T-03-22 | Tampering | transcriptionProviders.baseUrl drift | mitigate | Consumer audit (Task 2 Step C) ensures only ModelRegistry reads `.baseUrl`; other consumers route through it. Eliminates risk of one consumer reading an un-injected baseUrl. |
 </threat_model>
 
 <verification>
 - `src/config/constants.ts`: zero literal API URLs.
-- `src/models/modelRegistryData.json`: zero `https://api.openai|groq|mistral` literals; no `baseUrl` field on transcription providers.
+- `src/models/modelRegistryData.json`: zero API URL literals; no `baseUrl` field on transcription providers.
 - `src/components/McpIntegrationCard.tsx`: zero `mcp.openwhispr.com` literals.
 - `src/helpers/ipcHandlers.js`: zero Anthropic/Groq/Mistral URL literals.
+- **Consumer audit:** Only `src/models/ModelRegistry.ts` accesses `.baseUrl` on `transcriptionProviders` entries.
 - TypeScript compiles cleanly.
 - `node --check` passes on all `.js` targets.
 
-After this plan completes, run a global grep across the source tree:
+After this plan, run global grep:
 ```
 grep -rnE "https://(api\.openai\.com|api\.anthropic\.com|generativelanguage\.googleapis\.com|api\.groq\.com|api\.mistral\.ai|auth\.openwhispr\.com|api\.openwhispr\.com|mcp\.openwhispr\.com|accounts\.google\.com|oauth2\.googleapis\.com|www\.googleapis\.com/calendar|openwhispr\.com/auth/desktop-callback|openwhispr\.com/reset-password)" src/ main.js
 ```
-Expected: only matches inside `src/config/defaults.ts` and `src/config/build-config.generated.ts` (and possibly the documented row 5 parity literal in `main.js` from Plan 2).
+Expected: matches ONLY in `src/config/build-config.generated.{ts,cjs}` (and possibly the generator script itself if it's under src/, but it lives in `scripts/`).
 </verification>
 
 <success_criteria>
-All `must_haves.truths` observable; CFG-04 anchor `OPENWHISPR_BACKEND_URL` reaches its renderer-side consumer (constants.ts:116 → defaults.ts); zero non-defaults-module URL literals remain across the touched files.
+All `must_haves.truths` observable; CFG-04 anchor `OPENWHISPR_BACKEND_URL` reaches its renderer-side consumer; zero non-build-config URL literals remain across touched files; transcriptionProviders.baseUrl is read only by ModelRegistry.
 </success_criteria>
 
 <output>
-After completion, create `.planning/phases/03-build-time-env-refactor/03-05-SUMMARY.md` including the global-grep result from the verification block above. This summary serves as the source-level proof for ROADMAP success criterion #1.
+After completion, create `.planning/phases/03-build-time-env-refactor/03-05-SUMMARY.md` including:
+- Global-grep result from verification block.
+- Consumer-audit output (the `\.baseUrl | grep transcriptionProvider` grep) showing only ModelRegistry hits.
+This SUMMARY is the source-level proof for ROADMAP success criterion #1.
 </output>
