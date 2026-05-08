@@ -27,6 +27,8 @@ The rest of this document is the deep reference for what your backend has to act
 ---
 
 > **Default build is corporate-minimal (2026-05-08 pivot).** As of the 2026-05-08 pivot, `npm run build` (no env vars) produces a *minimal corporate-self-hosted* binary, NOT an upstream-parity binary. Three feature flags default OFF — Stripe billing UI, the referral program, and live (WebSocket) third-party ASR (AssemblyAI / Deepgram) — and only dictation, transcription (whisper.cpp + OpenAI Whisper file mode), reasoning (multi-provider via runtime BYOK API keys), and Google / Microsoft / Apple OAuth ship by default. **Self-hosters whose backend does NOT implement `/api/stripe/*`, `/api/referrals/*`, `/api/streaming-token`, or `/api/deepgram-streaming-token` should ship the default build — the client will not call those endpoints.** To recreate upstream-parity behavior, see the *Upstream Parity Build* section below and `docs/BUILD_CONFIG.md` for the full variable reference.
+>
+> **2026-05-09 amendment (Phase 05):** the streaming flag default is no longer `false` — it is now `true`, because realtime ASR routes through the corporate backend's `WSS /v1/realtime` (Speaches+LiteLLM) rather than direct third-party WebSockets. A new build var `OPENWHISPR_REALTIME_WSS_URL` derives from `OPENWHISPR_BACKEND_URL` automatically. Set `OPENWHISPR_STREAMING=false` if your backend has not yet deployed the realtime relay. A B1 auto-disable safety net catches the default-build-with-no-backend case so it cannot ship a crashing binary.
 
 This file is the **human walkthrough**. Two sibling documents are the **machine-readable wire references** and are linked extensively from here:
 
@@ -185,6 +187,16 @@ These are called by the active client at runtime. A minimum-viable backend can s
 | `GET /api/referrals/stats` | Reads the user's referral stats. | Bearer | [card](./BACKEND_SPEC.md#get-apireferralsstats) |
 | `POST /api/referrals/invite` | Sends a referral invite. | Bearer | [card](./BACKEND_SPEC.md#post-apireferralsinvite) |
 | `GET /api/referrals/invites` | Lists outstanding referral invites. | Bearer | [card](./BACKEND_SPEC.md#get-apireferralsinvites) |
+
+### Realtime WebSocket (Phase 05)
+
+The desktop client connects to `WSS ${OPENWHISPR_REALTIME_WSS_URL}?intent=transcription` for live dictation. By default this URL is derived from `OPENWHISPR_BACKEND_URL` (e.g. `wss://api.your-domain.com/v1/realtime`); maintainers can override via the explicit `OPENWHISPR_REALTIME_WSS_URL` build var.
+
+**Backend requirement.** Implement OpenAI Realtime API protocol on `WSS /v1/realtime` — the reference Yambr corporate-backend implementation uses Speaches + LiteLLM `mode: realtime` (see `~/openwhispr-server/.planning/ROADMAP.md` Phase 4). LiteLLM v1.82.0+ raises the upstream WebSocket itself and forwards events bidirectionally; nginx ingress should permit WebSocket Upgrade with at least 3600 s read/send timeouts.
+
+**Graceful degradation.** If your backend has not yet deployed the realtime relay, reject the WebSocket upgrade with HTTP 503. Maintainers can explicitly opt their build out of streaming with `OPENWHISPR_STREAMING=false` — file-mode transcription (whisper.cpp + OpenAI Whisper) continues to work. The Phase 05 B1 auto-disable safety net additionally prevents a default `npm run build` (no env vars) from shipping a binary that crashes on first record.
+
+**Full wire detail:** [`BACKEND_SPEC.md` § Realtime WebSocket Contract](./BACKEND_SPEC.md#realtime-websocket-contract).
 
 ### Generic passthrough: `cloud-api-request`
 
@@ -497,6 +509,6 @@ A self-hosting backend may want to enable some upstream features but not others 
 |-------------|----------------------------------|-------|
 | `OPENWHISPR_BILLING=true` | `POST /api/stripe/checkout`, `POST /api/stripe/portal`, `POST /api/stripe/switch-plan`, `POST /api/stripe/preview-switch` | Server must support Stripe (or a Stripe-compatible billing provider). All four endpoints become reachable; `cloudCheckout` / `cloudBillingPortal` / `cloudSwitchPlan` / `cloudPreviewSwitch` IPC methods are exposed in the renderer + preload. |
 | `OPENWHISPR_REFERRALS=true` | `GET /api/referrals/stats`, `POST /api/referrals/invite`, `GET /api/referrals/invites` | Sidebar nav entry "Referrals" appears; the `ReferralModal-*.js` chunk is emitted. Cloud must implement referral-tracking persistence. |
-| `OPENWHISPR_STREAMING=true` | `POST /api/streaming-token`, `POST /api/deepgram-streaming-token` (also `POST /api/openai-realtime-token` if that surface is wired) | Server-side proxy must mint short-lived AssemblyAI / Deepgram tokens (the desktop never holds those vendor keys directly). The full 141 kB `useChatStreaming` chunk re-enters the renderer bundle; main-process AssemblyAI + Deepgram WebSocket handlers (~480 lines) re-register. |
+| `OPENWHISPR_STREAMING=true` (default since Phase 05) | `WSS /v1/realtime` (Phase 05 — corporate backend's OpenAI-Realtime-compatible endpoint, see [BACKEND_SPEC § Realtime WebSocket Contract](./BACKEND_SPEC.md#realtime-websocket-contract)). Plus legacy `POST /api/streaming-token` / `POST /api/deepgram-streaming-token` if BYOK Deepgram/AssemblyAI users are present. | This is now the DEFAULT (Phase 05 amendment). To opt out (e.g. backend has not deployed the realtime relay yet), set `OPENWHISPR_STREAMING=false` — preserves Phase 04.1 absence-set behavior. The full 141 kB `useChatStreaming` chunk and main-process AssemblyAI + Deepgram WebSocket handlers (~480 lines) are present by default. |
 
 The flags are independent: enabling one does not require enabling the others. A backend implementing Stripe billing without referrals or streaming should ship a binary built with `OPENWHISPR_BILLING=true` (only) and leave the other two unset.
