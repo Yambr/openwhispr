@@ -86,3 +86,18 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 2. Architecture Doc + Hardcode Inventory | 3/3 | Complete | 2026-05-08 |
 | 3. Build-time Env Refactor | 0/TBD | Not started | - |
 | 4. OAuth Gating, Build Docs, and Parity Gate | 0/TBD | Not started | - |
+
+### Phase 04.1: Tree-shaking fix for OAUTH_*_ENABLED gating + ensure prepack regenerates build-config (INSERTED)
+
+**Goal:** Fix the OAuth gating tree-shake bug discovered during Phase 04 smoke testing AND extend the same gating pattern to three new corporate-minimal feature flags (BILLING, REFERRALS, STREAMING) — all defaulting to `false` per the 2026-05-08 corporate-minimal pivot.
+**Requirements**: CFG-07, CFG-08, CFG-09
+**Depends on:** Phase 04
+**Plans:** 6/6 plans complete
+
+Plans:
+- [x] 04.1-01-PLAN.md — `pack`/`dist` regenerate build-config (CFG-08)
+- [x] 04.1-02-PLAN.md — Tree-shake fix for OAuth gating in IntegrationsView (CFG-07)
+- [x] 04.1-03-PLAN.md — Add OPENWHISPR_BILLING flag (CFG-09 part 1)
+- [x] 04.1-04-PLAN.md — Add OPENWHISPR_REFERRALS flag (CFG-09 part 2)
+- [x] 04.1-05-PLAN.md — Add OPENWHISPR_STREAMING flag (CFG-09 part 3)
+- [x] 04.1-06-PLAN.md — Update docs/BUILD_CONFIG.md and docs/SELF_HOSTING.md

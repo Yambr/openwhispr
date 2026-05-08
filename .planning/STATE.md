@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-05-08T12:23:22.932Z"
+stopped_at: "Completed 04.1-06-PLAN.md (docs: BUILD_CONFIG + SELF_HOSTING for corporate-minimal pivot)"
+last_updated: "2026-05-08T18:23:39.950Z"
 last_activity: 2026-05-08 -- Phase 03 planning complete
 progress:
-  total_phases: 4
-  completed_phases: 2
-  total_plans: 12
-  completed_plans: 9
-  percent: 75
+  total_phases: 5
+  completed_phases: 4
+  total_plans: 23
+  completed_plans: 20
+  percent: 87
 ---
 
 # Project State
@@ -55,8 +55,15 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P01 | 6min | 1 tasks | 1 files |
 | Phase 01 P02 | 5min | 1 tasks | 1 files |
 | Phase 01 P03 | 4min | 1 tasks | 1 files |
+| Phase 04.1 P05 | 6m | 3 tasks | 11 files |
+| Phase 04.1 P06 | 5m | 2 tasks | 2 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 04.1 inserted after Phase 04: Tree-shaking fix for OAUTH_*_ENABLED gating + ensure prepack regenerates build-config (URGENT)
+  - Discovered during Phase 04 smoke test: `npm run pack` skips `generate-build-config.js` (only `prebuild` runs it, `prepack` doesn't), and `gcalStartOAuth` symbol still appears in the bundle when `OAUTH_GOOGLE_ENABLED=false` — gating is not actually tree-shaking the disabled code paths.
 
 ### Decisions
 
@@ -71,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 01]: OAUTH_SPEC.md uses provider-card template (Authorization/Token/Refresh/Revoke/Scopes/Redirect/ClientID/Secret/Storage/RefreshTrigger/IPC/SourceFiles) — same shape per provider, mechanical Phase 4 CFG-03 gating
 - [Phase 01]: Apple/Microsoft sign-in buttons are NOT independent OAuth flows in the desktop client — they tunnel through the OpenWhispr cloud-sign-in shim; CFG-03 only needs flags for cloud-sign-in + Google Calendar
 - [Phase 01]: SELF_HOSTING.md uses two-tier endpoint pattern (3 must-implement inline + 16 operational cross-linked to BACKEND_SPEC) for readability + single-source-of-truth
+- [Phase 04.1]: Used two-stub Vite-alias gating for STREAMING_ENABLED: streamingProviders.stub.js + useChatStreaming.stub.ts, since literals span two always-imported leaf modules
+- [Phase 04.1]: Phase 04.1 closed: 6 build flags documented + tree-shake mechanism canonicalized in BUILD_CONFIG.md; SELF_HOSTING.md reflects corporate-minimal default posture per 2026-05-08 pivot
 
 ### Pending Todos
 
@@ -82,6 +91,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-08T12:23:22.930Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-oauth-gating-build-docs-and-parity-gate/04-CONTEXT.md
+Last session: 2026-05-08T18:23:39.899Z
+Stopped at: Completed 04.1-06-PLAN.md (docs: BUILD_CONFIG + SELF_HOSTING for corporate-minimal pivot)
+Resume file: None
