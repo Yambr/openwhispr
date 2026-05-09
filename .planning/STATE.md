@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.7.2
 milestone_name: milestone
 status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-05-09T08:51:24.993Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-05-09T08:53:47.294Z"
 last_activity: 2026-05-08 -- Phase 03 planning complete
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 33
-  completed_plans: 25
-  percent: 76
+  completed_plans: 26
+  percent: 79
 ---
 
 # Project State
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04.1 P05 | 6m | 3 tasks | 11 files |
 | Phase 04.1 P06 | 5m | 2 tasks | 2 files |
 | Phase 07 P01 | 2m | 2 tasks | 7 files |
+| Phase 07 P02 | 1m | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,7 @@ Recent decisions affecting current work:
 - [Phase 04.1]: Used two-stub Vite-alias gating for STREAMING_ENABLED: streamingProviders.stub.js + useChatStreaming.stub.ts, since literals span two always-imported leaf modules
 - [Phase 04.1]: Phase 04.1 closed: 6 build flags documented + tree-shake mechanism canonicalized in BUILD_CONFIG.md; SELF_HOSTING.md reflects corporate-minimal default posture per 2026-05-08 pivot
 - [Phase 07]: Drop require("vitest") in CJS tests; rely on globals: true (vitest 3.x rejects CJS require)
+- [Phase 07]: Use require.main === module guard to make generate-build-config.js dual-purpose CLI+library without breaking 30+ npm scripts that spawn it
 
 ### Pending Todos
 
@@ -93,6 +95,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-09T08:51:24.989Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-05-09T08:53:47.291Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
