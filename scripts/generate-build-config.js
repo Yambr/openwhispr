@@ -117,6 +117,12 @@ function resolveBool(boolKey) {
 //     wss://api.example.com/v1/v1/realtime — the second /v1 is the realtime
 //     mount; the first is their existing API root).
 //   - Trailing slash on the path is stripped before appending /v1/realtime.
+//   - Query string (u.search) is preserved (legitimate for token-in-query
+//     gateways).
+//   - Fragment (u.hash) is dropped — fragments don't make sense for a
+//     WebSocket endpoint, and downstream code appends `?intent=transcription`
+//     (or `&intent=...`). Keeping a fragment would swallow that suffix into
+//     the fragment, so `intent` would never reach the server (CR-03).
 //   - Malformed URL → realtime URL stays empty (STREAMING guard kicks in).
 function deriveRealtimeWssUrl(backendUrl) {
   if (!backendUrl) return "";
@@ -127,7 +133,7 @@ function deriveRealtimeWssUrl(backendUrl) {
     else if (u.protocol === "http:") protocol = "ws:";
     else return ""; // non-http(s) — let STREAMING auto-disable handle it
     const pathPrefix = u.pathname.replace(/\/$/, "");
-    return `${protocol}//${u.host}${pathPrefix}/v1/realtime${u.search}${u.hash}`;
+    return `${protocol}//${u.host}${pathPrefix}/v1/realtime${u.search}`;
   } catch {
     return "";
   }
