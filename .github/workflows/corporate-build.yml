@@ -101,10 +101,9 @@ jobs:
           VITE_OPENWHISPR_AUTH_URL: ${{ inputs.auth_url }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Verify built artifact has corporate-minimal posture
-        run: |
-          npm run verify:oauth-gating
-          npm run verify:feature-gating
+      # Verify gates already ran in `verify-gates` job (precondition); re-running
+      # here duplicates work and breaks on Windows where verify scripts re-invoke
+      # vite build inside an already-built dist/.
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -181,11 +180,6 @@ jobs:
           VITE_OPENWHISPR_API_URL: ${{ inputs.backend_url }}
           VITE_OPENWHISPR_AUTH_URL: ${{ inputs.auth_url }}
 
-      - name: Verify built artifact
-        run: |
-          npm run verify:oauth-gating
-          npm run verify:feature-gating
-
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
@@ -259,11 +253,6 @@ jobs:
           OPENWHISPR_STREAMING: "false"
           VITE_OPENWHISPR_API_URL: ${{ inputs.backend_url }}
           VITE_OPENWHISPR_AUTH_URL: ${{ inputs.auth_url }}
-
-      - name: Verify built artifact
-        run: |
-          npm run verify:oauth-gating
-          npm run verify:feature-gating
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
