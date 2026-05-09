@@ -1,0 +1,498 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers on version tags (upstream v1.7.3 and Yambr v1.7.2.1, ...)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g., 1.7.2.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  verify-gates:
+    # Run gating gates first as a hard precondition — no point building if gates fail.
+    uses: ./.github/workflows/verify-gating.yml
+
+  build-linux:
+    needs: [verify-gates]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Resolve Yambr version from git tag
+        # Strip leading "v" from tag (v1.7.2.1 → 1.7.2.1) so electron-builder uses
+        # the Yambr version for binary naming, blockmap, latest-*.yml, and Release.
+        # If invoked via workflow_dispatch (no tag), fall back to the workflow input,
+        # then to upstream package.json version.
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            APP_VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            APP_VERSION="${{ inputs.version }}"
+          else
+            APP_VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved app version: ${APP_VERSION}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install platform-specific native binaries
+        run: npm install @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu --no-save
+
+      - name: Cache native binaries
+        uses: actions/cache@v4
+        with:
+          path: resources/bin
+          key: linux-x64-bin-${{ hashFiles('scripts/download-*.js') }}
+
+      - name: Download whisper.cpp binaries
+        run: node scripts/download-whisper-cpp.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download llama-server binaries
+        run: node scripts/download-llama-server.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download sherpa-onnx binaries
+        run: node scripts/download-sherpa-onnx.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download Qdrant binary
+        run: node scripts/download-qdrant.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download meeting AEC helper
+        run: node scripts/download-meeting-aec-helper.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Cache Electron
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: linux-electron-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: linux-electron-
+
+      - name: Install Linux build and packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm libx11-dev libxtst-dev libatspi2.0-dev libglib2.0-dev
+
+      - name: Create runtime env
+        run: |
+          echo "GOOGLE_CALENDAR_CLIENT_ID=${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}" >> .env
+          echo "GOOGLE_CALENDAR_CLIENT_SECRET=${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}" >> .env
+
+      - name: Generate build config and renderer bundle (corporate-minimal)
+        run: |
+          node scripts/generate-build-config.js
+          npm run build:renderer
+        env:
+          OPENWHISPR_BILLING: "false"
+          OPENWHISPR_REFERRALS: "false"
+          OPENWHISPR_STREAMING: "false"
+          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
+          VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
+
+      - name: Build Application
+        run: npm run build:linux -- --config.extraMetadata.version=${{ steps.version.outputs.version }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          OPENWHISPR_BILLING: "false"
+          OPENWHISPR_REFERRALS: "false"
+          OPENWHISPR_STREAMING: "false"
+          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
+          VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.tar.gz
+            dist/latest-linux.yml
+            dist/*.blockmap
+          retention-days: 30
+
+  build-windows:
+    needs: [verify-gates]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Resolve Yambr version from git tag
+        # shell: bash forced — Windows runner default is pwsh, doesn't understand [[ ]].
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            APP_VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            APP_VERSION="${{ inputs.version }}"
+          else
+            APP_VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved app version: ${APP_VERSION}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install platform-specific native binaries
+        run: npm install @rollup/rollup-win32-x64-msvc lightningcss-win32-x64-msvc @tailwindcss/oxide-win32-x64-msvc --no-save
+
+      - name: Cache native binaries
+        uses: actions/cache@v4
+        with:
+          path: resources/bin
+          key: windows-x64-bin-${{ hashFiles('scripts/download-*.js') }}
+
+      - name: Download whisper.cpp binaries
+        run: node scripts/download-whisper-cpp.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download llama-server binaries
+        run: node scripts/download-llama-server.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download sherpa-onnx binaries
+        run: node scripts/download-sherpa-onnx.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download Qdrant binary
+        run: node scripts/download-qdrant.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download meeting AEC helper
+        run: node scripts/download-meeting-aec-helper.js --current
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download nircmd.exe
+        run: node scripts/download-nircmd.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download windows-fast-paste.exe
+        run: node scripts/download-windows-fast-paste.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download windows-key-listener.exe
+        run: node scripts/download-windows-key-listener.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download windows-mic-listener.exe
+        run: node scripts/download-windows-mic-listener.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Cache Electron
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/electron/Cache
+          key: windows-electron-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: windows-electron-
+
+      - name: Create runtime env
+        shell: bash
+        run: |
+          echo "GOOGLE_CALENDAR_CLIENT_ID=${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}" >> .env
+          echo "GOOGLE_CALENDAR_CLIENT_SECRET=${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}" >> .env
+
+      - name: Generate build config and renderer bundle (corporate-minimal)
+        shell: bash
+        run: |
+          node scripts/generate-build-config.js
+          npm run build:renderer
+        env:
+          OPENWHISPR_BILLING: "false"
+          OPENWHISPR_REFERRALS: "false"
+          OPENWHISPR_STREAMING: "false"
+          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
+          VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
+
+      - name: Build and Sign Application
+        run: npm run build:win -- --config.extraMetadata.version=${{ steps.version.outputs.version }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          OPENWHISPR_BILLING: "false"
+          OPENWHISPR_REFERRALS: "false"
+          OPENWHISPR_STREAMING: "false"
+          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
+          VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/*.exe
+            dist/latest.yml
+            dist/*.blockmap
+          retention-days: 30
+
+  build-macos:
+    needs: [verify-gates]
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Resolve Yambr version from git tag
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            APP_VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            APP_VERSION="${{ inputs.version }}"
+          else
+            APP_VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved app version: ${APP_VERSION}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install ffmpeg-static for target architecture
+        if: matrix.arch == 'x64'
+        run: |
+          rm -f node_modules/ffmpeg-static/ffmpeg
+          npm_config_arch=x64 node node_modules/ffmpeg-static/install.js
+
+      - name: Cache native binaries
+        uses: actions/cache@v4
+        with:
+          path: resources/bin
+          key: macos-${{ matrix.arch }}-bin-${{ hashFiles('scripts/download-*.js', 'scripts/build-globe-listener.js', 'resources/macos-globe-listener.swift', 'scripts/build-macos-fast-paste.js', 'resources/macos-fast-paste.swift', 'scripts/build-media-remote.js', 'resources/macos-media-remote.swift', 'scripts/build-macos-audio-tap.js', 'resources/macos-audio-tap.swift') }}
+
+      - name: Compile macos-globe-listener binary
+        run: npm run compile:globe -- --arch ${{ matrix.arch }}
+
+      - name: Compile macos-fast-paste binary
+        run: npm run compile:fast-paste -- --arch ${{ matrix.arch }}
+
+      - name: Compile macos-media-remote binary
+        run: npm run compile:media-remote -- --arch ${{ matrix.arch }}
+
+      - name: Compile macos-audio-tap binary
+        run: npm run compile:audio-tap -- --arch ${{ matrix.arch }}
+
+      - name: Download whisper.cpp binaries
+        run: node scripts/download-whisper-cpp.js --current --platform darwin --arch ${{ matrix.arch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download llama-server binaries
+        run: node scripts/download-llama-server.js --current --platform darwin --arch ${{ matrix.arch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download sherpa-onnx binaries
+        run: node scripts/download-sherpa-onnx.js --current --platform darwin --arch ${{ matrix.arch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download Qdrant binary
+        run: node scripts/download-qdrant.js --current --platform darwin --arch ${{ matrix.arch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download meeting AEC helper
+        run: node scripts/download-meeting-aec-helper.js --current --platform darwin --arch ${{ matrix.arch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Cache Electron
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: macos-${{ matrix.arch }}-electron-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: macos-${{ matrix.arch }}-electron-
+
+      - name: Setup macOS Code Signing
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          API_KEY_PATH=$RUNNER_TEMP/api_key.p8
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > $CERTIFICATE_PATH
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > $API_KEY_PATH
+
+          security create-keychain -p "runner" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "runner" $KEYCHAIN_PATH
+
+          security import $CERTIFICATE_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          security set-key-partition-list -S apple-tool:,apple: -s -k "runner" $KEYCHAIN_PATH
+
+          echo "APPLE_API_KEY=$API_KEY_PATH" >> $GITHUB_ENV
+
+      - name: Create runtime env
+        run: |
+          echo "GOOGLE_CALENDAR_CLIENT_ID=${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}" >> .env
+          echo "GOOGLE_CALENDAR_CLIENT_SECRET=${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}" >> .env
+
+      - name: Generate build config and renderer bundle (corporate-minimal)
+        run: |
+          node scripts/generate-build-config.js
+          npm run build:renderer
+        env:
+          OPENWHISPR_BILLING: "false"
+          OPENWHISPR_REFERRALS: "false"
+          OPENWHISPR_STREAMING: "false"
+          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
+          VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
+
+      - name: Build Application (${{ matrix.arch }})
+        run: npm run build:mac -- --${{ matrix.arch }} --config.extraMetadata.version=${{ steps.version.outputs.version }} --publish never
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          OPENWHISPR_BILLING: "false"
+          OPENWHISPR_REFERRALS: "false"
+          OPENWHISPR_STREAMING: "false"
+          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
+          VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
+          CSC_IDENTITY_AUTO_DISCOVERY: true
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Verify packaged macOS native binaries
+        run: |
+          APP_PATH=$(ls -d dist/mac*/OpenWhispr.app | head -n1)
+          for bin in macos-audio-tap macos-globe-listener macos-fast-paste macos-mic-listener macos-text-monitor macos-media-remote; do
+            test -x "$APP_PATH/Contents/Resources/bin/$bin" || { echo "Missing in bundle: $bin"; exit 1; }
+          done
+
+      - name: Rename arch-specific update metadata
+        run: cp dist/latest-mac.yml "dist/latest-${{ matrix.arch }}-mac.yml"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-build
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/latest-${{ matrix.arch }}-mac.yml
+            dist/*.blockmap
+          retention-days: 30
+
+      - name: Cleanup Certificates
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+          rm -f $RUNNER_TEMP/build_certificate.p12
+          rm -f $RUNNER_TEMP/api_key.p8
+
+  publish-release:
+    # Aggregate all 4 builds (linux, win, mac-arm64, mac-x64) into ONE GitHub Release.
+    # Only runs on tag pushes (not workflow_dispatch).
+    needs: [build-linux, build-windows, build-macos]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: |
+          ls -la artifacts/
+          find artifacts/ -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.zip" -o -name "latest-*.yml" -o -name "*.blockmap" \) | head -40
+
+      - name: Create GitHub Release with artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          mapfile -t FILES < <(find artifacts/ -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.zip" -o -name "latest-*.yml" -o -name "*.blockmap" \))
+          echo "Creating release ${TAG_NAME} with ${#FILES[@]} artifact(s)"
+
+          if [ -f CHANGELOG.md ]; then
+            NOTES_FROM_CHANGELOG=$(awk "/^## \[?${TAG_NAME#v}/{flag=1; next} /^## \[?[0-9]/{flag=0} flag" CHANGELOG.md)
+          fi
+
+          if [ -n "${NOTES_FROM_CHANGELOG:-}" ]; then
+            echo "${NOTES_FROM_CHANGELOG}" > release-notes.md
+          else
+            git tag -l --format='%(contents)' "${TAG_NAME}" > release-notes.md
+          fi
+
+          # Append corporate-minimal posture banner via printf (heredoc + ** + ---
+          # fragments confuse the YAML parser; printf with literal escapes is safe).
+          printf '\n\n___\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            "**Build posture:** corporate-minimal (default)" \
+            "- OAuth providers: enabled (Google/Apple/Microsoft)" \
+            "- Stripe billing UI: **disabled**" \
+            "- Referral program UI: **disabled**" \
+            "- Third-party realtime ASR: **disabled**" \
+            "- Realtime via corporate backend (set OPENWHISPR_BACKEND_URL when building)" \
+            >> release-notes.md
+
+          gh release create "${TAG_NAME}" "${FILES[@]}" \
+            --title "${TAG_NAME}" \
+            --notes-file release-notes.md \
+            --verify-tag
