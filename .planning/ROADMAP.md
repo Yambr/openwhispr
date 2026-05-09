@@ -101,3 +101,27 @@ Plans:
 - [x] 04.1-04-PLAN.md — Add OPENWHISPR_REFERRALS flag (CFG-09 part 2)
 - [x] 04.1-05-PLAN.md — Add OPENWHISPR_STREAMING flag (CFG-09 part 3)
 - [x] 04.1-06-PLAN.md — Update docs/BUILD_CONFIG.md and docs/SELF_HOSTING.md
+
+### Phase 5: Route all realtime ASR/diarization streaming through corporate backend (no direct AssemblyAI/Deepgram from client). Adapt to Yambr's speeches/audio server. Remove hardcoded Deepgram key vulnerability. Replace upstream's three streaming providers with single Yambr-protocol WebSocket pointed at corporate backend.
+
+**Goal:** When `OPENWHISPR_BACKEND_URL` is set at build time, all realtime streaming traffic routes through the corporate backend's `WSS /v1/realtime` (Speaches+LiteLLM, OpenAI-Realtime-compatible) instead of direct connections to api.openai.com / api.deepgram.com / streaming.assemblyai.com. New build var `OPENWHISPR_REALTIME_WSS_URL` derives from backend URL automatically. STREAMING default flips to true (no third-party leak from default build).
+**Requirements**: CFG-04, CFG-05, CFG-09
+**Depends on:** Phase 4
+**Plans:** 4 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Add OPENWHISPR_REALTIME_WSS_URL build var with backend-derived default (TDD)
+- [ ] 05-02-PLAN.md — Replace hardcoded api.openai.com realtime URL in openaiRealtimeStreaming.js (TDD)
+- [ ] 05-03-PLAN.md — Flip OPENWHISPR_STREAMING_ENABLED default false→true (TDD, CFG-09 amendment)
+- [ ] 05-04-PLAN.md — Document Phase 05 realtime routing in BUILD_CONFIG + BACKEND_SPEC + SELF_HOSTING + README
+
+
+### Phase 6: Merge upstream OpenWhispr v1.7.2 (and ongoing). Resolve conflicts with our build-time gating + corporate-minimal default. Verify all gates still pass after merge. Ongoing process — repeat for each upstream release.
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 5
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 6 to break down)

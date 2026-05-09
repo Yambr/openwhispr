@@ -1,5 +1,6 @@
 const WebSocket = require("ws");
 const debugLogger = require("./debugLogger");
+const { OPENWHISPR_REALTIME_WSS_URL } = require("../config/build-config.generated.cjs");
 
 const WEBSOCKET_TIMEOUT_MS = 15000;
 const DISCONNECT_TIMEOUT_MS = 3000;
@@ -51,7 +52,20 @@ class OpenAIRealtimeStreaming {
     this.coldStartBufferSize = 0;
     this.speechStartedAt = null;
 
-    const url = "wss://api.openai.com/v1/realtime?intent=transcription";
+    // Phase 05 D-04: route realtime through corporate backend (Speaches+LiteLLM
+    // is OpenAI-Realtime-compatible). URL derived from OPENWHISPR_BACKEND_URL at
+    // build time, or set explicitly via OPENWHISPR_REALTIME_WSS_URL. Empty =
+    // offline build → fail fast (do NOT fall back to api.openai.com).
+    if (!OPENWHISPR_REALTIME_WSS_URL) {
+      this.isConnecting = false;
+      throw new Error(
+        "Realtime streaming is not configured for this build (OPENWHISPR_REALTIME_WSS_URL is empty). " +
+          "Set OPENWHISPR_BACKEND_URL or OPENWHISPR_REALTIME_WSS_URL at build time, " +
+          "or disable streaming with OPENWHISPR_STREAMING=false."
+      );
+    }
+    const sep = OPENWHISPR_REALTIME_WSS_URL.includes("?") ? "&" : "?";
+    const url = `${OPENWHISPR_REALTIME_WSS_URL}${sep}intent=transcription`;
     debugLogger.debug("OpenAI Realtime connecting", { model: this.model });
 
     return new Promise((resolve, reject) => {

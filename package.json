@@ -74,6 +74,7 @@
     "verify:oauth-gating": "node scripts/verify-oauth-gating.js",
     "verify:pack-regen": "node scripts/verify-pack-regenerates-build-config.js",
     "verify:feature-gating": "node scripts/verify-feature-gating.js",
+    "verify:realtime-routing": "node scripts/verify-realtime-routing.js",
     "preview": "cd src && vite preview",
     "clean": "node cleanup.js"
   },

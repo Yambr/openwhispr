@@ -32,6 +32,13 @@ const DEFAULTS = Object.freeze({
   OPENWHISPR_GEMINI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta",
   OPENWHISPR_GROQ_BASE_URL: "https://api.groq.com/openai/v1",
   OPENWHISPR_MISTRAL_BASE_URL: "https://api.mistral.ai/v1",
+  // Phase 05 D-01: realtime WebSocket URL. Default empty — when
+  // OPENWHISPR_BACKEND_URL is set and this var is unset, buildResolved()
+  // derives `<wss|ws>://<host><path>/v1/realtime` (path-preserving). Empty
+  // value keeps realtime unavailable (STREAMING_ENABLED guard handles the
+  // unavailable case). Maintainers override explicitly when realtime lives on
+  // a different host (e.g., a separate WSS-only ingress).
+  OPENWHISPR_REALTIME_WSS_URL: "",
 });
 
 const KEYS = Object.keys(DEFAULTS);
@@ -60,13 +67,22 @@ const BOOL_DEFAULTS = Object.freeze({
   // unset = false here because BOOL_DEFAULTS[boolKey] is consulted only when
   // env is unset).
   REFERRALS_ENABLED: false,
-  // Phase 04.1 CFG-09 (PLAN-05): corporate-minimal default — AssemblyAI /
-  // Deepgram WebSocket realtime ASR IPC + token-fetch endpoints + the 141kB
-  // useChatStreaming chat hook are all physically removed from the bundle
-  // when this is false. Env var: OPENWHISPR_STREAMING (any value other than
-  // "false" enables it; unset = false here because BOOL_DEFAULTS[boolKey] is
-  // consulted only when env is unset).
-  STREAMING_ENABLED: false,
+  // Phase 04.1 CFG-09 (PLAN-05): introduced STREAMING_ENABLED gate over the
+  // AssemblyAI / Deepgram WebSocket realtime ASR IPC + token-fetch endpoints
+  // and the 141 kB useChatStreaming chat hook.
+  //
+  // Phase 05 D-02 amendment: default flipped false → true. Realtime ASR is
+  // now routed through the corporate backend (Speaches+LiteLLM, see
+  // openaiRealtimeStreaming.js + OPENWHISPR_REALTIME_WSS_URL) rather than
+  // direct third-party WebSockets, so the original corporate-minimal
+  // privacy rationale for default-off no longer applies. Maintainers whose
+  // backend has NOT yet deployed the realtime relay can still opt out via
+  // OPENWHISPR_STREAMING=false.
+  //
+  // B1 auto-disable: see buildResolved() — when no backend AND user did not
+  // explicitly opt in, STREAMING_ENABLED is forced back to false so the
+  // default offline build does not crash on first record.
+  STREAMING_ENABLED: true,
 });
 
 const BOOL_KEYS = Object.keys(BOOL_DEFAULTS);
@@ -90,6 +106,39 @@ function resolveBool(boolKey) {
   return BOOL_DEFAULTS[boolKey];
 }
 
+// Phase 05 D-01: derive REALTIME_WSS_URL from BACKEND_URL when caller did not
+// provide an explicit override. Empty BACKEND_URL keeps REALTIME_WSS_URL empty
+// (offline-safe — STREAMING_ENABLED guard handles the unavailable case).
+//
+// Rules:
+//   - https:// → wss://, http:// → ws:// (preserve TLS-vs-plaintext choice).
+//   - Preserve any path prefix on BACKEND_URL (maintainers running a backend
+//     at a sub-path, e.g., https://api.example.com/v1, get
+//     wss://api.example.com/v1/v1/realtime — the second /v1 is the realtime
+//     mount; the first is their existing API root).
+//   - Trailing slash on the path is stripped before appending /v1/realtime.
+//   - Query string (u.search) is preserved (legitimate for token-in-query
+//     gateways).
+//   - Fragment (u.hash) is dropped — fragments don't make sense for a
+//     WebSocket endpoint, and downstream code appends `?intent=transcription`
+//     (or `&intent=...`). Keeping a fragment would swallow that suffix into
+//     the fragment, so `intent` would never reach the server (CR-03).
+//   - Malformed URL → realtime URL stays empty (STREAMING guard kicks in).
+function deriveRealtimeWssUrl(backendUrl) {
+  if (!backendUrl) return "";
+  try {
+    const u = new URL(backendUrl);
+    let protocol;
+    if (u.protocol === "https:") protocol = "wss:";
+    else if (u.protocol === "http:") protocol = "ws:";
+    else return ""; // non-http(s) — let STREAMING auto-disable handle it
+    const pathPrefix = u.pathname.replace(/\/$/, "");
+    return `${protocol}//${u.host}${pathPrefix}/v1/realtime${u.search}`;
+  } catch {
+    return "";
+  }
+}
+
 function buildResolved() {
   const resolved = {};
   for (const key of KEYS) {
@@ -102,6 +151,39 @@ function buildResolved() {
     process.env,
     "OPENWHISPR_OAUTH_PROTOCOL_SCHEME"
   );
+  // Phase 05 D-01: apply derivation only when caller did not explicitly set
+  // OPENWHISPR_REALTIME_WSS_URL (resolveValue returns "" both when unset
+  // (DEFAULT) and when explicitly set to ""; either way derivation is safe to
+  // run because explicit "" + non-empty BACKEND_URL is a documented "I want
+  // realtime through my backend" intent).
+  if (
+    !resolved.OPENWHISPR_REALTIME_WSS_URL &&
+    resolved.OPENWHISPR_BACKEND_URL
+  ) {
+    resolved.OPENWHISPR_REALTIME_WSS_URL = deriveRealtimeWssUrl(
+      resolved.OPENWHISPR_BACKEND_URL
+    );
+  }
+  // Phase 05 B1 auto-disable: a default `npm run build` with no env vars
+  // would otherwise produce a binary where STREAMING_ENABLED=true AND
+  // OPENWHISPR_REALTIME_WSS_URL="" — which crashes on first record (per
+  // openaiRealtimeStreaming.js's empty-URL guard). Default-build-works is
+  // a release-blocking principle (see 05-CONTEXT.md SC-5), so when the
+  // user did NOT explicitly opt in to streaming AND no realtime URL is
+  // resolvable, force STREAMING_ENABLED back to false. Explicit
+  // OPENWHISPR_STREAMING=true with no URL is the user's choice — we do
+  // not override it; the runtime guard will surface the error.
+  const userExplicitlyEnabledStreaming = Object.prototype.hasOwnProperty.call(
+    process.env,
+    "OPENWHISPR_STREAMING"
+  );
+  if (
+    !userExplicitlyEnabledStreaming &&
+    resolved.STREAMING_ENABLED &&
+    !resolved.OPENWHISPR_REALTIME_WSS_URL
+  ) {
+    resolved.STREAMING_ENABLED = false;
+  }
   return resolved;
 }
 
@@ -429,7 +511,7 @@ function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming}.generated.cjs (16 string keys + 6 booleans)"
+    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming}.generated.cjs (17 string keys + 6 booleans)"
   );
 }
 

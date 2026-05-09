@@ -40,7 +40,7 @@ The default build ships **only** what a corporate deployment needs. Consumer fea
 | **OAuth providers** | Hardcoded list | Per-provider build-time gating (`OPENWHISPR_OAUTH_GOOGLE/APPLE/MICROSOFT`) |
 | **Stripe billing UI** | Always present | **Removed** by default (`OPENWHISPR_BILLING=true` to enable) |
 | **Referral program UI** | Always present | **Removed** by default (`OPENWHISPR_REFERRALS=true` to enable) |
-| **AssemblyAI / Deepgram streaming** | Always shipped (~141 KB) | **Removed** by default (`OPENWHISPR_STREAMING=true` to enable) |
+| **Realtime ASR streaming (Phase 05)** | Direct WebSocket to AssemblyAI / Deepgram / `wss://api.openai.com/v1/realtime` (~141 KB of vendor SDK shipped) | AssemblyAI / Deepgram code physically removed from bundle; `OPENWHISPR_STREAMING` defaults to **`true`** and routes realtime ASR through the corporate backend at `wss://${backend-host}/v1/realtime` (Speaches+LiteLLM, OpenAI-Realtime-compatible). Override via `OPENWHISPR_REALTIME_WSS_URL` or disable with `OPENWHISPR_STREAMING=false`. B1 auto-disable forces it off when no backend URL is configured. |
 | **Bundle ID** | `com.openwhispr.app` | `com.yambr.openwhispr` |
 | **Code signing** | OpenWhispr Developer ID | Yambr Developer ID |
 | **Auto-update feed** | OpenWhispr GitHub releases | Yambr GitHub releases |
@@ -92,6 +92,8 @@ OPENWHISPR_BACKEND_URL=https://api.your-domain.com npm run build:mac
 The full env-var reference is in [`docs/BUILD_CONFIG.md`](docs/BUILD_CONFIG.md).
 
 Your backend needs to implement the wire contract documented in [`docs/BACKEND_SPEC.md`](docs/BACKEND_SPEC.md) and [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md). Minimum surface for a corporate deployment is small — `/api/transcribe`, `/api/reason`, `/api/health`, plus auth.
+
+**Realtime ASR (Phase 05, 2026-05-09):** live dictation now defaults to `wss://${backend-host}/v1/realtime` (OpenAI Realtime API protocol, served by Speaches + LiteLLM `mode: realtime` in the reference Yambr backend). The realtime URL derives automatically from `OPENWHISPR_BACKEND_URL`; override via `OPENWHISPR_REALTIME_WSS_URL` if your relay is on a separate WSS-only ingress. If your backend hasn't deployed the realtime relay yet, set `OPENWHISPR_STREAMING=false` at build time — file-mode transcription continues to work. See [`docs/BACKEND_SPEC.md` § Realtime WebSocket Contract](docs/BACKEND_SPEC.md#realtime-websocket-contract) for the wire detail.
 
 ### 2. Set your Apple / Microsoft / Google OAuth client IDs
 

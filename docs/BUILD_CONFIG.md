@@ -34,6 +34,7 @@ For every row, the **Source-of-truth file** column points at the module where th
 | `OPENWHISPR_BACKEND_URL` | OpenWhispr cloud API base URL (sign-in, quotas, transcription proxy, MCP). Empty string disables OpenWhispr cloud features and the binary behaves as BYOK-only. | `""` (empty) | Any URL or empty string | build (renderer + main) | `src/config/defaults.ts` + `src/config/build-config.generated.cjs` |
 | `OPENWHISPR_BACKEND_URL_PATTERN` | URL pattern installed in `session.defaultSession.webRequest.onBeforeSendHeaders` to permit same-origin header forwarding for backend requests. Must match `OPENWHISPR_BACKEND_URL` host. | `https://api.openwhispr.com/*` | Any URL pattern accepted by Electron `webRequest` filters | build (main) | `src/config/build-config.generated.cjs` |
 | `OPENWHISPR_MCP_URL` | MCP (Model Context Protocol) server endpoint exposed in the Integrations UI; copied to clipboard when the user pairs an external client. | `https://mcp.openwhispr.com/mcp` | Any URL | build (renderer) | `src/config/defaults.ts` |
+| `OPENWHISPR_REALTIME_WSS_URL` | WebSocket URL for realtime ASR (OpenAI Realtime API protocol, served by the corporate backend's Speaches+LiteLLM relay or any compatible implementation). When unset and `OPENWHISPR_BACKEND_URL` is set, derived as `wss://${host(OPENWHISPR_BACKEND_URL)}/v1/realtime` — path component on the backend URL is preserved verbatim (e.g. `https://api.example.com/v1` → `wss://api.example.com/v1/v1/realtime`), and the scheme is transformed `https`→`wss` / `http`→`ws`. When both are unset (offline / no-backend builds), realtime ASR is unavailable and `openaiRealtimeStreaming.connect()` rejects with a clear error before opening a WebSocket — set `OPENWHISPR_STREAMING=false` for offline builds (or rely on the B1 auto-disable rule documented in the [Realtime WebSocket Contract](./BACKEND_SPEC.md#realtime-websocket-contract) cross-link below). Setting this explicitly overrides the derivation (e.g. when realtime is on a separate WSS-only ingress). | `""` (empty; or derived from `OPENWHISPR_BACKEND_URL`) | Any `wss://` / `ws://` URL or empty string | build (main) | `src/config/build-config.generated.cjs` |
 
 ### OAuth — Endpoints
 
@@ -71,7 +72,7 @@ The flags do NOT appear in `docs/CONFIG_INVENTORY.md` because they are net-new P
 |------|---------|---------|----------------|---------|----------------------|
 | `OPENWHISPR_BILLING` | When unset/`false`, removes the Stripe checkout / billing-portal / switch-plan / preview-switch IPC method literals (`cloudCheckout`, `cloudBillingPortal`, `cloudSwitchPlan`, `cloudPreviewSwitch`), their kebab-case channels, and the `/api/stripe/` URL fragment from the renderer bundle and the preload surface; skips registration of the four Stripe `ipcMain.handle` blocks in main. UI buttons are no-op stubs that return `{ success: false, error: "Billing is disabled in this build" }` (the bundle-grep contract is the v1 deliverable; UI hide-vs-no-op is a deferred refinement). | `false` | Anything other than `"false"` is treated as `true`; absent = default | build (renderer DCE via Vite alias + main if-block + generated preload submodule) | `scripts/generate-build-config.js` BOOL_DEFAULTS + `src/config/build-config.generated.cjs` |
 | `OPENWHISPR_REFERRALS` | When unset/`false`, removes referral IPC method literals (`getReferralStats`, `sendReferralInvite`, `getReferralInvites`), their kebab-case channels, and the `/api/referrals/` URL fragment; the entire `ReferralModal-*.js` chunk is no longer emitted; the sidebar nav entry disappears (passed `undefined` for `onOpenReferrals`); skips registration of the three referral `ipcMain.handle` blocks. | `false` | Anything other than `"false"` is treated as `true`; absent = default | build (renderer DCE via sub-component split + main if-block + generated preload submodule) | `scripts/generate-build-config.js` BOOL_DEFAULTS + `src/config/build-config.generated.cjs` |
-| `OPENWHISPR_STREAMING` | When unset/`false`, removes AssemblyAI + Deepgram WebSocket live-ASR preload methods (`assemblyAiStreamingStart` / `…Warmup` / `…Send` / `…Stop` / `…Status` / `…ForceEndpoint`, `deepgramStreamingStart` / `…Warmup` / `…Send` / `…Stop` / `…Status` / `…Finalize`), all `assemblyai-streaming-*` / `deepgram-streaming-*` IPC channels, and the `/api/streaming-token` / `/api/deepgram-streaming-token` URL fragments. The 141 kB `useChatStreaming-*.js` chunk is replaced by a ~5 kB stub. Skips registration of the ~480-line AssemblyAI + Deepgram WebSocket handler block in main. Live dictation falls back to file-mode whisper.cpp / OpenAI Whisper. | `false` | Anything other than `"false"` is treated as `true`; absent = default | build (renderer DCE via two-stub Vite alias + main if-block + generated preload submodule) | `scripts/generate-build-config.js` BOOL_DEFAULTS + `src/config/build-config.generated.cjs` |
+| `OPENWHISPR_STREAMING` | Gates AssemblyAI + Deepgram + OpenAI-Realtime preload methods, the `assemblyai-streaming-*` / `deepgram-streaming-*` IPC channels, the `/api/streaming-token` / `/api/deepgram-streaming-token` URL fragments, and the 141 kB `useChatStreaming-*.js` chunk. **Phase 05 amendment (2026-05-09):** default flipped `false` → `true` — realtime ASR now routes through the corporate backend's `WSS /v1/realtime` (Speaches+LiteLLM, OpenAI-Realtime-compatible — see [BACKEND_SPEC § Realtime WebSocket Contract](./BACKEND_SPEC.md#realtime-websocket-contract)) instead of direct third-party WebSockets, so the original default-off rationale no longer applies. **B1 auto-disable safety net:** when the caller has not explicitly set `OPENWHISPR_STREAMING` AND `OPENWHISPR_REALTIME_WSS_URL` resolves empty (no backend, no override), the generator forces `STREAMING_ENABLED=false` to prevent a default `npm run build` from shipping a binary that crashes on first record. An explicit `OPENWHISPR_STREAMING=true` with no URL is respected as caller intent (the empty-URL guard in `openaiRealtimeStreaming.js` catches it at runtime). Set `OPENWHISPR_STREAMING=false` to opt out (escape hatch for backends that haven't deployed the realtime relay yet — preserves the Phase 04.1 absence-set behavior). | `true` (Phase 05 amendment; was `false` in Phase 04.1) | Anything other than `"false"` is treated as `true`; absent = default (subject to B1 auto-disable above) | build (renderer DCE via two-stub Vite alias + main if-block + generated preload submodule + `OPENWHISPR_REALTIME_WSS_URL` for routing) | `scripts/generate-build-config.js` BOOL_DEFAULTS + `src/config/build-config.generated.cjs` |
 
 > **Resolver semantics.** `scripts/generate-build-config.js#resolveBool` parses unset → `default`, the literal string `"false"` → `false`, anything else (`"true"`, `"1"`, `"yes"`, etc.) → `true`. The semantics are identical for OAuth flags (default `true`) and feature flags (default `false`); the asymmetric "explicit `true` required for opt-in" some readers expect is NOT how the resolver currently works. If you set `OPENWHISPR_BILLING=anything-not-false` it enables billing.
 
@@ -246,6 +247,35 @@ grep -r 'auth.social.continueWithMicrosoft' dist/ && echo "FAIL" || echo "OK"
 
 # Confirm Google IS still present:
 grep -rq 'oauth2.googleapis.com' dist/ && echo "OK: Google preserved" || echo "FAIL: Google missing"
+```
+
+### Example 4: Custom backend with realtime ASR via Speaches relay (Phase 05 default)
+
+```bash
+OPENWHISPR_BACKEND_URL=https://api.example.com \
+OPENWHISPR_AUTH_URL=https://auth.example.com \
+OPENWHISPR_BACKEND_URL_PATTERN="https://api.example.com/*" \
+npm run build
+```
+
+Produces a binary that:
+
+- Sends batch + reasoning traffic to `api.example.com` (Phase 3).
+- Connects realtime ASR via `wss://api.example.com/v1/realtime?intent=transcription` (Phase 05) — derived automatically from `OPENWHISPR_BACKEND_URL`.
+- Ships streaming-enabled by default (Phase 05 amendment).
+
+The backend MUST implement `WSS /v1/realtime` per [BACKEND_SPEC § Realtime WebSocket Contract](./BACKEND_SPEC.md#realtime-websocket-contract). If the realtime relay is not yet deployed, override the routing or opt out of streaming entirely:
+
+```bash
+# Override realtime to a separate WSS-only ingress:
+OPENWHISPR_BACKEND_URL=https://api.example.com \
+  OPENWHISPR_REALTIME_WSS_URL=wss://realtime.example.com/v1/realtime \
+  npm run build
+
+# OR opt out of streaming entirely (file-mode whisper.cpp + OpenAI Whisper still work):
+OPENWHISPR_BACKEND_URL=https://api.example.com \
+  OPENWHISPR_STREAMING=false \
+  npm run build
 ```
 
 ## Verifying parity

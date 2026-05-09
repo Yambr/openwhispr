@@ -65,6 +65,15 @@ export const OPENWHISPR_MISTRAL_BASE_URL = pickAllowEmpty(
   Generated.OPENWHISPR_MISTRAL_BASE_URL
 );
 
+// Phase 05 D-01: realtime WebSocket URL derived from OPENWHISPR_BACKEND_URL
+// (or set explicitly). Direct named re-export so the literal is preserved
+// across the module boundary for Rolldown DCE — same canonical pattern as
+// OAUTH_*_ENABLED / BILLING_ENABLED / REFERRALS_ENABLED / STREAMING_ENABLED.
+// Consumers (e.g., src/helpers/openaiRealtimeStreaming.js in PLAN-02) read
+// the .cjs flavor directly; this re-export covers any future renderer
+// consumer that needs the literal at build time.
+export { OPENWHISPR_REALTIME_WSS_URL } from "./build-config.generated";
+
 // Phase 4 OAuth gating: direct named re-export from the generated module so
 // Rolldown can trace the literal boolean across the module boundary and
 // constant-fold gates like `{OAUTH_*_ENABLED && (...)}` and

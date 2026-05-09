@@ -60,3 +60,10 @@ jobs:
         # Asserts BILLING / REFERRALS / STREAMING symbols are absent in default-build
         # and present when each respective flag is enabled.
         run: npm run verify:feature-gating
+
+      - name: Verify realtime routing (CFG-04 + Phase 05)
+        # Asserts OPENWHISPR_REALTIME_WSS_URL derives correctly from
+        # OPENWHISPR_BACKEND_URL (https→wss, http→ws, path-preserving) and
+        # that the api.openai.com/v1/realtime literal cannot regress silently
+        # in the source tree.
+        run: npm run verify:realtime-routing

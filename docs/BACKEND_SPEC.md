@@ -758,6 +758,51 @@ This endpoint is part of `auth.openwhispr.com`, not `${OPENWHISPR_API_URL}`. Ful
 
 ---
 
+## Realtime WebSocket Contract
+
+**Endpoint:** `WSS ${OPENWHISPR_REALTIME_WSS_URL}?intent=transcription` — defaults to `wss://${host(OPENWHISPR_BACKEND_URL)}/v1/realtime` derivation when only `OPENWHISPR_BACKEND_URL` is set at build time. Path component on the backend URL is preserved (e.g. `https://api.example.com/v1` → `wss://api.example.com/v1/v1/realtime`), and the scheme is transformed `https`→`wss` / `http`→`ws`.
+
+**Wire protocol:** OpenAI Realtime API. The backend MUST implement the protocol byte-for-byte — the desktop client speaks the upstream OpenAI Realtime spec without modification (per Phase 05 D-04). The reference corporate-backend implementation is `~/openwhispr-server`'s Phase 4 work using [Speaches](https://speaches.ai/) + [LiteLLM](https://docs.litellm.ai/) `mode: realtime` — Speaches claims OpenAI Realtime compatibility (see [Speaches Realtime API docs](https://speaches.ai/usage/realtime-api/)), and LiteLLM v1.82.0+ raises the upstream WebSocket itself and forwards events bidirectionally.
+
+**Auth:**
+- `Authorization: Bearer <openai-api-key-or-realtime-token>` HTTP header at WebSocket upgrade time.
+- The `apiKey` parameter passed to `OpenAIRealtimeStreaming.connect({ apiKey, model })` is forwarded as the bearer token. For BYOK, this is the user's OpenAI API key. For cloud-token mode, this is a short-lived ephemeral token minted via `POST /api/openai-realtime-token` (see card above).
+- Custom header: `OpenAI-Beta: realtime=v1` is also sent — backends MAY ignore.
+
+**Required server semantics** (from `src/helpers/openaiRealtimeStreaming.js`):
+
+| Server message `type` | Client behavior |
+|---|---|
+| `transcription_session.created` | Client either treats as ready (when `preconfigured: true`) or sends a `transcription_session.update` with PCM16 / server-VAD config. |
+| `transcription_session.updated` | Client treats as ready and resolves the connect promise. |
+| `conversation.item.input_audio_transcription.delta` | Streaming partial transcript — client appends `event.delta` to current partial. |
+| `conversation.item.input_audio_transcription.completed` | Final segment — `event.transcript` is the completed turn text. |
+| `input_audio_buffer.speech_started` / `…speech_stopped` / `…committed` | Server-VAD signals; client uses `speech_started` to capture timestamp for downstream ordering. |
+| `error` | Surfaces `event.error.message` via the `onError` callback. Empty-buffer errors (`input_audio_buffer_commit_empty`, "buffer too small") are treated as benign during disconnect. |
+
+**Client → server events:**
+- `input_audio_buffer.append` — base64-encoded PCM16 audio chunks (24kHz mono).
+- `input_audio_buffer.commit` — sent at disconnect to flush remaining audio. Server should emit a final `…transcription.completed` event in response.
+- `transcription_session.update` — only when not preconfigured; sets `input_audio_format: "pcm16"`, model, and turn-detection config.
+
+**Timeouts and limits:**
+- Connection timeout: client aborts if `transcription_session.created`/`updated` is not received within 15000 ms.
+- Disconnect commit timeout: client waits up to 3000 ms after sending `input_audio_buffer.commit` for a final transcription before closing.
+- Recommended server-side WebSocket idle timeouts: 3600 s read/send (per the Yambr nginx ingress / Speaches deployment reference). Shorter timeouts cause spurious mid-session disconnects on long dictations.
+
+**Cold-start buffering:**
+- The client buffers up to 3 seconds of PCM (pre-`OPEN`) and flushes it after the WebSocket reaches `OPEN`. This means the server may receive a burst of `input_audio_buffer.append` events at session start.
+
+**Source pointer:** `src/helpers/openaiRealtimeStreaming.js` (entire module). After Phase 05-02, the URL literal is replaced by an import from `src/config/build-config.generated.cjs`.
+
+**Graceful unavailability:** If the backend has not yet deployed `WSS /v1/realtime`, it SHOULD reject the WebSocket upgrade with HTTP `503 Service Unavailable`. The desktop client surfaces a localized "service unavailable" message; users can manually opt out at build time via `OPENWHISPR_STREAMING=false` (see [BUILD_CONFIG.md](./BUILD_CONFIG.md#feature-gating-flags-phase-041)). The Phase 05 B1 auto-disable rule additionally prevents a default `npm run build` (no env vars) from shipping a binary with `STREAMING_ENABLED=true` + empty realtime URL.
+
+**Out of scope for v1:**
+- Diarization-per-realtime-session — Phase 05 keeps diarization local (sherpa-onnx). The backend's `/v1/audio/diarization` endpoint (Speaches+pyannote) is documented in upstream Speaches docs but not yet wired into the desktop client.
+- Server-side speaker labels propagated through realtime events — feature exists in OpenAI Realtime spec but not consumed by the current client.
+
+---
+
 ## Custom Protocol Redirect
 
 After the OAuth round-trip, the auth host redirects to a custom protocol the OS routes back to the running Electron app:
@@ -782,7 +827,7 @@ These calls are intentionally **out of scope** for the OpenWhispr-cloud spec. Ea
 | OpenAI Chat Completions (fallback) | `https://api.openai.com/v1/chat/completions` (via `buildApiUrl(base, "/chat/completions")`) | POST | `src/services/ai/inferenceProviders/openai.ts:78, 121` (probe + provider) | https://platform.openai.com/docs/api-reference/chat |
 | OpenAI `/v1/models` (probe) | `https://api.openai.com/v1/models` | GET | `src/services/ai/inferenceProviders/openai.ts:92` | https://platform.openai.com/docs/api-reference/models |
 | OpenAI Whisper (BYOK retry path) | `https://api.openai.com/v1/audio/transcriptions` | POST `multipart/form-data` | `src/helpers/ipcHandlers.js:3600, 3603` | https://platform.openai.com/docs/api-reference/audio |
-| OpenAI Realtime (BYOK + cloud-token modes) | `wss://api.openai.com/v1/realtime?intent=transcription` | WebSocket | `src/helpers/openaiRealtimeStreaming.js:54` | https://platform.openai.com/docs/guides/realtime |
+| OpenAI Realtime (BYOK + cloud-token modes) | `${OPENWHISPR_REALTIME_WSS_URL}?intent=transcription` (Phase 05 — was `wss://api.openai.com/v1/realtime?intent=transcription` pre-05-02; default derives from `OPENWHISPR_BACKEND_URL`) | WebSocket | `src/helpers/openaiRealtimeStreaming.js` (URL now read from build-config; see [§ Realtime WebSocket Contract](#realtime-websocket-contract)) | https://platform.openai.com/docs/guides/realtime |
 | Anthropic Messages | `https://api.anthropic.com/v1/messages` | POST | `src/helpers/ipcHandlers.js:2826` (IPC bridge from renderer in `src/services/ai/inferenceProviders/anthropic.ts:5`) | https://docs.anthropic.com/en/api/messages |
 | Google Gemini | `https://generativelanguage.googleapis.com/v1beta` (`API_ENDPOINTS.GEMINI`) — `/models/<model>:generateContent` | POST | `src/config/constants.ts:76`, called at `src/services/ai/inferenceProviders/gemini.ts:43, 52` | https://ai.google.dev/api |
 | Groq (OpenAI-compatible) | `https://api.groq.com/openai/v1` (`API_ENDPOINTS.GROQ_BASE`) — `/chat/completions` | POST | `src/config/constants.ts:77`, called at `src/services/ai/inferenceProviders/groq.ts:10-11` | https://console.groq.com/docs/api-reference |
