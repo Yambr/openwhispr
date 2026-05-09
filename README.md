@@ -40,8 +40,7 @@ The default build ships **only** what a corporate deployment needs. Consumer fea
 | **OAuth providers** | Hardcoded list | Per-provider build-time gating (`OPENWHISPR_OAUTH_GOOGLE/APPLE/MICROSOFT`) |
 | **Stripe billing UI** | Always present | **Removed** by default (`OPENWHISPR_BILLING=true` to enable) |
 | **Referral program UI** | Always present | **Removed** by default (`OPENWHISPR_REFERRALS=true` to enable) |
-| **AssemblyAI / Deepgram streaming** | Always shipped (~141 KB) | **Removed** by default (`OPENWHISPR_STREAMING=true` to enable) |
-| **Realtime ASR routing (Phase 05)** | Direct WebSocket to `wss://api.openai.com/v1/realtime` (or AssemblyAI / Deepgram) | Routes through corporate backend at `wss://${backend-host}/v1/realtime` (Speaches+LiteLLM, OpenAI-Realtime-compatible). Override via `OPENWHISPR_REALTIME_WSS_URL` or disable with `OPENWHISPR_STREAMING=false`. |
+| **Realtime ASR streaming (Phase 05)** | Direct WebSocket to AssemblyAI / Deepgram / `wss://api.openai.com/v1/realtime` (~141 KB of vendor SDK shipped) | AssemblyAI / Deepgram code physically removed from bundle; `OPENWHISPR_STREAMING` defaults to **`true`** and routes realtime ASR through the corporate backend at `wss://${backend-host}/v1/realtime` (Speaches+LiteLLM, OpenAI-Realtime-compatible). Override via `OPENWHISPR_REALTIME_WSS_URL` or disable with `OPENWHISPR_STREAMING=false`. B1 auto-disable forces it off when no backend URL is configured. |
 | **Bundle ID** | `com.openwhispr.app` | `com.yambr.openwhispr` |
 | **Code signing** | OpenWhispr Developer ID | Yambr Developer ID |
 | **Auto-update feed** | OpenWhispr GitHub releases | Yambr GitHub releases |
