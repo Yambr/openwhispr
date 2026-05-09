@@ -212,7 +212,9 @@ jobs:
         # Strip leading "v" from tag (v1.7.2.1 → 1.7.2.1) so electron-builder
         # uses the Yambr version for binary naming, blockmap, and GitHub Release.
         # If invoked via workflow_dispatch (no tag), fall back to upstream package.json version.
+        # shell: bash forced — Windows runner default is pwsh, doesn't understand [[ ]].
         id: version
+        shell: bash
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             APP_VERSION="${GITHUB_REF_NAME#v}"
