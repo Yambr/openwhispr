@@ -3534,6 +3534,11 @@ class IPCHandlers {
       if (!buffer) return { success: false, error: "Audio file not found" };
       try {
         let result;
+        const preferredLanguage = settings?.preferredLanguage;
+        const language =
+          preferredLanguage && preferredLanguage !== "auto"
+            ? preferredLanguage.split("-")[0]
+            : undefined;
 
         if (settings?.useLocalWhisper) {
           if (settings.localTranscriptionProvider === "nvidia") {
@@ -3543,6 +3548,7 @@ class IPCHandlers {
           } else if (this.whisperManager?.serverManager?.isAvailable?.()) {
             result = await this.whisperManager.transcribeLocalWhisper(buffer, {
               model: settings.whisperModel,
+              language,
             });
           }
         } else if (settings?.cloudTranscriptionMode === "openwhispr") {
@@ -3553,6 +3559,7 @@ class IPCHandlers {
               const apiUrl = getApiUrl();
               if (apiUrl) {
                 const multipartFields = {
+                  language,
                   clientType: "desktop",
                   appVersion: app.getVersion(),
                   sessionId: this.sessionId,
@@ -3614,6 +3621,7 @@ class IPCHandlers {
           const formData = new FormData();
           formData.append("file", new Blob([buffer], { type: "audio/webm" }), "audio.webm");
           formData.append("model", model);
+          if (language) formData.append("language", language);
           const headers = {};
           if (provider === "mistral") {
             headers["x-api-key"] = apiKey;
@@ -4069,7 +4077,11 @@ class IPCHandlers {
     const fetchRealtimeToken = async (event, options, { streams } = {}) => {
       const postServerToken = async (path, body = {}) => {
         const apiUrl = getApiUrl();
-        if (!apiUrl) throw new Error("OpenWhispr API URL not configured");
+        if (!apiUrl) {
+          const err = new Error("OpenWhispr API URL not configured");
+          err.code = "NO_API";
+          throw err;
+        }
         const authHeader = await getAuthHeader(event);
         if (!Object.keys(authHeader).length) throw new Error("Not authenticated");
         const url = `${apiUrl}${path}`;
@@ -4292,6 +4304,7 @@ class IPCHandlers {
     let meetingLocalTranscript = "";
     let meetingLocalProvider = null;
     let meetingLocalModel = null;
+    let meetingLocalLanguage = null;
     let meetingLocalTranscribing = false;
     let meetingPendingMicChunks = [];
     let meetingPendingMicFinals = [];
@@ -4686,6 +4699,7 @@ class IPCHandlers {
         } else {
           result = await this.whisperManager.transcribeLocalWhisper(wav, {
             model: meetingLocalModel,
+            language: meetingLocalLanguage,
           });
         }
 
@@ -4856,6 +4870,7 @@ class IPCHandlers {
       meetingLocalTranscript = "";
       meetingLocalProvider = null;
       meetingLocalModel = null;
+      meetingLocalLanguage = null;
       meetingLocalTranscribing = false;
       meetingPendingMicChunks = [];
       resetPendingMicFinals();
@@ -4870,6 +4885,7 @@ class IPCHandlers {
     let dictationPreviewTranscribing = false;
     let dictationPreviewProvider = null;
     let dictationPreviewModel = null;
+    let dictationPreviewLanguage = null;
     let dictationPreviewSessionActive = false;
     let dictationPreviewChunkCount = 0;
 
@@ -4886,6 +4902,7 @@ class IPCHandlers {
       dictationPreviewTranscribing = false;
       dictationPreviewProvider = null;
       dictationPreviewModel = null;
+      dictationPreviewLanguage = null;
     };
 
     const transcribeDictationPreviewChunk = async () => {
@@ -4921,6 +4938,7 @@ class IPCHandlers {
         } else {
           result = await this.whisperManager.transcribeLocalWhisper(wav, {
             model: dictationPreviewModel,
+            language: dictationPreviewLanguage,
           });
         }
 
@@ -5159,6 +5177,7 @@ class IPCHandlers {
           meetingLocalMode = true;
           meetingLocalProvider = options.localProvider || "whisper";
           meetingLocalModel = options.localModel || null;
+          meetingLocalLanguage = options.language || null;
           meetingLocalWin = BrowserWindow.fromWebContents(event.sender);
           meetingLocalBuffers = { mic: [], system: [] };
           meetingLocalTranscript = "";
@@ -5471,12 +5490,13 @@ class IPCHandlers {
       return { success: true, text: result.text || "" };
     });
 
-    ipcMain.handle("start-dictation-preview", async (_event, { provider, model }) => {
+    ipcMain.handle("start-dictation-preview", async (_event, { provider, model, language }) => {
       resetDictationPreviewState();
       dictationPreviewMode = true;
       dictationPreviewSessionActive = true;
       dictationPreviewProvider = provider;
       dictationPreviewModel = model;
+      dictationPreviewLanguage = language || null;
       dictationPreviewChunkCount = 0;
       this.windowManager.showTranscriptionPreview("");
       dictationPreviewTimer = setInterval(() => transcribeDictationPreviewChunk(), 1500);
