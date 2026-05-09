@@ -312,17 +312,21 @@ jobs:
             git tag -l --format='%(contents)' "${TAG_NAME}" > release-notes.md
           fi
 
-          # Append corporate-minimal posture banner
+          # Append corporate-minimal posture banner.
+          # Inline-replaced markdown bold ("@@B" placeholders) to dodge YAML
+          # alias confusion with leading "**" tokens, then restored.
           cat >> release-notes.md <<EOF
 
 ---
-**Build posture:** corporate-minimal (default)
+@@BBuild posture:@@B corporate-minimal (default)
 - OAuth providers: enabled (Google/Apple/Microsoft)
-- Stripe billing UI: **disabled**
-- Referral program UI: **disabled**
-- Third-party realtime ASR: **disabled**
+- Stripe billing UI: @@Bdisabled@@B
+- Referral program UI: @@Bdisabled@@B
+- Third-party realtime ASR: @@Bdisabled@@B
 - Realtime via corporate backend (set OPENWHISPR_BACKEND_URL when building)
 EOF
+          # Restore markdown bold markers
+          sed -i 's/@@B/**/g' release-notes.md
 
           gh release create "${TAG_NAME}" "${FILES[@]}" \
             --title "${TAG_NAME}" \
