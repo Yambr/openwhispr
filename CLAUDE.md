@@ -6,6 +6,30 @@ This document provides comprehensive technical details about the OpenWhispr proj
 
 OpenWhispr is an Electron-based desktop dictation application that uses whisper.cpp for speech-to-text transcription. It supports both local (privacy-focused) and cloud (OpenAI API) processing modes.
 
+## Versioning Rules (Yambr Fork) — CRITICAL
+
+**DO NOT bump `package.json` `version` field.** It tracks the upstream OpenWhispr baseline (currently `1.7.2`) and stays in sync with what we merged from `OpenWhispr/openwhispr`. This is how downstream consumers, auto-update feeds, and dependency lockfiles know which upstream version we're built from.
+
+**To mark a Yambr release**, use a **post-tag suffix** on the upstream version:
+
+- ✅ `v1.7.2-yambr.1` — first Yambr release on top of upstream v1.7.2
+- ✅ `v1.7.2-yambr.2` — second Yambr release (more fork-only changes), still upstream v1.7.2
+- ✅ `v1.7.3-yambr.1` — first Yambr release after upstream bumps to 1.7.3
+- ❌ `v1.7.3` (without suffix when upstream is still 1.7.2) — collides with future upstream tag, breaks `git fetch upstream`
+- ❌ Editing `package.json` `version` to `1.7.3` while upstream is `1.7.2` — also breaks `npm ci` because `sed`-style replacements collide with same-version dependencies (e.g., `resedit@1.7.2` got rewritten to `resedit@1.7.3` by accident; that package version doesn't exist)
+
+**Tagging procedure:**
+
+```bash
+# After merging fork-only work to main, tag without touching package.json:
+git tag -a v1.7.2-yambr.N -m "v1.7.2-yambr.N — <one-line summary>"
+git push --tags
+```
+
+The Yambr tag suffix follows [SemVer pre-release identifiers](https://semver.org/#spec-item-9) — sortable, comparable, npm-compatible.
+
+**When to bump `package.json`:** ONLY when we merge an upstream tag that bumps it (e.g., upstream releases `1.7.3`, our merge PR brings the new `package.json` value automatically — never edit it by hand).
+
 ## Architecture Overview
 
 ### Core Technologies
