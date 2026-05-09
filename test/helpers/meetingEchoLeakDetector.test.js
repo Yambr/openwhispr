@@ -1,5 +1,4 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
+// Uses globals enabled in vitest.config.ts (test, expect available without import).
 
 const MeetingEchoLeakDetector = require("../../src/helpers/meetingEchoLeakDetector");
 
@@ -65,10 +64,10 @@ test("shouldSuppressMicSegment keeps bleed evidence even when share stays below 
 
   const result = detector.shouldSuppressMicSegment(nowMs - 500, nowMs);
 
-  assert.equal(result.suppress, false);
-  assert.equal(result.reason, "double_talk");
-  assert.equal(result.hasBleedEvidence, true);
-  assert.equal(result.likelyRenderBleed, false);
-  assert.equal(result.bleedMatchCount, 1);
-  assert.equal(result.sampleCount, 4);
+  expect(result.suppress).toBe(false);
+  expect(result.reason).toBe("double_talk");
+  expect(result.hasBleedEvidence).toBe(true);
+  expect(result.likelyRenderBleed).toBe(false);
+  expect(result.bleedMatchCount).toBe(1);
+  expect(result.sampleCount).toBe(4);
 });

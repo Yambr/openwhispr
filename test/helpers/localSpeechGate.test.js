@@ -1,5 +1,4 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
+// Uses globals enabled in vitest.config.ts (test, expect available without import).
 
 test("treats near silence as skippable", async () => {
   const { createLocalSpeechGateState, recordLocalSpeechWindow, getLocalSpeechGateDecision } =
@@ -10,7 +9,7 @@ test("treats near silence as skippable", async () => {
   recordLocalSpeechWindow(state, 0.0016, 0.015);
   recordLocalSpeechWindow(state, 0.0014, 0.012);
 
-  assert.deepEqual(getLocalSpeechGateDecision(state), {
+  expect(getLocalSpeechGateDecision(state)).toEqual({
     skip: true,
     reason: "silence",
     peakRms: 0.0016,
@@ -33,13 +32,13 @@ test("rejects isolated noise bursts without sustained speech", async () => {
 
   const decision = getLocalSpeechGateDecision(state);
 
-  assert.equal(decision.skip, true);
-  assert.equal(decision.reason, "insufficient_speech");
-  assert.equal(decision.peakRms, 0.0028);
-  assert.equal(decision.peakAmplitude, 0.018);
-  assert.equal(decision.windowCount, 3);
-  assert.equal(decision.speechWindowCount, 0);
-  assert.equal(decision.maxConsecutiveSpeechWindows, 0);
+  expect(decision.skip).toBe(true);
+  expect(decision.reason).toBe("insufficient_speech");
+  expect(decision.peakRms).toBe(0.0028);
+  expect(decision.peakAmplitude).toBe(0.018);
+  expect(decision.windowCount).toBe(3);
+  expect(decision.speechWindowCount).toBe(0);
+  expect(decision.maxConsecutiveSpeechWindows).toBe(0);
 });
 
 test("allows sustained speech-like energy through", async () => {
@@ -51,7 +50,7 @@ test("allows sustained speech-like energy through", async () => {
   recordLocalSpeechWindow(state, 0.0056, 0.06);
   recordLocalSpeechWindow(state, 0.0061, 0.065);
 
-  assert.deepEqual(getLocalSpeechGateDecision(state), {
+  expect(getLocalSpeechGateDecision(state)).toEqual({
     skip: false,
     reason: "speech_detected",
     peakRms: 0.0061,
