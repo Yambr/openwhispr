@@ -48,6 +48,14 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Run unit tests (Phase 07)
+        # Phase 07 hybrid testing: vitest unit tests for Phase 04/04.1/05
+        # additions (deriveRealtimeWssUrl, resolveBool/Value, B1 auto-disable
+        # matrix, openaiRealtimeStreaming empty-URL guard, audioManager
+        # streaming gate). Runs BEFORE the bundle gates so unit failures
+        # fail fast (~30s vs ~13min for the full bundle gate suite).
+        run: npm test
+
       - name: Verify pack regenerates build-config (CFG-08)
         run: npm run verify:pack-regen
 

@@ -466,6 +466,16 @@ npm run verify:pack-regen
 
 All three should exit 0. Combined runtime is roughly 5–8 minutes (sequential renderer builds across all scenarios). The manual checklist below exists for cases where a release engineer wants to inspect the produced binary visually.
 
+### Phase 07 unit tests (fast pre-flight)
+
+Before any of the slow bundle gates above, the Phase 07 vitest harness covers the build-time configuration logic in ~30 seconds. CI runs this BEFORE the bundle gates so unit failures fail fast.
+
+- [ ] `npm test` exits 0 (Phase 07 unit tests pass — vitest, ~30s)
+- [ ] `npm run typecheck` exits 0
+- [ ] `npm run test:coverage` succeeds and reports coverage for `scripts/generate-build-config.js` and `src/helpers/openaiRealtimeStreaming.js` (HTML at `coverage/index.html`)
+
+See [`docs/BUILD_CONFIG.md` § Testing](./BUILD_CONFIG.md#testing) for command details and scope.
+
 ### Per-flag manual flows
 
 | Flag | Build command | Expected absence (default) | Expected presence (opt-in) |

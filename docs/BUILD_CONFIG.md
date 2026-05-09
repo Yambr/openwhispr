@@ -293,3 +293,17 @@ npm run verify:pack-regen      # CFG-08 regression: pack pipeline regenerates bu
 ```
 
 For OAuth provider gating verification (does `OPENWHISPR_OAUTH_<P>=false` actually remove the provider from the bundle?), `node scripts/verify-oauth-gating.js` wraps the bundle-grep targets shown in Example 3 and asserts the documented absence/presence per provider. For feature-flag gating verification (do `OPENWHISPR_BILLING` / `OPENWHISPR_REFERRALS` / `OPENWHISPR_STREAMING` actually remove their respective IPC literals?), `node scripts/verify-feature-gating.js` runs the symmetric inverse — default build expects the literals ABSENT, opt-in builds expect them PRESENT. The corresponding human-UAT flows for each gated build are listed in [`docs/SELF_HOSTING.md`](SELF_HOSTING.md) under the Phase 4 OAuth-gating and Phase 04.1 Feature Gating sections.
+
+## Testing
+
+The repo ships a vitest harness covering the Phase 04/04.1/05 build-time configuration logic — URL derivation, boolean resolution, the B1 streaming auto-disable matrix, and the realtime empty-URL guard.
+
+| Command | What it does |
+|---|---|
+| `npm test` | Run all unit tests once (CI mode). Exits non-zero on failure. |
+| `npm run test:watch` | Interactive watch mode — re-runs affected tests on save. |
+| `npm run test:coverage` | Generate a v8 coverage report scoped to phase-work files (`scripts/generate-build-config.js`, `src/helpers/openaiRealtimeStreaming.js`). HTML report at `coverage/index.html`. |
+
+Tests run in CI as part of `.github/workflows/verify-gating.yml`. They execute BEFORE the slower bundle gates so unit-test failures abort the workflow in ~30 seconds rather than after multiple minutes of bundle builds.
+
+**Scope:** Phase 04/04.1/05 additions only. Upstream legacy code is intentionally NOT covered by unit tests at this layer — it is exercised indirectly by the `verify:*` bundle gates and manual UAT.
