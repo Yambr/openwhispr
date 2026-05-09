@@ -125,3 +125,13 @@ Plans:
 
 Plans:
 - [ ] TBD (run /gsd-plan-phase 6 to break down)
+
+### Phase 7: Add unit + integration tests for Phase 04/04.1/05 phase work — vitest setup, tests for deriveRealtimeWssUrl, generate-build-config logic, shouldUseStreaming gate, gating helpers. Target ~50-100 tests covering our additions; upstream legacy code stays uncovered.
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 7 to break down)
