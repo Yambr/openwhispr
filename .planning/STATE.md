@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-08)
 Phase: 2
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-05-08 -- Phase 03 planning complete
+Last activity: 2026-05-09 -- Completed quick task 260509-x1a: restore release.yml signing+notarization
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -96,6 +96,12 @@ None yet.
 ### Blockers/Concerns
 
 None yet.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260509-x1a | Restore release.yml with macOS signing+notarization, merge corporate-build features, delete corporate-build.yml + build-and-notarize.yml | 2026-05-09 | 4adb576e | [260509-x1a-restore-release-yml-with-macos-signing-n](./quick/260509-x1a-restore-release-yml-with-macos-signing-n/) |
 
 ## Session Continuity
 
