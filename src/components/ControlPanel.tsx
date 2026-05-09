@@ -476,6 +476,7 @@ export default function ControlPanel() {
           cloudTranscriptionBaseUrl: s.cloudTranscriptionBaseUrl,
           parakeetModel: s.parakeetModel,
           whisperModel: s.whisperModel,
+          preferredLanguage: s.preferredLanguage,
           transcriptionMode: s.transcriptionMode,
           remoteTranscriptionType: s.remoteTranscriptionType,
           remoteTranscriptionUrl: s.remoteTranscriptionUrl,
