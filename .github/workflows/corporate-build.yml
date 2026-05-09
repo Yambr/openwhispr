@@ -1,7 +1,8 @@
 name: Corporate Minimal Build
 
 # Builds the corporate-minimal binary (default build, no Stripe/Referrals/Streaming)
-# for all 3 platforms. Triggered manually or by tag push (v*-corp).
+# for all 3 platforms. Triggered by ANY Yambr release tag (v*.*.*.* — 4-segment
+# scheme per CLAUDE.md versioning rules) or manual workflow_dispatch.
 #
 # Per the 2026-05-08 corporate-minimal pivot:
 # - OAuth providers default ON (set OPENWHISPR_OAUTH_*=false to disable per-provider)
@@ -9,13 +10,15 @@ name: Corporate Minimal Build
 # - Referrals OFF (OPENWHISPR_REFERRALS=true to enable)
 # - Streaming ASR OFF (OPENWHISPR_STREAMING=true to enable)
 #
-# To produce an upstream-parity build instead, push a v*-upstream tag or run the
-# regular Build and Notarize workflow.
+# Tag-name → resolved app version: the workflow extracts the tag (e.g. v1.7.2.1)
+# and passes it to electron-builder via --config.extraMetadata.version override
+# so the produced binary, blockmap, and GitHub Release point at the Yambr tag,
+# not the upstream baseline in package.json.
 
 on:
   push:
     tags:
-      - "v*-corp"
+      - "v*.*.*.*"  # Yambr 4-segment tags (v1.7.2.1, v1.7.2.2, v1.7.3.1, ...)
   workflow_dispatch:
     inputs:
       backend_url:
@@ -49,6 +52,20 @@ jobs:
           node-version: "24"
           cache: "npm"
 
+      - name: Resolve Yambr version from git tag
+        # Strip leading "v" from tag (v1.7.2.1 → 1.7.2.1) so electron-builder
+        # uses the Yambr version for binary naming, blockmap, and GitHub Release.
+        # If invoked via workflow_dispatch (no tag), fall back to upstream package.json version.
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            APP_VERSION="${GITHUB_REF_NAME#v}"
+          else
+            APP_VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved app version: ${APP_VERSION}"
+
       - name: Install dependencies
         run: npm ci
 
@@ -70,17 +87,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
 
       - name: Build macOS (corporate-minimal, all flags default false except OAuth)
-        run: npm run build:mac:arm64 -- --publish never
+        run: |
+          node scripts/generate-build-config.js
+          npm run build:renderer
+          npx electron-builder --mac --arm64 \
+            --config.extraMetadata.version=${{ steps.version.outputs.version }} \
+            --publish never
         env:
-          # Corporate-minimal defaults — explicitly set for clarity / audit log
           OPENWHISPR_BILLING: "false"
           OPENWHISPR_REFERRALS: "false"
           OPENWHISPR_STREAMING: "false"
-          # Corporate backend URLs (workflow_dispatch inputs or empty)
           VITE_OPENWHISPR_API_URL: ${{ inputs.backend_url }}
           VITE_OPENWHISPR_AUTH_URL: ${{ inputs.auth_url }}
-          # Don't sign — pack-style unsigned for testing. Real release pipeline
-          # uses build-and-notarize.yml with the full signing flow.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Verify built artifact has corporate-minimal posture
@@ -106,6 +124,20 @@ jobs:
         with:
           node-version: "24"
           cache: "npm"
+
+      - name: Resolve Yambr version from git tag
+        # Strip leading "v" from tag (v1.7.2.1 → 1.7.2.1) so electron-builder
+        # uses the Yambr version for binary naming, blockmap, and GitHub Release.
+        # If invoked via workflow_dispatch (no tag), fall back to upstream package.json version.
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            APP_VERSION="${GITHUB_REF_NAME#v}"
+          else
+            APP_VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved app version: ${APP_VERSION}"
 
       - name: Install dependencies
         run: npm ci
@@ -136,7 +168,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
 
       - name: Build Linux (corporate-minimal)
-        run: npm run build:linux -- --publish never
+        run: |
+          node scripts/generate-build-config.js
+          npm run build:renderer
+          npx electron-builder --linux \
+            --config.extraMetadata.version=${{ steps.version.outputs.version }} \
+            --publish never
         env:
           OPENWHISPR_BILLING: "false"
           OPENWHISPR_REFERRALS: "false"
@@ -171,6 +208,20 @@ jobs:
           node-version: "24"
           cache: "npm"
 
+      - name: Resolve Yambr version from git tag
+        # Strip leading "v" from tag (v1.7.2.1 → 1.7.2.1) so electron-builder
+        # uses the Yambr version for binary naming, blockmap, and GitHub Release.
+        # If invoked via workflow_dispatch (no tag), fall back to upstream package.json version.
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            APP_VERSION="${GITHUB_REF_NAME#v}"
+          else
+            APP_VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved app version: ${APP_VERSION}"
+
       - name: Install dependencies
         run: npm ci
 
@@ -196,7 +247,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
 
       - name: Build Windows (corporate-minimal)
-        run: npm run build:win -- --publish never
+        run: |
+          node scripts/generate-build-config.js
+          npm run build:renderer
+          npx electron-builder --win --config.extraMetadata.version=${{ steps.version.outputs.version }} --publish never
         env:
           OPENWHISPR_BILLING: "false"
           OPENWHISPR_REFERRALS: "false"
@@ -215,3 +269,62 @@ jobs:
           name: openwhispr-corp-win-x64
           path: dist/*.exe
           retention-days: 30
+
+  publish-release:
+    # Create a GitHub Release with all platform artifacts attached.
+    # Only runs on tag pushes (not workflow_dispatch).
+    needs: [build-mac, build-linux, build-windows]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: |
+          ls -la artifacts/
+          find artifacts/ -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" \) | head -20
+
+      - name: Create GitHub Release with artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          # Aggregate all platform binaries into one release
+          mapfile -t FILES < <(find artifacts/ -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" \))
+
+          echo "Creating release ${TAG_NAME} with ${#FILES[@]} artifact(s)"
+
+          # Create release notes from CHANGELOG if present, else from tag annotation
+          if [ -f CHANGELOG.md ]; then
+            NOTES_FROM_CHANGELOG=$(awk "/^## \[?${TAG_NAME#v}/{flag=1; next} /^## \[?[0-9]/{flag=0} flag" CHANGELOG.md)
+          fi
+
+          if [ -n "${NOTES_FROM_CHANGELOG:-}" ]; then
+            echo "${NOTES_FROM_CHANGELOG}" > release-notes.md
+          else
+            git tag -l --format='%(contents)' "${TAG_NAME}" > release-notes.md
+          fi
+
+          # Append corporate-minimal posture banner
+          cat >> release-notes.md <<EOF
+
+---
+**Build posture:** corporate-minimal (default)
+- OAuth providers: enabled (Google/Apple/Microsoft)
+- Stripe billing UI: **disabled**
+- Referral program UI: **disabled**
+- Third-party realtime ASR: **disabled**
+- Realtime via corporate backend (set OPENWHISPR_BACKEND_URL when building)
+EOF
+
+          gh release create "${TAG_NAME}" "${FILES[@]}" \
+            --title "${TAG_NAME}" \
+            --notes-file release-notes.md \
+            --verify-tag
