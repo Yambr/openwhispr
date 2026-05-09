@@ -75,6 +75,9 @@
     "verify:pack-regen": "node scripts/verify-pack-regenerates-build-config.js",
     "verify:feature-gating": "node scripts/verify-feature-gating.js",
     "verify:realtime-routing": "node scripts/verify-realtime-routing.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "preview": "cd src && vite preview",
     "clean": "node cleanup.js"
   },
@@ -112,7 +115,9 @@
     "tailwindcss": "^4.1.10",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.1",
-    "vite": "^8.0.7"
+    "vite": "^8.0.7",
+    "vitest": "^3.2.0",
+    "@vitest/coverage-v8": "^3.2.0"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.93",

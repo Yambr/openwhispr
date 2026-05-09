@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
+milestone: v1.7.2
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 04.1-06-PLAN.md (docs: BUILD_CONFIG + SELF_HOSTING for corporate-minimal pivot)"
-last_updated: "2026-05-08T18:23:39.950Z"
+stopped_at: Completed 07-06-PLAN.md
+last_updated: "2026-05-09T09:05:21.564Z"
 last_activity: 2026-05-08 -- Phase 03 planning complete
 progress:
-  total_phases: 5
-  completed_phases: 4
-  total_plans: 23
-  completed_plans: 20
-  percent: 87
+  total_phases: 8
+  completed_phases: 6
+  total_plans: 33
+  completed_plans: 30
+  percent: 91
 ---
 
 # Project State
@@ -57,6 +57,11 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P03 | 4min | 1 tasks | 1 files |
 | Phase 04.1 P05 | 6m | 3 tasks | 11 files |
 | Phase 04.1 P06 | 5m | 2 tasks | 2 files |
+| Phase 07 P01 | 2m | 2 tasks | 7 files |
+| Phase 07 P02 | 1m | 2 tasks | 2 files |
+| Phase 07 P03 | 2m | 2 tasks | 1 files |
+| Phase 07 P05 | 5min | 2 tasks | 1 files |
+| Phase 07 P06 | 5m | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -80,6 +85,9 @@ Recent decisions affecting current work:
 - [Phase 01]: SELF_HOSTING.md uses two-tier endpoint pattern (3 must-implement inline + 16 operational cross-linked to BACKEND_SPEC) for readability + single-source-of-truth
 - [Phase 04.1]: Used two-stub Vite-alias gating for STREAMING_ENABLED: streamingProviders.stub.js + useChatStreaming.stub.ts, since literals span two always-imported leaf modules
 - [Phase 04.1]: Phase 04.1 closed: 6 build flags documented + tree-shake mechanism canonicalized in BUILD_CONFIG.md; SELF_HOSTING.md reflects corporate-minimal default posture per 2026-05-08 pivot
+- [Phase 07]: Drop require("vitest") in CJS tests; rely on globals: true (vitest 3.x rejects CJS require)
+- [Phase 07]: Use require.main === module guard to make generate-build-config.js dual-purpose CLI+library without breaking 30+ npm scripts that spawn it
+- [Phase 07]: Plan 07-05: chose Path C (smoke-grep) over Path A (extract pure helper) for audioManager.shouldUseStreaming — verify:feature-gating already covers end-to-end; extraction filed as follow-up
 
 ### Pending Todos
 
@@ -91,6 +99,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-08T18:23:39.899Z
-Stopped at: Completed 04.1-06-PLAN.md (docs: BUILD_CONFIG + SELF_HOSTING for corporate-minimal pivot)
+Last session: 2026-05-09T09:05:21.562Z
+Stopped at: Completed 07-06-PLAN.md
 Resume file: None
