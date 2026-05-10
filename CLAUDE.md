@@ -8,25 +8,30 @@ OpenWhispr is an Electron-based desktop dictation application that uses whisper.
 
 ## Versioning Rules (Yambr Fork) — CRITICAL
 
-**DO NOT bump `package.json` `version` field.** It tracks the upstream OpenWhispr baseline (currently `1.7.2`) and stays in sync with what we merged from `OpenWhispr/openwhispr`. This is how downstream consumers, auto-update feeds, and dependency lockfiles know which upstream version we're built from.
+**DO NOT bump `package.json` `version` field.** It tracks the upstream OpenWhispr baseline (currently `1.7.2`) and stays in sync with what we last merged from `OpenWhispr/openwhispr`. We never edit it by hand.
 
-**To mark a Yambr release**, append a **4th version segment** to the upstream version:
+**Yambr release tags use a strict-semver prerelease scheme:** `v<UPSTREAM>-yambr.<N>` where `<UPSTREAM>` is the exact upstream version we last merged (3-segment, e.g. `1.7.2`) and `<N>` is a monotonic integer that resets to `1` whenever `<UPSTREAM>` changes.
 
-- ✅ `v1.7.2.1` — first Yambr release on top of upstream v1.7.2
-- ✅ `v1.7.2.2` — second Yambr release (more fork-only changes), still upstream v1.7.2
-- ✅ `v1.7.3.1` — first Yambr release after upstream bumps to 1.7.3
-- ❌ `v1.7.3` (without 4th segment when upstream is still 1.7.2) — collides with future upstream tag, breaks `git fetch upstream`
-- ❌ Editing `package.json` `version` to `1.7.3` while upstream is `1.7.2` — also breaks `npm ci` because `sed`-style replacements collide with same-version dependencies (e.g., `resedit@1.7.2` got rewritten to `resedit@1.7.3` by accident; that package version doesn't exist)
+- ✅ `v1.7.2-yambr.1` — first Yambr release on top of upstream v1.7.2
+- ✅ `v1.7.2-yambr.2` — second Yambr release (more fork-only changes), still upstream v1.7.2
+- ✅ `v1.7.3-yambr.1` — first Yambr release after upstream bumps to 1.7.3 (resets `<N>`)
+- ❌ `v1.7.2.1` (4-segment) — NOT valid semver, crashes electron-updater on launch with `ERR_UPDATER_INVALID_VERSION`. Do not use.
+- ❌ Editing `package.json` `version` to `1.7.3` while upstream is `1.7.2` — breaks `npm ci` (collides with same-version dependencies, e.g. `resedit@1.7.2`)
 
 **Tagging procedure:**
 
 ```bash
-# After merging fork-only work to main, tag without touching package.json:
-git tag -a v1.7.2.N -m "v1.7.2.N — <one-line summary>"
+# After merging fork-only work to main:
+git tag -a v1.7.2-yambr.N -m "v1.7.2-yambr.N — <one-line summary>"
 git push --tags
 ```
 
-The 4-segment scheme is unambiguous: anything past the 3rd dot is a Yambr-only iteration, upstream tags always have exactly 3. `release.yml` triggers on `v*` (catches both upstream and Yambr tags).
+CI (`release.yml`, tag glob `v*`) reads the tag, strips the leading `v`, and injects the full prerelease string `1.7.2-yambr.N` via `--config.extraMetadata.version`. The 3-segment `package.json` value is NOT modified — it still records which upstream version we merged.
+
+**Update channel:** Yambr builds run on the custom `yambr` update channel (macOS arch-aware: `yambr-arm64` / `yambr-x64`). They read `yambr.yml` / `yambr-mac.yml` / `yambr-{arch}-mac.yml`, never `latest*.yml`. This is wired in `src/updater.js` and `electron-builder.json` (`generateUpdatesFilesForAllChannels: true`). Consequences:
+
+- Yambr users only auto-update to other Yambr builds — they never auto-update to a vanilla upstream `latest` release. **This is intentional.**
+- When upstream releases a stable build the fork should adopt, merge upstream into the fork and cut a new `v<NEW-UPSTREAM>-yambr.1` — fork users will receive it through the `yambr` channel.
 
 **When to bump `package.json`:** ONLY when we merge an upstream tag that bumps it (e.g., upstream releases `1.7.3`, our merge PR brings the new `package.json` value automatically — never edit it by hand).
 
