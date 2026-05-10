@@ -44,7 +44,11 @@ const MAIN_WINDOW_CONFIG = {
     preload: path.join(__dirname, "..", "..", "preload.js"),
     nodeIntegration: false,
     contextIsolation: true,
-    sandbox: true,
+    // sandbox: false because preload.js requires generated cjs modules
+    // (preload-gcal/billing/referrals/streaming.generated.cjs) for build-time
+    // feature gating (Phase 04.1). Sandboxed preload doesn't allow arbitrary
+    // require() of relative paths.
+    sandbox: false,
   },
   frame: false,
   alwaysOnTop: true,
@@ -114,7 +118,8 @@ const NOTIFICATION_WINDOW_CONFIG = {
     preload: path.join(__dirname, "..", "..", "preload.js"),
     nodeIntegration: false,
     contextIsolation: true,
-    sandbox: true,
+    // sandbox: false — see MAIN_WINDOW_CONFIG comment.
+    sandbox: false,
   },
   visibleOnAllWorkspaces: process.platform !== "win32",
   type: FLOATING_OVERLAY_TYPE,
@@ -145,7 +150,8 @@ const TRANSCRIPTION_PREVIEW_CONFIG = {
     preload: path.join(__dirname, "..", "..", "preload.js"),
     nodeIntegration: false,
     contextIsolation: true,
-    sandbox: true,
+    // sandbox: false — see MAIN_WINDOW_CONFIG comment.
+    sandbox: false,
   },
   visibleOnAllWorkspaces: process.platform !== "win32",
   type: FLOATING_OVERLAY_TYPE,

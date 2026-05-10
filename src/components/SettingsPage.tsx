@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { AUTH_URL, signOut, deleteAccount } from "../lib/auth";
+import { BILLING_ENABLED } from "@/config/defaults";
 import MicPermissionWarning from "./ui/MicPermissionWarning";
 import MicrophoneSettings from "./ui/MicrophoneSettings";
 import PermissionCard from "./ui/PermissionCard";
@@ -1359,27 +1360,34 @@ export default function SettingsPage({
                   </SettingsPanelRow>
                 </SettingsPanel>
 
-                <div className="rounded-lg border border-primary/20 dark:border-primary/15 bg-primary/3 dark:bg-primary/6 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-md bg-primary/10 dark:bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
-                      <Sparkles className="w-4 h-4 text-primary" />
-                    </div>
-                    <div className="min-w-0 flex-1 space-y-2.5">
-                      <div>
-                        <p className="text-xs font-medium text-foreground">
-                          {t("settingsPage.account.trialCta.title")}
-                        </p>
-                        <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
-                          {t("settingsPage.account.trialCta.description")}
-                        </p>
+                {BILLING_ENABLED ? (
+                  <div className="rounded-lg border border-primary/20 dark:border-primary/15 bg-primary/3 dark:bg-primary/6 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-md bg-primary/10 dark:bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
+                        <Sparkles className="w-4 h-4 text-primary" />
                       </div>
-                      <Button onClick={startOnboarding} size="sm" className="w-full">
-                        <UserCircle className="mr-1.5 h-3.5 w-3.5" />
-                        {t("settingsPage.account.trialCta.button")}
-                      </Button>
+                      <div className="min-w-0 flex-1 space-y-2.5">
+                        <div>
+                          <p className="text-xs font-medium text-foreground">
+                            {t("settingsPage.account.trialCta.title")}
+                          </p>
+                          <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
+                            {t("settingsPage.account.trialCta.description")}
+                          </p>
+                        </div>
+                        <Button onClick={startOnboarding} size="sm" className="w-full">
+                          <UserCircle className="mr-1.5 h-3.5 w-3.5" />
+                          {t("settingsPage.account.trialCta.button")}
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <Button onClick={startOnboarding} size="sm" className="w-full">
+                    <UserCircle className="mr-1.5 h-3.5 w-3.5" />
+                    {t("auth.getStarted")}
+                  </Button>
+                )}
               </>
             ) : (
               <>
@@ -3147,16 +3155,10 @@ EOF`,
                 </div>
               )}
 
-              <SettingsPanel>
-                <SettingsPanelRow>
-                  <SettingsRow
-                    label={t("settingsPage.privacy.usageAnalytics")}
-                    description={t("settingsPage.privacy.usageAnalyticsDescription")}
-                  >
-                    <Toggle checked={telemetryEnabled} onChange={setTelemetryEnabled} />
-                  </SettingsRow>
-                </SettingsPanelRow>
-              </SettingsPanel>
+              {/* Usage analytics toggle removed: the setting persists in
+                  localStorage but no code reads or transmits it — the wiring
+                  was never implemented. Hidden to avoid misleading users that
+                  data is being collected. */}
             </div>
 
             {/* Audio Retention */}

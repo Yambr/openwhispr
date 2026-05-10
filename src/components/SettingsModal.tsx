@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import SidebarModal, { type SidebarItem } from "./ui/SidebarModal";
 import SettingsPage, { SettingsSectionType } from "./SettingsPage";
+import { BILLING_ENABLED } from "@/config/defaults";
 
 export type { SettingsSectionType };
 
@@ -59,13 +60,17 @@ export default function SettingsModal({ open, onOpenChange, initialSection }: Se
         description: t("settingsModal.sections.account.description"),
         group: t("settingsModal.groups.account"),
       },
-      {
-        id: "plansBilling",
-        label: t("settingsModal.sections.plansBilling.label"),
-        icon: CreditCard,
-        description: t("settingsModal.sections.plansBilling.description"),
-        group: t("settingsModal.groups.account"),
-      },
+      ...(BILLING_ENABLED
+        ? [
+            {
+              id: "plansBilling" as const,
+              label: t("settingsModal.sections.plansBilling.label"),
+              icon: CreditCard,
+              description: t("settingsModal.sections.plansBilling.description"),
+              group: t("settingsModal.groups.account"),
+            },
+          ]
+        : []),
       {
         id: "general",
         label: t("settingsModal.sections.general.label"),
