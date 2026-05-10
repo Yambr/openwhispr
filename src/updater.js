@@ -33,16 +33,17 @@ class UpdateManager {
 
     autoUpdater.setFeedURL({
       provider: "github",
-      owner: "OpenWhispr",
+      owner: "Yambr",
       repo: "openwhispr",
       private: false,
     });
 
-    // Use arch-specific update channel on macOS to prevent arm64/x64
-    // from downloading mismatched artifacts. Both builds publish to the
-    // same GitHub release, so without this they race on latest-mac.yml.
-    // Setting channel to e.g. 'latest-arm64' makes the updater look for
-    // 'latest-arm64-mac.yml' instead of the shared 'latest-mac.yml'.
+    // Yambr fork uses a custom `yambr` update channel so fork users only
+    // see fork releases (and upstream OpenWhispr `latest` users never see
+    // Yambr builds). On macOS the channel is arch-specific to prevent
+    // arm64/x64 racing on a shared yambr-mac.yml — both arches publish
+    // to the same GitHub release, so we read yambr-{arch}-mac.yml instead.
+    // Non-darwin platforms read plain yambr.yml.
     if (process.platform === "darwin") {
       let nativeArch = process.arch;
 
@@ -65,7 +66,9 @@ class UpdateManager {
         }
       }
 
-      autoUpdater.channel = nativeArch === "arm64" ? "latest-arm64" : "latest-x64";
+      autoUpdater.channel = nativeArch === "arm64" ? "yambr-arm64" : "yambr-x64";
+    } else {
+      autoUpdater.channel = "yambr";
     }
 
     autoUpdater.autoDownload = false;
