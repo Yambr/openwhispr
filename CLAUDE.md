@@ -6,34 +6,27 @@ This document provides comprehensive technical details about the OpenWhispr proj
 
 OpenWhispr is an Electron-based desktop dictation application that uses whisper.cpp for speech-to-text transcription. It supports both local (privacy-focused) and cloud (OpenAI API) processing modes.
 
-## Versioning Rules (Yambr Fork) — CRITICAL
+## Versioning Rules (Yambr Fork)
 
-**DO NOT bump `package.json` `version` field.** It tracks the upstream OpenWhispr baseline (currently `1.7.2`) and stays in sync with what we last merged from `OpenWhispr/openwhispr`. We never edit it by hand.
+We follow upstream OpenWhispr's plain semver scheme: 3-segment patch bumps (`v1.7.3`, `v1.7.4`, ...). No prerelease suffixes, no custom update channels — just standard semver releases on the default `latest` channel.
 
-**Yambr release tags use a strict-semver prerelease scheme:** `v<UPSTREAM>-yambr.<N>` where `<UPSTREAM>` is the exact upstream version we last merged (3-segment, e.g. `1.7.2`) and `<N>` is a monotonic integer that resets to `1` whenever `<UPSTREAM>` changes.
+**Our `package.json` version diverges from upstream by at least one patch.** When upstream is on `1.7.2`, we sit on `1.7.3+`. This avoids `npm ci` collisions with same-version dependencies (e.g. `resedit@1.7.2`).
 
-- ✅ `v1.7.2-yambr.1` — first Yambr release on top of upstream v1.7.2
-- ✅ `v1.7.2-yambr.2` — second Yambr release (more fork-only changes), still upstream v1.7.2
-- ✅ `v1.7.3-yambr.1` — first Yambr release after upstream bumps to 1.7.3 (resets `<N>`)
-- ❌ `v1.7.2.1` (4-segment) — NOT valid semver, crashes electron-updater on launch with `ERR_UPDATER_INVALID_VERSION`. Do not use.
-- ❌ Editing `package.json` `version` to `1.7.3` while upstream is `1.7.2` — breaks `npm ci` (collides with same-version dependencies, e.g. `resedit@1.7.2`)
+When upstream merges a new patch (e.g. `1.7.3`), bump to the next available (`1.7.4` or higher). Resolve `package.json` conflict in favour of our higher version.
 
 **Tagging procedure:**
 
 ```bash
-# After merging fork-only work to main:
-git tag -a v1.7.2-yambr.N -m "v1.7.2-yambr.N — <one-line summary>"
+# After merging fork-only work to main and bumping package.json:
+git tag -a v1.7.3 -m "v1.7.3 — <one-line summary>"
 git push --tags
 ```
 
-CI (`release.yml`, tag glob `v*`) reads the tag, strips the leading `v`, and injects the full prerelease string `1.7.2-yambr.N` via `--config.extraMetadata.version`. The 3-segment `package.json` value is NOT modified — it still records which upstream version we merged.
+CI (`release.yml`, tag glob `v*`) reads the tag, strips the leading `v`, and injects the version via `--config.extraMetadata.version`. Make sure `package.json` `version` matches the tag before tagging — they must agree.
 
-**Update channel:** Yambr builds run on the custom `yambr` update channel (macOS arch-aware: `yambr-arm64` / `yambr-x64`). They read `yambr.yml` / `yambr-mac.yml` / `yambr-{arch}-mac.yml`, never `latest*.yml`. This is wired in `src/updater.js` and `electron-builder.json` (`generateUpdatesFilesForAllChannels: true`). Consequences:
+**Update channel:** default `latest`. Yambr users auto-update from `Yambr/openwhispr` GitHub releases via `latest.yml` / `latest-mac.yml` / `latest-linux.yml`. The fork's `setFeedURL` points at `Yambr/openwhispr` (not upstream), so fork users only see fork releases.
 
-- Yambr users only auto-update to other Yambr builds — they never auto-update to a vanilla upstream `latest` release. **This is intentional.**
-- When upstream releases a stable build the fork should adopt, merge upstream into the fork and cut a new `v<NEW-UPSTREAM>-yambr.1` — fork users will receive it through the `yambr` channel.
-
-**When to bump `package.json`:** ONLY when we merge an upstream tag that bumps it (e.g., upstream releases `1.7.3`, our merge PR brings the new `package.json` value automatically — never edit it by hand).
+**Why not a custom channel?** Earlier we tried `v<UPSTREAM>-yambr.N` prereleases on a custom `yambr` channel, but `electron-updater`'s `GitHubProvider.getLatestVersion()` requires `currentChannel` to match the prerelease id — which conflicts with multi-arch per-arch channel names. Result: `ERR_UPDATER_NO_PUBLISHED_VERSIONS` on every startup. Plain semver on `latest` sidesteps the whole problem.
 
 ## Architecture Overview
 

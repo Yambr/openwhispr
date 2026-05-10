@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*" # Triggers on version tags (upstream v1.7.3 and Yambr v1.7.2.1, ...)
+      - "v*" # Triggers on version tags (e.g. v1.7.3, v1.7.4, ...)
   workflow_dispatch:
     inputs:
       version:
@@ -133,7 +133,7 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/*.tar.gz
-            dist/yambr-linux.yml
+            dist/latest-linux.yml
             dist/*.blockmap
           retention-days: 30
 
@@ -264,7 +264,7 @@ jobs:
           name: windows-build
           path: |
             dist/*.exe
-            dist/yambr.yml
+            dist/latest.yml
             dist/*.blockmap
           retention-days: 30
 
@@ -422,11 +422,9 @@ jobs:
           done
 
       - name: Rename arch-specific update metadata
-        # With generateUpdatesFilesForAllChannels=true and a prerelease version like
-        # 1.7.2-yambr.1, electron-builder emits dist/yambr-mac.yml. Both arches publish
-        # to the same release, so we rename per-arch to prevent the latest-arm64/x64-mac.yml
-        # race documented in src/updater.js.
-        run: cp dist/yambr-mac.yml "dist/yambr-${{ matrix.arch }}-mac.yml"
+        # Both arches publish to the same release, so we rename per-arch to prevent
+        # latest-mac.yml clashing between arm64 and x64 uploads.
+        run: cp dist/latest-mac.yml "dist/latest-${{ matrix.arch }}-mac.yml"
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -435,7 +433,7 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
-            dist/yambr-${{ matrix.arch }}-mac.yml
+            dist/latest-${{ matrix.arch }}-mac.yml
             dist/*.blockmap
           retention-days: 30
 
@@ -465,14 +463,14 @@ jobs:
       - name: List artifacts
         run: |
           ls -la artifacts/
-          find artifacts/ -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.zip" -o -name "latest-*.yml" -o -name "yambr*.yml" -o -name "*.blockmap" \) | head -40
+          find artifacts/ -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.zip" -o -name "latest*.yml" -o -name "*.blockmap" \) | head -40
 
       - name: Create GitHub Release with artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG_NAME="${GITHUB_REF_NAME}"
-          mapfile -t FILES < <(find artifacts/ -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.zip" -o -name "latest-*.yml" -o -name "yambr*.yml" -o -name "*.blockmap" \))
+          mapfile -t FILES < <(find artifacts/ -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.zip" -o -name "latest*.yml" -o -name "*.blockmap" \))
           echo "Creating release ${TAG_NAME} with ${#FILES[@]} artifact(s)"
 
           if [ -f CHANGELOG.md ]; then
@@ -496,13 +494,7 @@ jobs:
             "- Realtime via corporate backend (set OPENWHISPR_BACKEND_URL when building)" \
             >> release-notes.md
 
-          PRERELEASE_FLAG=""
-          if [[ "${TAG_NAME}" == *-yambr* ]]; then
-            PRERELEASE_FLAG="--prerelease"
-          fi
-
           gh release create "${TAG_NAME}" "${FILES[@]}" \
             --title "${TAG_NAME}" \
             --notes-file release-notes.md \
-            --verify-tag \
-            ${PRERELEASE_FLAG}
+            --verify-tag

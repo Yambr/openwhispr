@@ -247,7 +247,6 @@
     "owner": "Yambr",
     "repo": "openwhispr",
     "private": false,
-    "releaseType": "draft",
-    "channel": "yambr"
+    "releaseType": "draft"
   }
 }

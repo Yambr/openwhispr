@@ -38,39 +38,6 @@ class UpdateManager {
       private: false,
     });
 
-    // Yambr fork uses a custom `yambr` update channel so fork users only
-    // see fork releases (and upstream OpenWhispr `latest` users never see
-    // Yambr builds). On macOS the channel is arch-specific to prevent
-    // arm64/x64 racing on a shared yambr-mac.yml — both arches publish
-    // to the same GitHub release, so we read yambr-{arch}-mac.yml instead.
-    // Non-darwin platforms read plain yambr.yml.
-    if (process.platform === "darwin") {
-      let nativeArch = process.arch;
-
-      // Detect Rosetta: if an x64 build is running on Apple Silicon,
-      // sysctl.proc_translated returns "1". This self-heals users who
-      // got stuck on the x64 build from older releases.
-      if (process.arch === "x64") {
-        try {
-          const { execSync } = require("child_process");
-          const translated = execSync("sysctl -n sysctl.proc_translated", {
-            encoding: "utf8",
-            timeout: 3000,
-          }).trim();
-          if (translated === "1") {
-            console.log("🔄 Rosetta detected — switching update channel to arm64");
-            nativeArch = "arm64";
-          }
-        } catch {
-          // sysctl.proc_translated doesn't exist on real Intel Macs — ignore
-        }
-      }
-
-      autoUpdater.channel = nativeArch === "arm64" ? "yambr-arm64" : "yambr-x64";
-    } else {
-      autoUpdater.channel = "yambr";
-    }
-
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = console;
