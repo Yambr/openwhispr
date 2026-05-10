@@ -1,5 +1,6 @@
 {
   "appId": "com.yambr.openwhispr",
+  "generateUpdatesFilesForAllChannels": true,
   "afterPack": "scripts/afterPack.js",
   "productName": "OpenWhispr",
   "protocols": {
