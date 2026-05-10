@@ -421,10 +421,14 @@ jobs:
             test -x "$APP_PATH/Contents/Resources/bin/$bin" || { echo "Missing in bundle: $bin"; exit 1; }
           done
 
-      - name: Rename arch-specific update metadata
-        # Both arches publish to the same release, so we rename per-arch to prevent
-        # latest-mac.yml clashing between arm64 and x64 uploads.
-        run: cp dist/latest-mac.yml "dist/latest-${{ matrix.arch }}-mac.yml"
+      - name: Prepare update metadata (arm64 → latest-mac.yml, x64 → latest-x64-mac.yml)
+        # arm64 keeps the canonical latest-mac.yml (default channel for Apple Silicon
+        # users, which is the majority). x64 renames to a custom latest-x64 channel
+        # to avoid clashing — the updater.js uses arch-specific channel for Intel.
+        run: |
+          if [ "${{ matrix.arch }}" = "x64" ]; then
+            mv dist/latest-mac.yml dist/latest-x64-mac.yml
+          fi
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -433,9 +437,11 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
-            dist/latest-${{ matrix.arch }}-mac.yml
+            dist/latest-mac.yml
+            dist/latest-x64-mac.yml
             dist/*.blockmap
           retention-days: 30
+          if-no-files-found: ignore
 
       - name: Cleanup Certificates
         if: always()

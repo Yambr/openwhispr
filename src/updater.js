@@ -38,6 +38,30 @@ class UpdateManager {
       private: false,
     });
 
+    // macOS multi-arch: arm64 reads latest-mac.yml (default), x64 reads
+    // latest-x64-mac.yml. Both arches publish to the same release, so we
+    // can't share latest-mac.yml — arm64 wins. Detect Rosetta and route
+    // x64-on-Apple-Silicon to the arm64 channel for self-healing.
+    if (process.platform === "darwin") {
+      let nativeArch = process.arch;
+      if (process.arch === "x64") {
+        try {
+          const { execSync } = require("child_process");
+          const translated = execSync("sysctl -n sysctl.proc_translated", {
+            encoding: "utf8",
+            timeout: 3000,
+          }).trim();
+          if (translated === "1") nativeArch = "arm64";
+        } catch {
+          // sysctl.proc_translated absent on real Intel — keep x64
+        }
+      }
+      if (nativeArch === "x64") {
+        autoUpdater.channel = "latest-x64";
+      }
+      // arm64: leave default channel "latest" → reads latest-mac.yml
+    }
+
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = console;
