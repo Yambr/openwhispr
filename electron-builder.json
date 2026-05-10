@@ -1,6 +1,5 @@
 {
   "appId": "com.yambr.openwhispr",
-  "generateUpdatesFilesForAllChannels": true,
   "afterPack": "scripts/afterPack.js",
   "productName": "OpenWhispr",
   "protocols": {
@@ -248,6 +247,7 @@
     "owner": "Yambr",
     "repo": "openwhispr",
     "private": false,
-    "releaseType": "draft"
+    "releaseType": "draft",
+    "channel": "yambr"
   }
 }

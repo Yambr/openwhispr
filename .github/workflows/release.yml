@@ -133,7 +133,6 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/*.tar.gz
-            dist/latest-linux.yml
             dist/yambr-linux.yml
             dist/*.blockmap
           retention-days: 30
@@ -265,7 +264,6 @@ jobs:
           name: windows-build
           path: |
             dist/*.exe
-            dist/latest.yml
             dist/yambr.yml
             dist/*.blockmap
           retention-days: 30
@@ -437,7 +435,6 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
-            dist/latest-${{ matrix.arch }}-mac.yml
             dist/yambr-${{ matrix.arch }}-mac.yml
             dist/*.blockmap
           retention-days: 30
