@@ -521,6 +521,48 @@ Key lifecycle files:
 
 ---
 
+## Wayland global hotkeys (GNOME and Hyprland)
+
+Electron's `globalShortcut` API does not work on Wayland due to its security model. OpenWhispr falls back to native compositor integrations, both routed through the same D-Bus service at `com.openwhispr.App` (path `/com/openwhispr/App`, method `Toggle()`).
+
+### GNOME Wayland
+
+- `src/helpers/gnomeShortcut.js` — creates D-Bus service, registers shortcuts via `gsettings` as custom GNOME keybindings (visible in Settings → Keyboard → Shortcuts → Custom)
+- gsettings path: `/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/openwhispr/`
+- Hotkey format: Electron `Alt+R` → GNOME `<Alt>r`, `CommandOrControl+Shift+Space` → `<Control><Shift>space`, backtick → `grave`
+- Default hotkey: `Alt+R` (backtick unsupported)
+- Push-to-talk **not supported** — GNOME shortcuts fire single toggle events, not key-down/key-up
+- Activated when `XDG_CURRENT_DESKTOP` matches GNOME + Wayland session
+
+### Hyprland Wayland
+
+- `src/helpers/hyprlandShortcut.js` — same D-Bus service, registers via `hyprctl keyword bind` at runtime
+- Hotkey format: Electron `Alt+R` → Hyprland `ALT, R`; modifier-only combos (`Control+Super`) → `CTRL, Super_L`
+- Bindings are ephemeral (don't survive Hyprland restart) — re-registered on app startup
+- Push-to-talk **not supported** — `bind` fires single exec, not key-down/key-up
+- Detection: `HYPRLAND_INSTANCE_SIGNATURE` env var (primary), `XDG_CURRENT_DESKTOP` contains "hyprland" (fallback)
+- Requires `hyprctl` on PATH (ships with Hyprland)
+
+### UI integration
+
+The `get-hotkey-mode-info` IPC returns `{ isUsingGnome, isUsingHyprland, isUsingNativeShortcut }`. When `isUsingNativeShortcut` is true, the renderer hides the activation mode selector and forces tap-to-talk.
+
+---
+
+## Meeting detection UX rules
+
+`src/helpers/meetingDetectionEngine.js` orchestrates detections from three sources (process detector, audio activity detector, Google Calendar) into a single notification pipeline. See [Sidecar Binaries → Platform-specific listeners](#platform-specific-listeners) for the mic-listener binaries.
+
+Rules enforced by the engine:
+
+- **Recording suppression**: while a recording is active (tap-to-talk or push-to-talk), ALL meeting notifications are suppressed
+- **Post-recording cooldown**: 2.5s after recording stops before any queued notification is shown — prevents notification flash on stop
+- **Priority coalescing**: when multiple sources fire concurrently, priority is `process > audio` — one notification is shown, not three
+- **Calendar context**: if an imminent calendar event exists, the notification shows the event name; if a calendar meeting is actively recording, all detections are suppressed
+- **Google Calendar resilience**: 10s socket timeout per API request; exponential backoff on consecutive failures (2min → 4min → 8min, capped 30min); reset to normal 2min interval on any successful sync (`src/helpers/googleCalendarManager.js`)
+
+---
+
 ## Further Reading
 
 | Document | Contents |
