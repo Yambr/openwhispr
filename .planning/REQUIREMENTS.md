@@ -24,6 +24,15 @@ Acceptance for v1 (whole milestone): A maintainer can run `npm run build` with a
 - [ ] **CFG-05**: Build-config documentation — `docs/BUILD_CONFIG.md` lists every build-time variable: name, purpose, default, allowed values, examples. Includes a worked example: building a self-hosted variant with custom backend + only LDAP-style auth (with placeholder URLs).
 - [ ] **CFG-06**: Default-build parity — built binary with no env vars set is behaviorally identical to current Yambr fork: same providers visible, same default endpoints, same OAuth options. Verified via a smoke checklist.
 
+### Cross-repo QA — Client↔Server Compatibility & E2E (QA)
+
+- [ ] **QA-01**: Client HTTP-call inventory — every `fetch(`/`axios`/`ipcRenderer.invoke('http*')` / cloud-API helper call from `openwhispr/src` is enumerated with file:line, method, URL pattern, request shape, auth strategy, and expected response shape. Tooling lives in `.planning/phases/08-client-server-audit/` (grep scripts + manually-curated index).
+- [ ] **QA-02**: Server-route inventory — every route registered by `openwhispr-server/apps/api` (Fastify/Hono routes) is enumerated with file:line, method, URL, request schema, response schema, auth middleware. Read-only — no commits to the server repo.
+- [ ] **QA-03**: Compatibility matrix — for each client call there is a row joining it to the matching server route (or `MISSING`) with verdict `MATCH` / `MISMATCH(<detail>)` / `MISSING(client | server)`. Mismatches are split into `FIXES-CLIENT.md` (applied in Phase 9) and `SERVER-GAPS.md` (handed back to server team).
+- [ ] **QA-04**: Client E2E harness — `tests/e2e/` contains a Playwright `_electron.launch`-driven harness with `@cucumber/cucumber` running TypeScript step definitions against the Electron app started via `npm run dev`. Server endpoint configurable via `OPENWHISPR_E2E_BACKEND_URL` (default `http://localhost:4000`).
+- [ ] **QA-05**: CJM coverage — Gherkin `.feature` files exist for the four CJM areas: (a) Auth (signup, login, refresh, logout); (b) Notes sync (CRUD round-trip client↔server); (c) Cloud transcription + LLM reasoning (audio → text → reasoning streamed back); (d) OAuth (Google Calendar) + billing endpoints + health/version. `tests/e2e/CJM.md` maps each MATCHed endpoint to ≥1 scenario.
+- [ ] **QA-06**: Local execution — `npm run test:e2e` brings the suite up against a slim-core server (`docker compose up` in `../openwhispr-server`) and produces an HTML report. Failures are triaged into either client fixes (applied in Phase 9) or server-gap tickets recorded in `tests/e2e/KNOWN-FAILURES.md`.
+
 ---
 
 ## v2 Requirements (Deferred)
@@ -63,3 +72,9 @@ Filled by roadmap. Each requirement maps to exactly one phase.
 | CFG-04  | Phase 3 |
 | CFG-05  | Phase 4 |
 | CFG-06  | Phase 4 |
+| QA-01   | Phase 8 |
+| QA-02   | Phase 8 |
+| QA-03   | Phase 8 |
+| QA-04   | Phase 9 |
+| QA-05   | Phase 9 |
+| QA-06   | Phase 9 |

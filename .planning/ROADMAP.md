@@ -16,6 +16,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Architecture Doc + Hardcode Inventory** - Document the application's internal architecture and enumerate every hardcoded value that must become configurable
 - [ ] **Phase 3: Build-time Env Refactor** - Replace all inventoried hardcodes with build-time variables via Vite define and electron-builder env
 - [ ] **Phase 4: OAuth Gating, Build Docs, and Parity Gate** - Add per-provider OAuth flags, write BUILD_CONFIG.md, and verify default-build behavioral parity
+- [ ] **Phase 8: Client↔Server Compatibility Audit** - Cross-repo audit of every client HTTP call against openwhispr-server routes; produce COMPATIBILITY-MATRIX + FIXES + SERVER-GAPS
+- [ ] **Phase 9: Client E2E Tests (Playwright + Cucumber)** - Implement Gherkin/CJM e2e suite (auth, notes-sync, transcription+LLM, OAuth/billing/health) driving Electron client via _electron.launch against local slim-core server, then fix discovered bugs
 
 ## Phase Details
 
@@ -135,3 +137,38 @@ Plans:
 
 Plans:
 - [ ] TBD (run /gsd-plan-phase 7 to break down)
+
+
+### Phase 8: Client↔Server Compatibility Audit
+
+**Goal:** Produce an authoritative, file:line-anchored mapping of every HTTP call the client makes to every route exposed by `openwhispr-server` (apps/api), plus a list of mismatches the client needs fixed and gaps in server coverage that the server team must close before client e2e can pass.
+**Requirements:** QA-01, QA-02, QA-03
+**Depends on:** Phase 1 (BACKEND_SPEC.md as oracle)
+**Plans:** TBD
+
+Success Criteria (what must be TRUE):
+  1. `.planning/phases/08-client-server-audit/COMPATIBILITY-MATRIX.md` exists and lists every client HTTP call (file:line, method, URL pattern, request shape, auth, expected response shape) alongside the matching server route (apps/api file:line, method, URL, request schema, response schema, auth middleware) with a verdict per row: `MATCH` / `MISMATCH(<detail>)` / `MISSING(client | server)`
+  2. `.planning/phases/08-client-server-audit/FIXES-CLIENT.md` lists every client-side change required to align with the server (URL paths, request fields, auth header format, error code handling)
+  3. `.planning/phases/08-client-server-audit/SERVER-GAPS.md` lists every endpoint the client needs but the server does not implement (or implements differently from BACKEND_SPEC.md), framed as requirements the server team can ingest
+  4. Audit is read-only against `openwhispr-server` — no commits to that repo from this phase
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 8 to break down)
+
+
+### Phase 9: Client E2E Tests (Playwright + Cucumber)
+
+**Goal:** A runnable Gherkin/Cucumber + Playwright e2e suite drives the Electron client via `_electron.launch` against a locally-running slim-core openwhispr-server (`docker compose up` in the server repo), covering the four CJM areas: auth (signup/login/refresh/logout), notes sync (CRUD), cloud transcription + LLM reasoning, and OAuth/billing/health. Test failures triage into either client fixes (applied here) or server gaps (filed back via Phase 8 SERVER-GAPS).
+**Requirements:** QA-04, QA-05, QA-06
+**Depends on:** Phase 8
+**Plans:** TBD
+
+Success Criteria (what must be TRUE):
+  1. `tests/e2e/` exists in the client repo with: Playwright config, `@cucumber/cucumber` config, `.feature` files for each of the 4 CJM areas, and TypeScript step definitions
+  2. `npm run test:e2e` boots the Electron app via `_electron.launch` against `npm run dev`, points it at `http://localhost:4000` (slim-core api), and executes all features end-to-end
+  3. README in `tests/e2e/` documents how to bring up the slim-core server (`docker compose up` in `../openwhispr-server`), seed a test tenant, and run the suite
+  4. CJM coverage matrix in `tests/e2e/CJM.md` maps every Phase-8-MATCHed endpoint to at least one Gherkin scenario; every client-shipped user journey has at least one Background → Given/When/Then path
+  5. All scenarios either PASS, or fail with a recorded ticket in `tests/e2e/KNOWN-FAILURES.md` linked to the server gap or client bug that caused it
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 9 to break down)
