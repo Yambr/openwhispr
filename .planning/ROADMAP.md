@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Architecture Doc + Hardcode Inventory** - Document the application's internal architecture and enumerate every hardcoded value that must become configurable
 - [ ] **Phase 3: Build-time Env Refactor** - Replace all inventoried hardcodes with build-time variables via Vite define and electron-builder env
 - [ ] **Phase 4: OAuth Gating, Build Docs, and Parity Gate** - Add per-provider OAuth flags, write BUILD_CONFIG.md, and verify default-build behavioral parity
-- [ ] **Phase 8: Client↔Server Compatibility Audit** - Cross-repo audit of every client HTTP call against openwhispr-server routes; produce COMPATIBILITY-MATRIX + FIXES + SERVER-GAPS
+- [x] **Phase 8: Client↔Server Compatibility Audit** - Cross-repo audit of every client HTTP call against openwhispr-server routes; produced COMPATIBILITY-MATRIX (21 MATCH, 2 MISMATCH, 7 MISSING-server, 13 MISSING-client), FIXES-CLIENT (F1-F5), SERVER-GAPS (S1-S4). 0 blockers for corporate-minimal default build; 1 HIGH for OpenAI Realtime path.
 - [ ] **Phase 9: Client E2E Tests (Playwright + Cucumber)** - Implement Gherkin/CJM e2e suite (auth, notes-sync, transcription+LLM, OAuth/billing/health) driving Electron client via _electron.launch against local slim-core server, then fix discovered bugs
 
 ## Phase Details
