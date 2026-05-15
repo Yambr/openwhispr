@@ -350,3 +350,5 @@ builder-effective-config.yaml
 
 # CodeRabbit local cache (if any)
 .coderabbit/
+tests/e2e/.env.e2e
+tests/e2e/reports/
