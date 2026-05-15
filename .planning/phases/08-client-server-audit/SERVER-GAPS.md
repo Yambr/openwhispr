@@ -44,6 +44,24 @@ The default Yambr build is **corporate-minimal**, which hides billing/referral U
 - **Suggested resolution**: New `routes/referrals/{stats,invite,invites}.ts` with conditional registration on `deps.referralsEnabled`. Low-priority while corporate-minimal is default.
 - **Severity**: LOW (no impact on default build).
 
+## S5. slim-core compose missing pgbouncer — all DB-backed routes return 500
+
+- **Discovered**: 2026-05-15 during Phase 9 execute (live probing against running stack)
+- **BACKEND_SPEC.md section**: every authenticated endpoint (auth catch-all, /api/check-user, /api/usage, /api/stt-config, ...)
+- **Symptom**: Live `POST /api/auth/sign-up/email` and `POST /api/check-user` return 500 with empty body. Server logs show:
+  ```
+  better-auth/dist/api/routes/sign-up.mjs:164
+    errno: -3008, code: 'ENOTFOUND', syscall: 'getaddrinfo', hostname: 'pgbouncer'
+  ```
+- **Root cause**: `apps/api` is configured with `DATABASE_URL=postgres://...@pgbouncer:5432/openwhispr`, but the slim-core `docker-compose.yml` (Phase 14 / SLIM-01) explicitly moved `pgbouncer` out of base into `compose/overlays/storage.yml`. That overlay file does not yet exist in the server repo (`ls compose/overlays/` → no such directory). Result: bare `docker compose up` produces a stack where the api can never reach its database, and every DB-backed route fails closed.
+- **Suggested resolution** (server team): either
+  - (a) Add `compose/overlays/storage.yml` per the SLIM-CORE comment at the top of `docker-compose.yml` and document the standard "bring it up with `-f docker-compose.yml -f compose/overlays/storage.yml`" command for development/testing; OR
+  - (b) Switch `DATABASE_URL` in slim-core base to point directly at `postgres:5432` for dev/test profiles (pgbouncer only needed for production pool management).
+- **Severity**: BLOCKER for Phase 9 e2e tests. Any e2e scenario touching auth, usage, configs, notes, transcribe-with-tenant, etc. fails at the DB call until this is fixed server-side.
+- **Workaround for Phase 9**: Live-run scenarios are marked `@blocked-s5` and skipped in CI until S5 lands. The harness, fixtures, .feature files, and step definitions are written and committed so the suite can be re-enabled by removing the `@blocked-s5` tag once the server overlay is in place.
+
+---
+
 ## S4. `/api/health` deprecation cycle
 
 - **BACKEND_SPEC.md section**: §`GET /api/health`
@@ -62,5 +80,6 @@ The default Yambr build is **corporate-minimal**, which hides billing/referral U
 | S2 Stripe billing (4 routes) | MEDIUM | UI-hidden in corporate-minimal; required for SaaS |
 | S3 Referrals (3 routes) | LOW | UI-hidden in corporate-minimal |
 | S4 /api/health deprecation | LOW | Server already doing right thing |
+| S5 slim-core missing pgbouncer overlay | **BLOCKER (Phase 9)** | All DB-backed routes 500 until overlay or DATABASE_URL fix |
 
-**Blockers from server side**: 0 for default corporate-minimal build. 1 (S1) for realtime feature if the client doesn't adapt instead. 7 routes (S2 + S3) outstanding for the upstream-parity / SaaS build.
+**Blockers from server side**: 0 for default corporate-minimal **client build**. **1 (S5) for e2e suite runtime** — without a working DB connection, no contract scenario can pass. 1 (S1) for realtime feature if the client doesn't adapt instead. 7 routes (S2 + S3) outstanding for the upstream-parity / SaaS build.

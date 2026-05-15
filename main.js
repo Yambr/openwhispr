@@ -709,6 +709,29 @@ async function startApp() {
 
   await migrateCookieToBearerToken();
 
+  // Test-only: seed a pre-issued bearer token into tokenStore so e2e
+  // scenarios can skip the sign-in UI. Triple-gated: NODE_ENV must be
+  // "test", OPENWHISPR_E2E_AUTH_TOKEN must be set, and the
+  // build-time Vite mode must not be production (the entire branch is
+  // expected to be tree-shaken from packaged builds — see Phase 9 PLAN).
+  if (
+    process.env.NODE_ENV === "test" &&
+    process.env.OPENWHISPR_E2E_AUTH_TOKEN &&
+    process.env.NODE_ENV !== "production"
+  ) {
+    try {
+      const tokenStore = require("./src/helpers/tokenStore");
+      tokenStore.set(process.env.OPENWHISPR_E2E_AUTH_TOKEN);
+      if (debugLogger) {
+        debugLogger.debug("Seeded test bearer token from OPENWHISPR_E2E_AUTH_TOKEN");
+      }
+    } catch (err) {
+      if (debugLogger) {
+        debugLogger.warn("Test token seed failed (non-fatal)", { error: err?.message });
+      }
+    }
+  }
+
   // Electron's file:// renderer sends Origin: null, which Better Auth's
   // trustedOrigins check rejects. Spoof Origin to the request's own URL so
   // calls to OpenWhispr's auth and API hosts are treated as same-origin.
