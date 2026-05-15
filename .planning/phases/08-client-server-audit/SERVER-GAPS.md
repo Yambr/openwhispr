@@ -44,6 +44,42 @@ The default Yambr build is **corporate-minimal**, which hides billing/referral U
 - **Suggested resolution**: New `routes/referrals/{stats,invite,invites}.ts` with conditional registration on `deps.referralsEnabled`. Low-priority while corporate-minimal is default.
 - **Severity**: LOW (no impact on default build).
 
+## S6. apps/api/Dockerfile missing COPY for packages/byok-guard
+
+- **Discovered**: 2026-05-15 during Phase 9 docker rebuild
+- **Symptom**: `docker compose build api` (and migrate, which shares the
+  same builder stage) fails with:
+  ```
+  ERR_PNPM_WORKSPACE_PKG_NOT_FOUND
+  In apps/api: "@openwhispr/byok-guard@workspace:*" is in the dependencies
+  but no package named "@openwhispr/byok-guard" is present in the workspace
+  ```
+- **Root cause**: `apps/api/package.json` lists `@openwhispr/byok-guard`
+  as a workspace dependency, and `packages/byok-guard/` exists on disk
+  in the monorepo, but `apps/api/Dockerfile` builder stage doesn't COPY
+  either its manifest or its source tree before `pnpm install`. Compare
+  to the existing per-package COPY block that handles `@openwhispr/data`,
+  `@openwhispr/contract-tests`, `@openwhispr/litellm-client`,
+  `@openwhispr/observability`, `@openwhispr/wire-schemas`,
+  `@openwhispr/email` — same pattern needed for byok-guard.
+- **Suggested resolution**: in `apps/api/Dockerfile`, add to the manifest
+  block:
+  ```dockerfile
+  COPY packages/byok-guard/package.json packages/byok-guard/
+  ```
+  and to the source block:
+  ```dockerfile
+  COPY packages/byok-guard packages/byok-guard
+  ```
+  Mirror the additions in `apps/worker/Dockerfile` if it shares the
+  same builder pattern (likely).
+- **Severity**: BLOCKER for any fresh `docker compose build`. The
+  currently-running images (built before byok-guard was added to the
+  workspace) keep running, which masks the regression until the next
+  rebuild.
+
+---
+
 ## S5. slim-core compose missing pgbouncer — all DB-backed routes return 500
 
 - **Discovered**: 2026-05-15 during Phase 9 execute (live probing against running stack)
@@ -81,5 +117,6 @@ The default Yambr build is **corporate-minimal**, which hides billing/referral U
 | S3 Referrals (3 routes) | LOW | UI-hidden in corporate-minimal |
 | S4 /api/health deprecation | LOW | Server already doing right thing |
 | S5 slim-core missing pgbouncer overlay | **BLOCKER (Phase 9)** | All DB-backed routes 500 until overlay or DATABASE_URL fix |
+| S6 apps/api/Dockerfile missing byok-guard COPY | **BLOCKER (rebuild)** | `docker compose build api` fails with ERR_PNPM_WORKSPACE_PKG_NOT_FOUND |
 
 **Blockers from server side**: 0 for default corporate-minimal **client build**. **1 (S5) for e2e suite runtime** — without a working DB connection, no contract scenario can pass. 1 (S1) for realtime feature if the client doesn't adapt instead. 7 routes (S2 + S3) outstanding for the upstream-parity / SaaS build.
