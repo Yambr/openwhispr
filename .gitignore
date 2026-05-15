@@ -352,3 +352,4 @@ builder-effective-config.yaml
 .coderabbit/
 tests/e2e/.env.e2e
 tests/e2e/reports/
+tests/e2e/.playwright-bdd/
