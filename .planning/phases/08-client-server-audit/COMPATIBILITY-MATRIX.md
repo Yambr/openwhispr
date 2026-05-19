@@ -1,8 +1,9 @@
 # OpenWhispr Client ↔ Server Compatibility Matrix
 
 **Date**: 2026-05-15
-**Inputs**: `CLIENT-CALLS.md` (30 cloud endpoints), `SERVER-ROUTES.md` (59 routes), `docs/BACKEND_SPEC.md` (canonical contract)
-**Method**: Row-by-row join on `(method, URL)`. Verdicts assigned per pair.
+**Amended**: 2026-05-19 (sync surface re-audit — see methodology note at bottom)
+**Inputs**: `CLIENT-CALLS.md` (30 cloud endpoints), `SERVER-ROUTES.md` (59 routes), `docs/BACKEND_SPEC.md` (canonical contract), `src/services/{Notes,Folders,Conversations,Transcriptions,ApiKeys}Service.ts` (cloud-api passthrough layer)
+**Method**: Row-by-row join on `(method, URL)`. Verdicts assigned per pair. The original 2026-05-15 pass grepped only literal `fetch(` callers and missed the `cloudPost/cloudGet/cloudPatch/cloudDelete → cloudApiRequest IPC → server` passthrough chain. Amendment adds 23 sync endpoints + 3 v1/keys endpoints that flow through that chain.
 
 ---
 
@@ -10,14 +11,14 @@
 
 | Verdict | Count |
 |---|---|
-| MATCH | 21 |
+| MATCH | 47 |
 | MISMATCH | 2 |
 | MISSING(server) | 7 |
-| MISSING(client) | 13 |
-| **Total client rows audited** | 30 |
+| MISSING(client) | 0 (was 13; 13 re-classified, see amendment) |
+| **Total client rows audited (post-amendment)** | 56 |
 | **Total server rows audited** | 59 |
 
-The 30 client rows include 4 third-party / BYOK / OAuth-shim rows that fall outside the OpenWhispr cloud contract and are reported as `OUT-OF-SCOPE`. Net client cloud rows compared against server: 26. (21 MATCH + 2 MISMATCH + 7 MISSING(server) = 30; some client rows resolve to the same server route, hence the inflation. See per-row table below.)
+Net post-amendment: 47 MATCH + 2 MISMATCH + 7 MISSING(server) = 56 client cloud rows. The 4 third-party / BYOK / OAuth-shim rows remain `OUT-OF-SCOPE`. The 13 rows previously marked `MISSING(client)` were the result of the methodology gap and are now re-classified — sync surface entirely as MATCH (23 endpoints exercised via cloud-api passthrough), v1/keys as MATCH (3 endpoints), and 3 stragglers (diarization, admin/wizard, probes) remain genuinely server-only and are removed from the client-audited set entirely. See "Sync Surface — Cloud-API Passthrough" table below.
 
 ---
 
@@ -108,27 +109,75 @@ The 30 client rows include 4 third-party / BYOK / OAuth-shim rows that fall outs
 
 ---
 
-## MISSING(client) — Server routes the client never calls
+## Sync Surface — Cloud-API Passthrough (Amendment 2026-05-19)
 
-Informational only. Server exposes documented contract endpoints that the Electron client does not invoke. These are NOT errors — most are sync/persistence APIs targeted by future client features or by other tenants (web app, mobile).
+These 26 endpoints (23 sync + 3 v1/keys) flow through the client's `cloudApi.ts` helpers (`cloudPost/cloudGet/cloudPatch/cloudDelete`) → IPC channel `cloud-api-request` (`src/helpers/ipcHandlers.js:6018`) → server. The original 2026-05-15 audit missed them by grepping only for literal `fetch(` callers; this amendment adds them as MATCH rows.
 
-| # | Server (file:line) | Method | URL | Notes |
-|---|---|---|---|---|
-| C1 | `notes/create.ts:30` | POST | `/api/notes/create` | Notes CRUD not yet wired to Electron sync. |
-| C2 | `notes/batch-create.ts:47` | POST | `/api/notes/batch-create` | — |
-| C3 | `notes/update.ts:90` | PATCH | `/api/notes/update` | — |
-| C4 | `notes/delete.ts:31` | DELETE | `/api/notes/delete` | — |
-| C5 | `notes/delete-all.ts:34` | DELETE | `/api/notes/delete-all` | — |
-| C6 | `notes/list.ts:39` | GET | `/api/notes/list` | — |
-| C7 | `notes/search.ts:48` | POST | `/api/notes/search` | — |
-| C8 | Folders CRUD (5 routes) | various | `/api/folders/*` | Folder sync not yet wired. |
-| C9 | Conversations CRUD + Messages (7 routes) | various | `/api/conversations/*` | Conversation history sync not yet wired. |
-| C10 | Transcriptions CRUD (5 routes) | various | `/api/transcriptions/*` | Transcription history sync not yet wired. |
-| C11 | `diarization.ts:140` | POST | `/v1/audio/diarization` | Diarization not exposed in current UI. |
-| C12 | `capabilities.ts:149`, `locale.ts:70`, `setup-state.ts:63`, `setup-admin.ts:147` | GET/POST | `/api/capabilities`, `/api/locale`, `/api/setup-state`, `/api/setup/admin` | Admin/wizard surface — server-only. |
-| C13 | `v1/keys/*` (3 routes) | POST/GET | `/api/v1/keys/*` | API key minting — not used by desktop yet. |
+### Notes (7)
 
-Plus probes (`/livez`, `/readyz`, `/startupz`) and `/api/_test/*` routes which are infra/test-only and intentionally not client-called.
+| # | Feature | Client (file:line) | Server (file:line) | Method | URL | Verdict |
+|---|---|---|---|---|---|---|
+| 34 | notes/create | `src/services/NotesService.ts:50` | `routes/notes/create.ts:30` | POST | `/api/notes/create` | MATCH |
+| 35 | notes/batch-create | `src/services/NotesService.ts:56` | `routes/notes/batch-create.ts:47` | POST | `/api/notes/batch-create` | MATCH |
+| 36 | notes/update | `src/services/NotesService.ts:63` | `routes/notes/update.ts:90` | PATCH | `/api/notes/update` | MATCH |
+| 37 | notes/delete | `src/services/NotesService.ts:67` | `routes/notes/delete.ts:31` | DELETE | `/api/notes/delete` | MATCH |
+| 38 | notes/delete-all | `src/services/NotesService.ts:85` | `routes/notes/delete-all.ts:34` | DELETE | `/api/notes/delete-all` | MATCH |
+| 39 | notes/list | `src/services/NotesService.ts:80` | `routes/notes/list.ts:39` | GET | `/api/notes/list` | MATCH |
+| 40 | notes/search | `src/services/NotesService.ts:98` | `routes/notes/search.ts:48` | POST | `/api/notes/search` | MATCH |
+
+### Folders (5)
+
+| # | Feature | Client (file:line) | Server (file:line) | Method | URL | Verdict |
+|---|---|---|---|---|---|---|
+| 41 | folders/create | `src/services/FoldersService.ts:22` | `routes/folders/create.ts` | POST | `/api/folders/create` | MATCH |
+| 42 | folders/batch-create | `src/services/FoldersService.ts:26` | `routes/folders/batch-create.ts` | POST | `/api/folders/batch-create` | MATCH |
+| 43 | folders/update | `src/services/FoldersService.ts:30` | `routes/folders/update.ts` | PATCH | `/api/folders/update` | MATCH |
+| 44 | folders/delete | `src/services/FoldersService.ts:34` | `routes/folders/delete.ts` | DELETE | `/api/folders/delete` | MATCH |
+| 45 | folders/list | `src/services/FoldersService.ts:39` | `routes/folders/list.ts` | GET | `/api/folders/list` | MATCH |
+
+### Conversations + Messages (6)
+
+| # | Feature | Client (file:line) | Server (file:line) | Method | URL | Verdict |
+|---|---|---|---|---|---|---|
+| 46 | conversations/create | `src/services/ConversationsService.ts:39` | `routes/conversations/create.ts` | POST | `/api/conversations/create` | MATCH |
+| 47 | conversations/update | `src/services/ConversationsService.ts:46` | `routes/conversations/update.ts` | PATCH | `/api/conversations/update` | MATCH |
+| 48 | conversations/delete | `src/services/ConversationsService.ts:50` | `routes/conversations/delete.ts` | DELETE | `/api/conversations/delete` | MATCH |
+| 49 | conversations/list | `src/services/ConversationsService.ts:67` | `routes/conversations/list.ts` | GET | `/api/conversations/list` | MATCH |
+| 50 | conversations/search | `src/services/ConversationsService.ts:95` | `routes/conversations/search.ts` | POST | `/api/conversations/search` | MATCH |
+| 51 | conversations/messages (create+list) | `src/services/ConversationsService.ts:78,88` | `routes/conversations/messages.ts` | POST/GET | `/api/conversations/messages` | MATCH |
+
+### Transcriptions (5)
+
+| # | Feature | Client (file:line) | Server (file:line) | Method | URL | Verdict |
+|---|---|---|---|---|---|---|
+| 52 | transcriptions/create | `src/services/TranscriptionsService.ts:33` | `routes/transcriptions/create.ts` | POST | `/api/transcriptions/create` | MATCH |
+| 53 | transcriptions/batch-create | `src/services/TranscriptionsService.ts:39` | `routes/transcriptions/batch-create.ts` | POST | `/api/transcriptions/batch-create` | MATCH |
+| 54 | transcriptions/list | `src/services/TranscriptionsService.ts:54` | `routes/transcriptions/list.ts` | GET | `/api/transcriptions/list` | MATCH |
+| 55 | transcriptions/delete | `src/services/TranscriptionsService.ts:60` | `routes/transcriptions/delete.ts` | DELETE | `/api/transcriptions/delete` | MATCH |
+| 56 | transcriptions/batch-delete | `src/services/TranscriptionsService.ts:64` | `routes/transcriptions/batch-delete.ts` | POST | `/api/transcriptions/batch-delete` | MATCH |
+
+### API Keys v1 (3)
+
+| # | Feature | Client (file:line) | Server (file:line) | Method | URL | Verdict |
+|---|---|---|---|---|---|---|
+| 57 | v1/keys/list | `src/services/ApiKeysService.ts:28` | `routes/v1/keys/list.ts` | GET | `/api/v1/keys/list` | MATCH |
+| 58 | v1/keys/create | `src/services/ApiKeysService.ts:33` | `routes/v1/keys/create.ts` | POST | `/api/v1/keys/create` | MATCH |
+| 59 | v1/keys/revoke | `src/services/ApiKeysService.ts:42` | `routes/v1/keys/revoke.ts` | POST | `/api/v1/keys/:id/revoke` | MATCH |
+
+---
+
+## Genuinely Server-Only (post-amendment)
+
+After removing the 26 sync/v1-keys endpoints from "MISSING(client)", the genuinely-server-only routes are:
+
+| Server (file:line) | Method | URL | Notes |
+|---|---|---|---|
+| `diarization.ts:140` | POST | `/v1/audio/diarization` | Diarization not exposed in current Electron UI. |
+| `capabilities.ts:149`, `locale.ts:70`, `setup-state.ts:63`, `setup-admin.ts:147` | GET/POST | `/api/capabilities`, `/api/locale`, `/api/setup-state`, `/api/setup/admin` | Admin/wizard surface — apps/web only. |
+| Probes (`/livez`, `/readyz`, `/startupz`) | GET | — | K8s infra-only. |
+| `/api/_test/*` | various | — | Test-mode gated routes (R1 seed-tenant et al.). |
+
+These are NOT counted in the audited client surface — they exist server-side for other tenants (apps/web, K8s probes, e2e seeding) and the Electron client never calls them.
 
 ---
 
@@ -138,3 +187,12 @@ Plus probes (`/livez`, `/readyz`, `/startupz`) and `/api/_test/*` routes which a
 - **MISMATCH(...)** is reserved for cases where a divergence is identifiable from the inventories without running the system.
 - **MISSING(server)** means client issues a call that the server has zero route for. The 7 billing/referral entries are MISSING(server) but are also UI-hidden in corporate-minimal builds (so user-facing impact = 0 in the default build).
 - Verdicts on Better Auth catch-all (`/api/auth/*`) assume Better Auth conformance; not separately enumerated per Better Auth sub-route.
+
+### Inventory surfaces — for future audits
+
+Future client↔server audits must grep **both** surfaces, not just `fetch(`:
+
+1. **Direct HTTP** — `grep -rE "(fetch|axios|got|undici)\(" src/` — covers `main.js`, `ipcHandlers.js`, services that hit BYOK endpoints directly.
+2. **Cloud-API passthrough** — `grep -rE "cloudPost|cloudGet|cloudPatch|cloudDelete" src/` — covers everything routed through `cloudApi.ts` → `cloud-api-request` IPC → server.
+
+The 2026-05-15 pass only did (1) and missed 26 endpoints. Don't repeat the mistake.
