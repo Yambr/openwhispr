@@ -61,6 +61,48 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 - **Docker-compose** — если есть, новые сервисы добавляй туда
 - При проблемах — спроси как решить или предложи варианты, не упрощай
 
+### Server Repo Boundary — MANDATORY
+
+The sibling repo `/Users/nick/openwhispr-server/` is **READ-ONLY**. Never
+edit its files. Even a trivial fix needs explicit per-file permission
+from the user for that specific change. Cross-repo work has separate
+ownership and separate GSD flows.
+
+When server-side work is needed to unblock client work:
+
+1. **Write requirements to a dedicated file**, not into client code.
+   Server requirements live in
+   `.planning/phases/<N>/SERVER-REQUIREMENTS.md` (or `SERVER-GAPS.md` /
+   `SERVER-ERRORS.md` for findings). Each entry includes the expected
+   route contract, current behavior, suggested resolution, and severity.
+2. **Verify each requirement against architectural patterns and
+   anti-patterns** before writing it down. Examples of anti-patterns to
+   reject:
+   - "Make the client spoof an `Origin` header" — that's a client
+     workaround for a server policy. The server owns `trustedOrigins`.
+   - "Add a test-only injection point in `main.js`" — that's drift from
+     upstream client code for a need that belongs server-side (test
+     mode, seed endpoint, BYOK fixture API).
+   - "Mock the auth response in the e2e harness" — violates the
+     "no-mocks" rule; surface the real bug instead.
+   - "Embed a fallback bearer token in the client binary" — secret
+     material never lives in the client (per Project Constraints).
+3. **Upstream-parity is a hard constraint.** The Yambr fork minimises
+   its delta from upstream OpenWhispr. Every change to `main.js`,
+   `preload.js`, `src/`, or the renderer entry points must be either
+   (a) build-time env gating per Phase 3/4, or (b) a clearly-justified
+   feature drift documented in `docs/`. Test-mode hooks, debug hatches,
+   and "just for e2e" branches go on the **server**, not the client.
+4. **All such requirements live in our own backend** — they don't get
+   pushed into the client to bridge a server gap.
+
+The corollary: when an e2e test fails because a real server policy
+rejects a real client request (e.g., Better Auth's
+`MISSING_OR_NULL_ORIGIN`), that's a finding about the SERVER's
+trustedOrigins config or about the client's actual production behavior
+(which already handles Origin in `main.js` via `webRequest`). Document
+it in `SERVER-REQUIREMENTS.md`. Don't paper over it in the e2e fetch.
+
 ### Internationalization — MANDATORY
 
 All user-facing strings must use react-i18next. Never hardcode UI text.

@@ -6,7 +6,6 @@ Feature: Health probes
     Then the response status is 200
     And the response JSON field "status" equals ok
 
-  @blocked-s5
   Scenario: GET /readyz returns 200
     # Empirically blocked by S5: /readyz fans out to postgres via pgbouncer
     # and surfaces the same getaddrinfo ENOTFOUND failure as the auth flow.

@@ -3,7 +3,7 @@ Feature: Cloud reasoning
   # Phase 8 matrix row 9: conditional on LiteLLM. The successful path
   # hits an upstream LLM, so it needs paid keys configured on the server.
 
-  @blocked-s5 @requires-paid-keys
+  @requires-paid-keys
   Scenario: Reason with a user message returns a non-empty content
     Given a signed-up tenant labeled "reason"
     When I POST "/api/reason" with a simple "Hello" user message

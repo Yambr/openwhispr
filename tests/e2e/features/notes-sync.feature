@@ -1,4 +1,4 @@
-@server-only @blocked-s5
+@server-only 
 Feature: Notes sync (server contract)
   # The Electron client does not yet wire Notes CRUD to the UI (Phase 8
   # MISSING(client) rows C1..C7). We assert the server contract directly.

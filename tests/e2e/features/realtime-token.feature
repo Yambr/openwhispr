@@ -10,13 +10,13 @@ Feature: Realtime token minting
   Background:
     Given a signed-up tenant labeled "rt"
 
-  @blocked-s5 @requires-paid-keys @requires-assemblyai
+  @requires-paid-keys @requires-assemblyai
   Scenario: AssemblyAI streaming token mint
     When I POST "/api/streaming-token" with auth
     Then the response status is 200
     And the response JSON field "token" is non-empty
 
-  @blocked-s5 @requires-paid-keys @requires-deepgram
+  @requires-paid-keys @requires-deepgram
   Scenario: Deepgram streaming token mint
     When I POST "/api/deepgram-streaming-token" with auth
     Then the response status is 200

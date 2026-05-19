@@ -7,14 +7,14 @@ Feature: Agent streaming
   Background:
     Given a signed-up tenant labeled "agent"
 
-  @blocked-s5 @requires-paid-keys
+  @requires-paid-keys
   Scenario: Agent stream emits NDJSON with a finish chunk
     When I POST "/api/agent/stream" with a simple user message
     Then the response status is 200
     And the stream contained at least one text-delta chunk
     And the stream terminal chunk has finishReason "stop"
 
-  @blocked-s5 @requires-paid-keys
+  @requires-paid-keys
   Scenario: Agent web-search returns a results array
     When I POST "/api/agent/web-search" with query "openwhispr"
     Then the response status is 200
