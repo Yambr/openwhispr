@@ -1,16 +1,24 @@
 /**
  * Test-tenant seed fixture.
  *
- * Signs up a deterministic-but-unique user against the running
- * openwhispr-server slim-core stack, stores the session bearer token in
- * process.env.OPENWHISPR_E2E_AUTH_TOKEN, and exposes a cleanup callback
- * that deletes the tenant on suite exit.
+ * Seeds a deterministic-but-unique pre-verified user against the running
+ * openwhispr-server slim-core stack via the test-only seed endpoint:
  *
- * Blocked on Phase 8 finding S5 (slim-core compose missing pgbouncer
- * overlay) until the server team fixes its DATABASE_URL or ships
- * compose/overlays/storage.yml. While S5 is live, signup returns HTTP 500
- * and this fixture surfaces a clear error so step defs can short-circuit
- * to the @blocked-s5 path.
+ *   POST /api/_test/seed-tenant
+ *
+ * Server-side gates (per Phase 8 SERVER-REQUIREMENTS R1, closed 2026-05-19):
+ *
+ *   - NODE_ENV !== "production"
+ *   - OPENWHISPR_TEST_ROUTES === "true"    ← exact env-var name on the server
+ *
+ * If either gate is missing, the server returns 404 and this fixture
+ * surfaces a clear actionable error. R1 closure means no email-verify
+ * round trip, no cookie parsing, no Mailpit HTML scrape, no fallback
+ * chain — the response always includes a Better-Auth-compatible bearer.
+ *
+ * Test-tenant pruning is the server team's concern (the endpoint is
+ * idempotent on email); we no longer call /api/auth/delete-account on
+ * cleanup.
  */
 
 export type TestTenant = {
@@ -18,6 +26,13 @@ export type TestTenant = {
   password: string;
   name: string;
   token: string | null;
+};
+
+export type SeededUser = {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  createdAt: string;
 };
 
 export const BACKEND_URL =
@@ -35,78 +50,88 @@ export function makeTenant(label = "default"): TestTenant {
   };
 }
 
-export type SignUpResult =
-  | { ok: true; token: string; tenant: TestTenant }
+export type SeedResult =
+  | { ok: true; token: string; user: SeededUser; tenant: TestTenant }
   | { ok: false; status: number; body: string; tenant: TestTenant };
 
-export async function signUp(tenant: TestTenant): Promise<SignUpResult> {
-  const res = await fetch(`${BACKEND_URL}/api/auth/sign-up/email`, {
+/**
+ * POST /api/_test/seed-tenant — returns a pre-verified user + bearer.
+ *
+ * The endpoint is double-gated server-side (NODE_ENV !== "production"
+ * AND OPENWHISPR_TEST_ROUTES === "true"); when either gate is off, the
+ * server returns 404 and we surface a clear error.
+ */
+export async function seedTenant(tenant: TestTenant): Promise<SeedResult> {
+  const res = await fetch(`${BACKEND_URL}/api/_test/seed-tenant`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       email: tenant.email,
       password: tenant.password,
       name: tenant.name,
+      verified: true,
     }),
   });
 
   if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    if (res.status === 404) {
+      return {
+        ok: false,
+        status: res.status,
+        body:
+          "POST /api/_test/seed-tenant returned 404. The server is not " +
+          "running with OPENWHISPR_TEST_ROUTES=true (or NODE_ENV is " +
+          "production). Bring it up with " +
+          "`cd ../openwhispr-server && OPENWHISPR_TEST_ROUTES=true docker compose up -d`.",
+        tenant,
+      };
+    }
+    return { ok: false, status: res.status, body, tenant };
+  }
+
+  const json = (await res.json().catch(() => null)) as
+    | { token?: unknown; user?: unknown }
+    | null;
+
+  if (
+    !json ||
+    typeof json.token !== "string" ||
+    !json.token ||
+    !json.user ||
+    typeof json.user !== "object"
+  ) {
     return {
       ok: false,
       status: res.status,
-      body: await res.text(),
+      body: `seed-tenant OK but response shape unexpected: ${JSON.stringify(json)}`,
       tenant,
     };
   }
 
-  // Better Auth returns the session token either in the JSON body or as
-  // a set-cookie. Prefer the JSON shape; fall back to header parsing.
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  const token =
-    typeof json.token === "string"
-      ? json.token
-      : extractSessionCookie(res.headers.get("set-cookie"));
+  const user = json.user as Record<string, unknown>;
+  const seeded: SeededUser = {
+    id: String(user.id ?? ""),
+    email: String(user.email ?? tenant.email),
+    emailVerified: user.emailVerified === true,
+    createdAt: String(user.createdAt ?? ""),
+  };
 
-  if (!token) {
-    return {
-      ok: false,
-      status: res.status,
-      body: `signup OK but no session token in body or cookie: ${JSON.stringify(json)}`,
-      tenant,
-    };
-  }
-
-  tenant.token = token;
-  return { ok: true, token, tenant };
-}
-
-export async function deleteAccount(tenant: TestTenant): Promise<boolean> {
-  if (!tenant.token) return false;
-  const res = await fetch(`${BACKEND_URL}/api/delete-account`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${tenant.token}` },
-  });
-  return res.ok;
-}
-
-function extractSessionCookie(setCookie: string | null): string | null {
-  if (!setCookie) return null;
-  // Better Auth uses "better-auth.session_token=<jwt>; ...".
-  const match = setCookie.match(/better-auth\.session_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  tenant.token = json.token;
+  return { ok: true, token: json.token, user: seeded, tenant };
 }
 
 /**
- * Convenience: probe the server health BEFORE attempting signup so that
- * S5 (or any other infra outage) surfaces as a single clear error instead
- * of a cascade of step-def failures.
+ * Convenience: probe the server health BEFORE attempting seed so that
+ * an unreachable server surfaces as a single clear error instead of a
+ * cascade of step-def failures. Uses /livez (no auth, no DB).
  */
 export async function assertServerReachable(): Promise<void> {
   const res = await fetch(`${BACKEND_URL}/livez`);
   if (!res.ok) {
     throw new Error(
       `Server at ${BACKEND_URL} not reachable: GET /livez returned ${res.status}. ` +
-        `Bring it up with 'cd ../openwhispr-server && docker compose up -d'.`,
+        `Bring it up with 'cd ../openwhispr-server && OPENWHISPR_TEST_ROUTES=true docker compose up -d'.`,
     );
   }
 }
