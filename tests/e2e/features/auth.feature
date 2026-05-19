@@ -1,8 +1,10 @@
 Feature: Authentication
-  # All scenarios depend on Better Auth + DB. Blocked by Phase 8 finding S5
-  # (slim-core compose missing pgbouncer overlay → all DB-backed routes 500).
+  # Post R1 + R5 + R6 closure (2026-05-19):
+  #   - Tenants are seeded via POST /api/_test/seed-tenant (pre-verified).
+  #   - /api/auth/verification-status accepts ?email= query param (R5).
+  #   - All DB-backed routes return 2xx; pgbouncer/postgres reachable (R6).
 
-  Scenario: Sign-up new user returns 200 with session token
+  Scenario: Seeded tenant carries a non-empty bearer token (R1)
     Given a fresh test tenant labeled "signup"
     When the tenant signs up
     Then the sign-up succeeds with a non-empty bearer token
@@ -19,7 +21,7 @@ Feature: Authentication
     Then the response status is 200
     And the response JSON field "exists" equals true
 
-  Scenario: Sign-in with verified user reaches the main app
+  Scenario: Sign-in with verified user returns a session bearer
     Given a signed-up tenant labeled "signin"
     When I POST "/api/auth/sign-in/email" with that tenant credentials
     Then the response status is 200
@@ -33,4 +35,11 @@ Feature: Authentication
   Scenario: Delete account returns 200
     Given a signed-up tenant labeled "delete"
     When I DELETE "/api/auth/delete-account" as that tenant
+    Then the response status is 200
+
+  Scenario: Verification status accepts ?email= query param (R5)
+    # Pre-R5 the server warned or errored on ?email=. R5 closure: server
+    # tolerates the param, continues deriving identity from session/Bearer.
+    Given a signed-up tenant labeled "vstatus"
+    When I GET "/api/auth/verification-status" with that tenant email param and bearer
     Then the response status is 200

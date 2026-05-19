@@ -107,6 +107,22 @@ When(
   },
 );
 
+When(
+  "I GET {string} with that tenant email param and bearer",
+  async ({}, path: string) => {
+    // Per R5 closure: the server accepts ?email=<value> on
+    // /api/auth/verification-status without warning; identity is still
+    // derived from Bearer/session. Send both to assert tolerance.
+    const url = new URL(`${BACKEND_URL}${path}`);
+    url.searchParams.set("email", world.tenant!.email);
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: { ...authHeaders(world.tenant?.token ?? null) },
+    });
+    await captureResponse(res);
+  },
+);
+
 Then("the response status is {int}", async ({}, status: number) => {
   expect(world.lastResponse?.status).toBe(status);
 });

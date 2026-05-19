@@ -4,6 +4,16 @@ import { BACKEND_URL, authHeaders, world } from "./world";
 
 const { When, Then } = createBdd();
 
+async function captureResponse(res: Response): Promise<void> {
+  world.lastResponse = res;
+  world.lastBodyText = await res.text().catch(() => "");
+  try {
+    world.lastBody = world.lastBodyText ? JSON.parse(world.lastBodyText) : null;
+  } catch {
+    world.lastBody = null;
+  }
+}
+
 When(
   "I POST {string} with auth",
   async ({}, path_: string) => {
@@ -32,18 +42,24 @@ When(
       },
       body: "{}",
     });
-    world.lastResponse = res;
-    world.lastBodyText = await res.text().catch(() => "");
-    try {
-      world.lastBody = world.lastBodyText ? JSON.parse(world.lastBodyText) : null;
-    } catch {
-      world.lastBody = null;
-    }
+    await captureResponse(res);
   },
 );
 
-// Note: the @skip openai-realtime scenario re-uses the above step, so
-// no additional step def is needed for it.
+When(
+  "I POST {string} with auth and body model {string} language {string} streams {int}",
+  async ({}, path_: string, model: string, language: string, streams: number) => {
+    const res = await fetch(`${BACKEND_URL}${path_}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(world.tenant?.token ?? null),
+      },
+      body: JSON.stringify({ model, language, streams }),
+    });
+    await captureResponse(res);
+  },
+);
 
 Then(
   "the response carries a non-empty token",
@@ -53,5 +69,30 @@ Then(
     expect(
       typeof body!.token === "string" && (body!.token as string).length > 0,
     ).toBeTruthy();
+  },
+);
+
+Then(
+  "the response JSON field {string} is non-empty",
+  async ({}, field: string) => {
+    const body = world.lastBody as Record<string, unknown> | null;
+    expect(body, "no body").toBeTruthy();
+    const value = body![field];
+    expect(typeof value === "string" && value.length > 0, `${field} not non-empty string`).toBe(
+      true,
+    );
+  },
+);
+
+Then(
+  "the response carries clientSecrets array of length {int}",
+  async ({}, n: number) => {
+    const body = world.lastBody as { clientSecrets?: unknown } | null;
+    expect(Array.isArray(body?.clientSecrets), "clientSecrets not an array").toBe(true);
+    const arr = body!.clientSecrets as unknown[];
+    expect(arr.length).toBe(n);
+    for (const cs of arr) {
+      expect(typeof cs === "string" && (cs as string).length > 0).toBe(true);
+    }
   },
 );

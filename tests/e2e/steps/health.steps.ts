@@ -21,3 +21,14 @@ Then(
     expect(got).toContain(fragment);
   },
 );
+
+Then(
+  "the response header {string} is absent",
+  async ({}, name: string) => {
+    // Per R4 closure: /api/health no longer carries deprecation / link
+    // headers. Assert the header is missing entirely (null), not merely
+    // empty — a fetch header API returns null when the header is unset.
+    const got = world.lastResponse?.headers.get(name);
+    expect(got, `expected header '${name}' to be absent, got '${got}'`).toBeNull();
+  },
+);

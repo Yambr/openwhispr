@@ -3,9 +3,10 @@ Feature: Realtime token minting
   #   POST /api/streaming-token            (AssemblyAI)
   #   POST /api/deepgram-streaming-token   (Deepgram)
   #   POST /api/openai-realtime-token      (OpenAI Realtime)
-  # The task description called the first two `assemblyai-realtime-token`
-  # and `deepgram-realtime-token`; those names are inconsistent with the
-  # server contract — we use the server's canonical paths.
+  #
+  # Post R3 closure (2026-05-19): /api/openai-realtime-token now accepts
+  # {model, language, streams} and returns {clientSecret} (single) or
+  # {clientSecrets:[...]} (multi). The pre-R3 {token} shape is gone.
 
   Background:
     Given a signed-up tenant labeled "rt"
@@ -22,10 +23,14 @@ Feature: Realtime token minting
     Then the response status is 200
     And the response JSON field "token" is non-empty
 
-  @skip
-  Scenario: OpenAI realtime token mint
-    # Blocked on Phase 8 finding F2/S1 — schema mismatch between the
-    # client's {clientSecret}/{clientSecrets} expectation and the
-    # server's {token} response. Reinstate this scenario once F2 lands.
-    When I POST "/api/openai-realtime-token" with auth
+  @requires-paid-keys
+  Scenario: OpenAI realtime token mint (single stream) — R3 closure
+    When I POST "/api/openai-realtime-token" with auth and body model "gpt-4o-realtime-preview-2024-12-17" language "en" streams 1
     Then the response status is 200
+    And the response JSON field "clientSecret" is non-empty
+
+  @requires-paid-keys
+  Scenario: OpenAI realtime token mint (two streams) — R3 closure
+    When I POST "/api/openai-realtime-token" with auth and body model "gpt-4o-realtime-preview-2024-12-17" language "en" streams 2
+    Then the response status is 200
+    And the response carries clientSecrets array of length 2
