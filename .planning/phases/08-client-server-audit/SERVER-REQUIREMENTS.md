@@ -54,7 +54,7 @@ Content-Type: application/json
 **Gates (both required):**
 1. `process.env.NODE_ENV !== "production"` — refuse in production
    builds, return 404
-2. `process.env.OPENWHISPR_ALLOW_TEST_ROUTES === "1"` — explicit opt-in.
+2. `process.env.OPENWHISPR_TEST_ROUTES === "true"` — explicit opt-in.
    Default-deny: if the env var is unset, return 404 regardless of
    NODE_ENV. Production builds and dev builds that don't opt in are
    both safe.

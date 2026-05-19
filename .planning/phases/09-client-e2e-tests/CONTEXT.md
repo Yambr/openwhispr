@@ -30,7 +30,8 @@ final, not gray areas.
 
 **Decision:** Single server requirement R1 → `POST /api/_test/seed-tenant`
 endpoint. Double-gated (`NODE_ENV !== "production"` AND
-`OPENWHISPR_ALLOW_TEST_ROUTES === "1"`). Bypasses Origin check, skips
+`OPENWHISPR_TEST_ROUTES === "true"`, aligning with the existing
+convention used by `/api/_test/*` routes). Bypasses Origin check, skips
 email verification, mints a real Better-Auth-compatible bearer.
 Rejected: trustedOrigins `["*"]` in dev (too broad), client-side
 Origin spoof (anti-pattern), Mailpit HTML scrape (anti-pattern).
