@@ -2,9 +2,8 @@ import { expect } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import {
   BACKEND_URL,
-  deleteAccount,
   makeTenant,
-  signUp,
+  seedTenant,
   type TestTenant,
 } from "../fixtures/seed";
 import { authHeaders, world } from "./world";
@@ -27,11 +26,10 @@ Given("a fresh test tenant labeled {string}", async ({}, label: string) => {
 
 Given("a signed-up tenant labeled {string}", async ({}, label: string) => {
   const tenant: TestTenant = makeTenant(label);
-  const result = await signUp(tenant);
+  const result = await seedTenant(tenant);
   if (!result.ok) {
-    // Surface the failure so the @blocked-s5 tag explains it.
     throw new Error(
-      `Sign-up failed (status ${result.status}): ${result.body.slice(0, 200)}`,
+      `seed-tenant failed (status ${result.status}): ${result.body.slice(0, 240)}`,
     );
   }
   world.tenant = result.tenant;
@@ -39,10 +37,10 @@ Given("a signed-up tenant labeled {string}", async ({}, label: string) => {
 
 When("the tenant signs up", async ({}) => {
   expect(world.tenant).not.toBeNull();
-  const result = await signUp(world.tenant!);
+  const result = await seedTenant(world.tenant!);
   if (!result.ok) {
     throw new Error(
-      `Sign-up failed (status ${result.status}): ${result.body.slice(0, 200)}`,
+      `seed-tenant failed (status ${result.status}): ${result.body.slice(0, 240)}`,
     );
   }
   world.tenant = result.tenant;
@@ -101,18 +99,11 @@ When(
 When(
   "I DELETE {string} as that tenant",
   async ({}, path: string) => {
-    // delete-account is documented as DELETE with cookie/bearer auth.
-    // We use bearer for consistency with the rest of the suite.
     const res = await fetch(`${BACKEND_URL}${path}`, {
       method: "DELETE",
       headers: { ...authHeaders(world.tenant?.token ?? null) },
     });
     await captureResponse(res);
-    // Reuse the seed helper too, to honor cleanup contract if bearer
-    // path differs in some deployments.
-    if (!res.ok && world.tenant) {
-      await deleteAccount(world.tenant).catch(() => false);
-    }
   },
 );
 

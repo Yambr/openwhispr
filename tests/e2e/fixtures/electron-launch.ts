@@ -33,10 +33,22 @@ export async function launchClient(opts: LaunchOptions = {}): Promise<LaunchResu
   const backendUrl =
     opts.backendUrl ?? process.env.OPENWHISPR_E2E_BACKEND_URL ?? "http://localhost:4000";
 
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
+  // Build as a plain string map — Playwright's electron.launch expects
+  // { [k: string]: string }, not NodeJS.ProcessEnv (which is partial).
+  const baseEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (typeof v === "string") baseEnv[k] = v;
+  }
+  const env: Record<string, string> = {
+    ...baseEnv,
     NODE_ENV: "test",
     OPENWHISPR_E2E_BACKEND_URL: backendUrl,
+    // Main-process API URL: src/helpers/ipcHandlers.js getApiUrl() reads
+    // OPENWHISPR_API_URL first, falling back to VITE_OPENWHISPR_API_URL and
+    // the runtime-env.json. Set both forms so cloud-api-request resolves
+    // the backend correctly under test.
+    OPENWHISPR_API_URL: backendUrl,
+    VITE_OPENWHISPR_API_URL: backendUrl,
     // Vite define mirror so the renderer also sees the override:
     OPENWHISPR_BACKEND_URL: backendUrl,
     // Disable GPU/hardware accel — keeps the test runner happy in CI:
@@ -45,6 +57,9 @@ export async function launchClient(opts: LaunchOptions = {}): Promise<LaunchResu
   };
 
   if (opts.authToken) {
+    // Surfaced for any future test-only branch; the steps seed the token
+    // through `window.electronAPI.authSetToken(token)` (an EXISTING IPC
+    // channel — no client changes) immediately after first window load.
     env.OPENWHISPR_E2E_AUTH_TOKEN = opts.authToken;
   }
 
