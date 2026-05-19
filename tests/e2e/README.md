@@ -22,6 +22,22 @@ From the **server** repo:
 
 ```bash
 cd ../openwhispr-server
+
+# MANDATORY for e2e: the server .env must include BOTH of these.
+# The seed fixture posts to /api/_test/seed-tenant, which is double-gated
+# server-side:
+#
+#   NODE_ENV !== "production"             (compose-default)
+#   OPENWHISPR_TEST_ROUTES === "true"     ← exact env-var name, NOT
+#                                           OPENWHISPR_ALLOW_TEST_ROUTES
+#
+# If OPENWHISPR_TEST_ROUTES is missing or false, /api/_test/seed-tenant
+# returns 404 and every authenticated scenario fails with a clear error.
+#
+# LITELLM_MASTER_KEY is required for any @requires-paid-keys scenario
+# to reach the upstream provider.
+grep -E '^(OPENWHISPR_TEST_ROUTES|LITELLM_MASTER_KEY)=' .env
+
 docker compose up -d
 ```
 
@@ -49,13 +65,24 @@ curl -s http://localhost:4000/livez
 
 curl -i http://localhost:4000/api/health
 # HTTP/1.1 200 OK
-# deprecation: true
-# link: </livez>; rel="successor-version"
-# ...
+# (no deprecation header, no link header — R4 closed 2026-05-19)
 # {"status":"ok","migrations_completed":true}
+
+# R1 smoke — confirms OPENWHISPR_TEST_ROUTES=true is wired through.
+curl -sS -X POST http://localhost:4000/api/_test/seed-tenant \
+  -H 'content-type: application/json' \
+  -d '{"email":"smoke@test.local","password":"P-test-1!","name":"smoke","verified":true}' \
+  | jq .
+# { "token": "...", "user": { "id": "...", "email": "smoke@test.local",
+#   "emailVerified": true, "createdAt": "..." } }
 ```
 
-The `deprecation: true` header on `/api/health` is expected — see Phase 8 finding **F1**. The alias is what the client currently uses; migration to `/livez` is tracked separately.
+If the `seed-tenant` smoke check returns 404, the server did NOT pick
+up `OPENWHISPR_TEST_ROUTES=true`. Stop the stack, edit `.env`, restart.
+
+The seed flow no longer requires Mailpit / email verification (R1
+closed): the endpoint mints a pre-verified user and a Better-Auth
+bearer in a single round trip.
 
 ---
 
@@ -78,7 +105,7 @@ Optional (gate paid-key scenarios):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OPENWHISPR_E2E_ASSEMBLYAI_AVAILABLE` | `false` | If `true`, run AssemblyAI realtime-token scenarios (server must have `ASSEMBLYAI_API_KEY` set) |
+| `OPENWHISPR_E2E_ASSEMBLYAI_AVAILABLE` | `false` | If `1`, run AssemblyAI realtime-token scenarios (server must have `ASSEMBLYAI_API_KEY` set) |
 | `OPENWHISPR_E2E_DEEPGRAM_AVAILABLE` | `false` | Same for Deepgram |
 
 ---
@@ -98,42 +125,64 @@ Outputs:
 Filter by tag:
 
 ```bash
-npm run test:e2e -- --grep "@auth"           # only auth scenarios
-npm run test:e2e -- --grep-invert "@skip"    # exclude @skip
+npm run test:e2e -- --grep "@auth"                     # only auth scenarios
+npm run test:e2e -- --grep-invert "@requires-paid-keys" # exclude paid scenarios
 ```
 
 ---
 
 ## 4. Triaging failures
 
-For every failure, consult `KNOWN-FAILURES.md`:
+For every failure, consult `KNOWN-FAILURES.md`. Triage rules (post
+R1–R12 closure):
 
-- Listed there with `@known-failure` tag → expected, no action
-- Not listed, root cause is **client** → fix it, atomic commit
-- Not listed, root cause is **server** → file in `../../.planning/phases/08-client-server-audit/SERVER-GAPS.md` as a Phase-8 amendment, then tag the scenario `@known-failure` and update this doc
+- Listed there → expected, no action.
+- NEW server bug → file in
+  `../../.planning/phases/09-client-e2e-tests/SERVER-REQUIREMENTS.md`
+  as a new R-row. Use harsh language; the server is < 24h old, every
+  spec deviation is a bug, not a migration plan.
+- NEW client-side gap → two options ONLY (per `client_immutable`
+  rule): (a) server adapts → SERVER-REQUIREMENTS.md, or (b) feature
+  cut from client → `CLIENT-CUTS.md`. Never patch the client to
+  bridge a server gap.
+- Harness flake → fix the test, atomic commit. Do NOT mask a real
+  failure.
 
-See `CJM.md` for the coverage matrix: every Phase-8-MATCHed endpoint mapped to its scenario.
+See `CJM.md` for the coverage matrix: every Phase-8-MATCHed endpoint
+mapped to its scenario.
 
 ---
 
 ## 5. Cleanup
 
-The seed fixture deletes its tenant on suite exit (`/api/auth/delete-account`). If a run is killed mid-way, run:
+No cleanup hook is needed: `/api/_test/seed-tenant` is idempotent on
+email and the server team handles test-tenant pruning. The
+`delete-account` round trip from the pre-R1 fixture is gone.
 
-```bash
-node tests/e2e/fixtures/cleanup-stale.ts
-```
+---
 
-This deletes any `e2e+*@test.local` accounts older than 1 hour.
+## Tag legend (post R1–R12 closure)
+
+- `@requires-paid-keys` — operator gate; needs upstream STT/LLM keys
+  configured on the server (e.g. `OPENAI_API_KEY`).
+- `@requires-assemblyai` / `@requires-deepgram` — operator gate; needs
+  the corresponding env var **and** `OPENWHISPR_E2E_ASSEMBLYAI_AVAILABLE=1`
+  / `OPENWHISPR_E2E_DEEPGRAM_AVAILABLE=1` on the e2e harness.
+
+Retired tags (do not reintroduce): `blocked-s5`, `blocked-rN`,
+`skip` (for OpenAI realtime), `server-only` — all stripped of their `@`
+prefix here so static-grep checks can distinguish active tags from
+documented history. See KNOWN-FAILURES.md § "Server requirement
+closure log" for the full mapping.
 
 ---
 
 ## Out of scope (do NOT add scenarios here)
 
 - BYOK third-party providers (OpenAI/Anthropic/Gemini direct calls)
-- Stripe billing flows (no server route in corporate-minimal)
-- Referrals flows (same)
-- OpenAI Realtime WSS roundtrip (blocked on Phase 8 finding F2/S1)
+- Stripe billing flows (CLIENT-CUT per
+  `../../.planning/phases/09-client-e2e-tests/CLIENT-CUTS.md` CC-1)
+- Referrals flows (CLIENT-CUT per CC-2)
 - Cross-platform (Windows/Linux) — Phase 9 is macOS only
 
 ---
@@ -141,5 +190,8 @@ This deletes any `e2e+*@test.local` accounts older than 1 hour.
 ## References
 
 - Phase 9 plan: `../../.planning/phases/09-client-e2e-tests/PLAN.md`
+- Phase 9 context (locked decisions): `../../.planning/phases/09-client-e2e-tests/CONTEXT.md`
+- Phase 9 client cuts: `../../.planning/phases/09-client-e2e-tests/CLIENT-CUTS.md`
 - Phase 8 compatibility matrix: `../../.planning/phases/08-client-server-audit/COMPATIBILITY-MATRIX.md`
+- Phase 8 server requirements (all closed): `../../.planning/phases/08-client-server-audit/SERVER-REQUIREMENTS.md`
 - Backend wire spec (oracle): `../../docs/BACKEND_SPEC.md`
