@@ -29,6 +29,44 @@ When("I GET {string} without auth", async ({}, path_: string) => {
   }
 });
 
+When(
+  "I POST {string} with auth and a streaming-usage report body",
+  async ({}, path_: string) => {
+    // Body matches BACKEND_SPEC § POST /api/streaming-usage — the
+    // post-streaming-session usage report. All listed fields are
+    // required by the server's input schema.
+    const res = await fetch(`${BACKEND_URL}${path_}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(world.tenant?.token ?? null),
+      },
+      body: JSON.stringify({
+        text: "final transcript for e2e streaming-usage report",
+        audioDurationSeconds: 12.5,
+        sessionId: "11111111-1111-1111-1111-111111111111",
+        clientType: "desktop",
+        appVersion: "1.0.0",
+        clientVersion: "1.0.0",
+        sttProvider: "openai",
+        sttModel: "whisper-1",
+        sttProcessingMs: 412,
+        sttLanguage: "en",
+        audioSizeBytes: 90123,
+      }),
+    });
+    world.lastResponse = res;
+    world.lastBodyText = await res.text().catch(() => "");
+    try {
+      world.lastBody = world.lastBodyText
+        ? JSON.parse(world.lastBodyText)
+        : null;
+    } catch {
+      world.lastBody = null;
+    }
+  },
+);
+
 Then(
   "the usage response carries at least one of {string}",
   async ({}, csv: string) => {
@@ -40,15 +78,16 @@ Then(
   },
 );
 
-Then("the response carries a non-empty providers array", async ({}) => {
+Then("the response carries a providers array", async ({}) => {
   const body = world.lastBody as Record<string, unknown> | null;
   expect(body).toBeTruthy();
-  // BACKEND_SPEC documents `availableProviders`; the task brief calls it
-  // `providers`. Accept either.
-  const arr =
-    (Array.isArray((body as { providers?: unknown }).providers) &&
-      (body as { providers: unknown[] }).providers) ||
-    (Array.isArray((body as { availableProviders?: unknown }).availableProviders) &&
-      (body as { availableProviders: unknown[] }).availableProviders);
-  expect(Array.isArray(arr) && arr.length > 0).toBeTruthy();
+  // BACKEND_SPEC documents `availableProviders`; accept `providers` too.
+  // The array MAY be empty: /api/stt-config reflects which STT provider
+  // keys the operator configured on the server. An empty list is a
+  // valid, well-formed response — asserting non-empty would couple the
+  // test to operator key provisioning, not to the contract.
+  const raw =
+    (body as { providers?: unknown }).providers ??
+    (body as { availableProviders?: unknown }).availableProviders;
+  expect(Array.isArray(raw)).toBeTruthy();
 });

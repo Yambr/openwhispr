@@ -43,9 +43,13 @@ When(
 );
 
 When("I cloud-list messages for the conversation", async ({}) => {
+  // Query param is `conversation_id` (snake_case) — matches the real
+  // client wire path in ConversationsService.listMessages, which builds
+  // `URLSearchParams({ conversation_id })`. The server rejects the
+  // camelCase `conversationId` form with HTTP 400.
   await cloudCall<ListMsgResponse>(
     "GET",
-    `/api/conversations/messages?conversationId=${encodeURIComponent(
+    `/api/conversations/messages?conversation_id=${encodeURIComponent(
       world.createdConversationId ?? "",
     )}`,
   );

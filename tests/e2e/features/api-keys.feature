@@ -33,9 +33,12 @@ Feature: API keys via cloudApiRequest IPC — v1 envelope (R12)
     And the v1 keys response contains success true and data
     And the v1 keys list includes the created key id
 
-  Scenario: POST /api/v1/keys/{id}/revoke removes the key from list
+  Scenario: POST /api/v1/keys/{id}/revoke marks the key revoked
+    # /api/v1/keys/list returns revoked keys too, each with a
+    # `revoked_at` timestamp — the key stays visible for audit, it does
+    # not vanish. Revocation is asserted via the revoked_at marker.
     When I cloud-create an API key with name "e2e-key-3" and scopes "read"
     And I cloud-revoke the created API key
     Then the cloud request succeeds
     And I cloud-list API keys
-    Then the v1 keys list does not include the revoked key id
+    Then the revoked key is marked revoked in the v1 keys list

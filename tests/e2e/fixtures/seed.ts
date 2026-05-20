@@ -16,9 +16,15 @@
  * round trip, no cookie parsing, no Mailpit HTML scrape, no fallback
  * chain — the response always includes a Better-Auth-compatible bearer.
  *
- * Test-tenant pruning is the server team's concern (the endpoint is
- * idempotent on email); we no longer call /api/auth/delete-account on
- * cleanup.
+ * Test-tenant pruning is the server team's concern; we no longer call
+ * /api/auth/delete-account on cleanup.
+ *
+ * NOTE on uniqueness: the seed endpoint is NOT idempotent on email — a
+ * duplicate-email POST currently 500s server-side (filed as SERVER
+ * requirement R14). Therefore `makeTenant()` MUST yield a globally
+ * unique email per call: it combines RUN_ID with a process-local
+ * monotonic counter so two scenarios that pass the same `label` (e.g.
+ * every notes-cjm scenario calls makeTenant("notes")) never collide.
  */
 
 export type TestTenant = {
@@ -41,11 +47,21 @@ export const BACKEND_URL =
 export const RUN_ID =
   process.env.OPENWHISPR_E2E_RUN_ID ?? `${Date.now()}-${process.pid}`;
 
+/**
+ * Process-local monotonic counter. Guarantees that every makeTenant()
+ * call produces a distinct email even when callers reuse the `label`
+ * argument within a single worker process. Without this the server
+ * 500s on the duplicate-email POST (SERVER requirement R14).
+ */
+let TENANT_SEQ = 0;
+
 export function makeTenant(label = "default"): TestTenant {
+  const seq = ++TENANT_SEQ;
+  const uniq = `${RUN_ID}-${seq}`;
   return {
-    email: `e2e+${label}-${RUN_ID}@test.local`,
-    password: `Pw-${RUN_ID}-${label}-test!`,
-    name: `e2e ${label} ${RUN_ID}`,
+    email: `e2e+${label}-${uniq}@test.local`,
+    password: `Pw-${uniq}-${label}-test!`,
+    name: `e2e ${label} ${uniq}`,
     token: null,
   };
 }

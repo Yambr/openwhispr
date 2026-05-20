@@ -70,6 +70,37 @@ export async function cloudCall<T = unknown>(
 
 // --- Background steps ----------------------------------------------------
 
+/**
+ * Worker-scoped Electron app. Playwright runs this suite with
+ * `workers: 1` + `fullyParallel: false`, so a single module-level app
+ * instance is launched ONCE (lazily, on the first authenticated
+ * scenario) and reused across every subsequent scenario in the worker.
+ *
+ * Relaunching Electron per scenario was the root of the intermittent
+ * `Process failed to launch! / kill EPERM` failures and the 60s worker
+ * teardown timeouts (each relaunch left a half-dead process behind).
+ * One app + per-scenario token re-seeding fixes both: scenarios stay
+ * isolated at the tenant/data layer (fresh seeded tenant each time)
+ * while the OS process lifecycle is stable.
+ */
+let sharedApp: { app: NonNullable<typeof world.electronApp>; page: NonNullable<typeof world.electronPage> } | null =
+  null;
+
+async function getSharedClient(): Promise<{
+  app: NonNullable<typeof world.electronApp>;
+  page: NonNullable<typeof world.electronPage>;
+}> {
+  if (sharedApp) {
+    // Verify the process is still alive; relaunch if it died.
+    const proc = sharedApp.app.process();
+    if (proc && proc.exitCode === null) return sharedApp;
+    sharedApp = null;
+  }
+  const launched = await launchClient();
+  sharedApp = { app: launched.app, page: launched.page };
+  return sharedApp;
+}
+
 Given(
   "the test tenant is authenticated as {string}",
   async ({}, label: string) => {
@@ -81,13 +112,15 @@ Given(
       );
     }
     world.tenant = seed.tenant;
-    const launched = await launchClient({ authToken: seed.token });
-    world.electronApp = launched.app;
-    world.electronPage = launched.page;
+    const client = await getSharedClient();
+    world.electronApp = client.app;
+    world.electronPage = client.page;
     // The IPC handler reads the bearer from main-process tokenStore. The
-    // renderer-facing `authSetToken` IPC writes to it. No main.js changes
-    // needed — this channel already exists in preload.js / ipcHandlers.js.
-    await launched.page.evaluate(async (token: string) => {
+    // renderer-facing `authSetToken` IPC writes to it. Re-seeding the
+    // token per scenario keeps each scenario bound to its own fresh
+    // tenant while the OS process is reused. No main.js changes needed —
+    // this channel already exists in preload.js / ipcHandlers.js.
+    await client.page.evaluate(async (token: string) => {
       const api = window.electronAPI;
       if (!api?.authSetToken) {
         throw new Error("window.electronAPI.authSetToken is not exposed");
@@ -98,11 +131,12 @@ Given(
 );
 
 AfterAll(async () => {
-  if (world.electronApp) {
-    await closeClient({ app: world.electronApp, page: world.electronPage! });
-    world.electronApp = null;
-    world.electronPage = null;
+  if (sharedApp) {
+    await closeClient({ app: sharedApp.app, page: sharedApp.page });
+    sharedApp = null;
   }
+  world.electronApp = null;
+  world.electronPage = null;
 });
 
 // --- Shared assertions ---------------------------------------------------

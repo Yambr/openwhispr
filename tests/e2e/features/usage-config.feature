@@ -12,18 +12,21 @@ Feature: Usage and configuration endpoints
     When I GET "/api/usage" without auth
     Then the response status is 401
 
-  Scenario: GET /api/streaming-usage with auth returns 200
-    # BACKEND_SPEC documents POST /api/streaming-usage; Phase 8 matrix row 16
-    # treats it as the streaming-usage report endpoint. The task brief asks
-    # for GET /api/streaming-usage — we honor the brief and treat any 2xx
-    # as success since the server can route it as a method-agnostic shim.
-    When I GET "/api/streaming-usage" with auth
+  Scenario: POST /api/streaming-usage with auth returns 200
+    # /api/streaming-usage is POST-only (a GET returns 404) and requires
+    # the full usage-report body documented in BACKEND_SPEC § POST
+    # /api/streaming-usage. An earlier draft of this scenario invented a
+    # bodyless GET; corrected to the real contract.
+    When I POST "/api/streaming-usage" with auth and a streaming-usage report body
     Then the response status is 200
 
-  Scenario: GET /api/stt-config returns 200 and a non-empty provider list
+  Scenario: GET /api/stt-config returns 200 and a provider list
+    # availableProviders MAY be empty — it reflects which STT provider
+    # keys the operator configured server-side. The contract guarantees
+    # a well-formed array, not a populated one.
     When I GET "/api/stt-config" with auth
     Then the response status is 200
-    And the response carries a non-empty providers array
+    And the response carries a providers array
 
   Scenario: GET /api/note-recording-config returns 200
     When I GET "/api/note-recording-config" with auth

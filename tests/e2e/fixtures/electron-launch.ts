@@ -77,9 +77,33 @@ export async function launchClient(opts: LaunchOptions = {}): Promise<LaunchResu
 }
 
 export async function closeClient(result: LaunchResult): Promise<void> {
+  // Capture the underlying OS process so we can guarantee it is gone
+  // before returning. Playwright's app.close() resolves when the IPC
+  // pipe drops, which can race the actual process exit on macOS and
+  // surface later as `kill EPERM` during worker teardown.
+  const proc = result.app.process();
+  const waitForExit = new Promise<void>((resolve) => {
+    if (!proc || proc.exitCode !== null) {
+      resolve();
+      return;
+    }
+    proc.once("exit", () => resolve());
+  });
   try {
     await result.app.close();
   } catch {
-    // Already closed — ignore.
+    // Already closing/closed — fall through to the exit wait.
+  }
+  // Bounded wait: don't let a stuck process hang worker teardown.
+  await Promise.race([
+    waitForExit,
+    new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
+  ]);
+  // Belt-and-braces: if it is still alive, SIGKILL it directly so the
+  // next scenario's launch isn't blocked by a zombie.
+  try {
+    if (proc && proc.exitCode === null) proc.kill("SIGKILL");
+  } catch {
+    // Process already reaped — ignore.
   }
 }

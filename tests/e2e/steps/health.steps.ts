@@ -23,6 +23,36 @@ Then(
 );
 
 Then(
+  "the readyz postgres subsystem reports ok",
+  async ({}) => {
+    // /readyz is a Kubernetes-style readiness probe: it returns 503 if
+    // ANY subsystem is degraded, 200 only when all are healthy. R6
+    // closure is specifically about POSTGRES reachability, so we assert
+    // the postgres subsystem ok flag directly rather than the overall
+    // 200 — that decouples this check from operator-dependent upstreams
+    // (LiteLLM keys / outbound allowlist) which legitimately degrade the
+    // aggregate probe. See SERVER-REQUIREMENTS R16 for the LiteLLM SSRF
+    // self-block that keeps the aggregate at 503.
+    const body = world.lastBody as
+      | { postgres?: { ok?: boolean } }
+      | null;
+    expect(body, "readyz returned no JSON body").toBeTruthy();
+    expect(
+      body?.postgres?.ok,
+      `readyz postgres subsystem not ok: ${JSON.stringify(body)}`,
+    ).toBe(true);
+  },
+);
+
+Then(
+  "the response status is 200 or 503",
+  async ({}) => {
+    const status = world.lastResponse?.status;
+    expect([200, 503]).toContain(status);
+  },
+);
+
+Then(
   "the response header {string} is absent",
   async ({}, name: string) => {
     // Per R4 closure: /api/health no longer carries deprecation / link

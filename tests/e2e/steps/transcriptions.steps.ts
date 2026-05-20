@@ -21,10 +21,13 @@ type BatchDeleteResponse = { deleted?: string[] };
 When(
   "I cloud-create a transcription with text {string}",
   async ({}, text: string) => {
+    // Payload must match TranscriptionInput in src/services/
+    // TranscriptionsService.ts — the server rejects unrecognized keys
+    // (e.g. `source`) with HTTP 400.
     const envelope = await cloudCall<CloudTranscription>(
       "POST",
       "/api/transcriptions/create",
-      { text, source: "e2e-test" },
+      { text },
     );
     if (envelope.success && envelope.data?.id) {
       world.createdTranscriptionId = envelope.data.id;
@@ -39,7 +42,6 @@ When(
     const items = texts.map((t, i) => ({
       client_transcription_id: `ct-${i}-${t}`,
       text: t,
-      source: "e2e-test",
     }));
     await cloudCall<BatchCreateResponse>(
       "POST",
