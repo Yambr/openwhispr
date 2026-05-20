@@ -20,6 +20,12 @@ softening this document.
 
 ## R1 — `/api/_test/seed-tenant` (NEW endpoint required)
 
+**Status:** ⚠️ **RE-OPENED 2026-05-20 via R13.** Reported "closed
+2026-05-19" by the server team, but the shipped endpoint returns
+`401` on every request (handler mounted behind production auth
+middleware). R1 is NOT closed until R13's verification curl returns
+`200 {token, user}`. See [R13](#r13--apit_testseed-tenant-rejects-every-request-with-401--r1-regression--non-conformance).
+
 **Discovered:** 2026-05-19, Phase 9 e2e first unblocked run.
 
 **Violation:** Better Auth on the server rejects every non-browser
