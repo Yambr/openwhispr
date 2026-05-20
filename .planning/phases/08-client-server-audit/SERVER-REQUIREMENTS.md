@@ -668,3 +668,447 @@ still → 401 (auth not globally disabled).
     slim-core with `OPENWHISPR_TEST_ROUTES=true` exits 0. Until then,
     Phase 9 cannot reach DONE — it is DONE-with-server-followups with
     R13 as the blocking follow-up.
+
+---
+
+## R14 — `/api/_test/seed-tenant` 500s on a duplicate-email POST instead of 409/idempotent
+
+**Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
+
+**Severity:** MEDIUM. The Phase 9 e2e harness has been fixed to never
+re-send a duplicate email (every `makeTenant()` call now yields a
+globally unique address), so this no longer blocks the suite. But the
+server still violates its own error contract for a constraint
+violation, and any future caller that re-submits an email — including
+the server team's own contract tests — will hit an opaque 500.
+
+**Violation:** A second `POST /api/_test/seed-tenant` with an
+already-seeded email returns:
+
+```
+HTTP/1.1 500 Internal Server Error
+{"error":"Internal server error"}
+```
+
+Reproduction (clean, against the slim-test stack):
+
+```
+$ DUPE="r14-dupe-$(date +%s)@test.local"
+$ curl -sS -X POST http://localhost:4000/api/_test/seed-tenant \
+    -H 'content-type: application/json' \
+    -d '{"email":"'$DUPE'","password":"P-test-1!","name":"t","verified":true}' -w ' (%{http_code})'
+{"token":"...","user":{...,"emailVerified":true,...}} (200)
+
+$ curl -sS -X POST http://localhost:4000/api/_test/seed-tenant \
+    -H 'content-type: application/json' \
+    -d '{"email":"'$DUPE'","password":"P-test-1!","name":"t","verified":true}' -w ' (%{http_code})'
+{"error":"Internal server error"} (500)
+```
+
+A bare `500 {"error":"Internal server error"}` on a unique-constraint
+violation is wrong on two counts:
+
+1. **Wrong status.** A duplicate email is a *client* error, not a
+   server fault. It must be `409 Conflict` with a structured body
+   (`{"error":"...","code":"email_already_seeded"}` or equivalent) —
+   OR the endpoint must be genuinely idempotent (re-mint and return
+   `200 {token, user}` for the existing tenant). The R1 spec comment
+   in this very file (and the now-corrected harness docstring)
+   originally *claimed* the endpoint "is idempotent on email" — that
+   claim was false. Pick one of the two correct behaviors and make it
+   true.
+2. **Opaque body.** A 500 with `Internal server error` masks the
+   cause. The handler is clearly catching a Postgres unique-violation
+   and rethrowing it as a generic 500 rather than mapping it. Map the
+   `users_email_unique` (or equivalent) violation explicitly.
+
+**Required server behavior:** EITHER
+
+- **(a) idempotent** — on a duplicate email, look up the existing
+  user, re-mint a fresh bearer, return `200 {token, user}` with the
+  existing user's `id`. This is the simplest fix and matches what the
+  R1 docstring promised; OR
+- **(b) clean 409** — return `409 {"error":"email already seeded",
+  "code":"email_already_seeded"}`.
+
+Either is acceptable. A `500` is not.
+
+**Reject:**
+- "The harness should just use unique emails" — the harness *has* been
+  fixed to do exactly that, but that does not excuse the server
+  returning a 500 for a constraint violation. R14 stands as a server
+  contract bug independent of the harness fix.
+- "Catch-all 500 is fine for a test-only route" — test routes are
+  still routes; an opaque 500 on a foreseeable, well-defined input
+  (re-seed) wastes every future debugger's time.
+
+**Verification (must pass before R14 is closed):**
+
+```
+# Seed once → 200, seed the SAME email again →
+#   EITHER 200 {token, user}  (idempotent)
+#   OR     409 {error, code}  (clean conflict)
+# NEVER 500.
+```
+
+---
+
+## R15 — `/api/auth/verification-status` and `/api/auth/delete-account` reject every valid auth form with 401
+
+**Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
+Re-opens **R5** (which was marked "closed 2026-05-19").
+
+**Severity:** HIGH. `/api/auth/delete-account` is a documented,
+default-enabled client route (account deletion is a real user
+journey). `/api/auth/verification-status` is on the email-verification
+path (`src/components/EmailVerificationStep.tsx`). Both are unusable.
+
+**Violation — three distinct facets, all reproduced with clean curls
+against the slim-test stack:**
+
+**(1) `verification-status` now *requires* `?email=` — the exact
+inverse of R5.** R5 was filed to make the server *tolerate* the
+`?email=` param. The shipped behavior went the other way: the param
+is now *mandatory* and its absence is a 400:
+
+```
+$ curl -sS '.../api/auth/verification-status' -H "Authorization: Bearer <seed-token>"
+{"error":"querystring/email Invalid input: expected string, received undefined"} (400)
+```
+
+R5's required behavior (this file, lines 241-251) is explicit:
+"Continue deriving user from session/Bearer … Accept the `email` query
+param **without warning, without error**." A hard 400 when the param
+is absent is a direct R5 non-conformance.
+
+**(2) `verification-status` returns 401 for EVERY auth form, including
+a genuine fresh Better Auth session.** With `?email=` supplied, the
+endpoint rejects:
+
+```
+# seed-tenant bearer
+$ curl -sS '.../api/auth/verification-status?email=<x>' -H "Authorization: Bearer <seed-token>"
+{"error":"Session expired"} (401)
+
+# genuine /api/auth/sign-in/email set-auth-token, used as Bearer
+$ curl -sS '.../api/auth/verification-status?email=<x>' -H "Authorization: Bearer <set-auth-token>"
+{"error":"unauthorized"} (401)
+
+# genuine fresh Better Auth session COOKIE from the same sign-in
+$ curl -sS '.../api/auth/verification-status?email=<x>' -H "Cookie: __Secure-openwhispr.session_token=<...>"
+{"error":"unauthorized"} (401)
+```
+
+A route that 401s a *just-minted, valid* session cookie is broken
+auth wiring, not a credential problem.
+
+**(3) `/api/auth/delete-account` rejects the same three auth forms
+identically.** A fresh sign-in cookie AND the fresh `set-auth-token`
+bearer both yield `401 {"error":"unauthorized"}`:
+
+```
+$ curl -sS -X DELETE '.../api/auth/delete-account' -H "Cookie: <fresh-session-cookie>"
+{"error":"unauthorized"} (401)
+$ curl -sS -X DELETE '.../api/auth/delete-account' -H "Authorization: Bearer <fresh-set-auth-token>"
+{"error":"unauthorized"} (401)
+```
+
+Note: the *same* fresh seed bearer works fine on the custom
+Bearer-middleware routes — `/api/usage`, `/api/notes/list`,
+`/api/v1/keys/list` all return 200. So the credential is valid; it is
+specifically the **Better-Auth-mounted routes** (`/api/auth/*` beyond
+`sign-in`/`sign-out`/`check-user`) whose auth resolution is broken.
+
+**Root-cause hypothesis (for the server team to confirm):** the
+`/api/auth/verification-status` and `/api/auth/delete-account`
+handlers resolve the session through a code path that does not share
+the Better Auth cookie/Bearer resolver used by `sign-in`/`sign-out`.
+Either they sit behind a stale custom auth hook, or they call
+`auth.api.getSession()` with a request object that has lost its
+cookies/headers. `sign-in` and `sign-out` work; these two do not —
+the divergence is server-internal.
+
+**Required server behavior:**
+
+- `GET /api/auth/verification-status` — derive identity from
+  session/Bearer using the SAME resolver `sign-in`/`sign-out` use.
+  Accept `?email=` as an OPTIONAL param (R5 contract). Return
+  `200 {emailVerified, ...}` for a valid session. Do NOT 400 on a
+  missing `?email=`.
+- `DELETE /api/auth/delete-account` — accept a valid Better Auth
+  session cookie OR bearer, return `200` on success. Currently 401s
+  unconditionally.
+- The seed-tenant bearer (R1/R13) must be honored by Better Auth
+  session routes too, not only by the custom Bearer middleware — OR
+  the server team must state explicitly that seed-tenant tokens are
+  Bearer-middleware-only, in which case R1 needs amending and the
+  e2e harness will drive `/api/auth/*` scenarios via a real sign-in
+  instead. As shipped, neither path works (a real sign-in cookie also
+  401s), so this is a server bug regardless.
+
+**Reject:**
+- "The harness should send the right credential" — the harness was
+  probed with the seed bearer, a genuine `set-auth-token`, and a
+  genuine fresh session cookie. All three 401. There is no "right
+  credential" the harness is failing to send.
+- "verification-status requiring `?email=` is fine" — it directly
+  contradicts R5, which the client team filed and the server team
+  marked closed. Closing a requirement by implementing its inverse is
+  not closure.
+- "delete-account is low priority" — it is a documented client route
+  on a real user journey (account deletion). HIGH.
+
+**Verification (must pass before R15 is closed):**
+
+```
+# 1. verification-status without ?email= → 200 (NOT 400), session-derived
+# 2. verification-status?email=<x> with a valid session → 200
+# 3. delete-account with a valid session → 200
+# Phase 9 e2e: auth.feature "Verification status accepts ?email=" and
+# "Delete account returns 200" both pass (currently tagged @blocked-r15).
+```
+
+**Cross-reference:** Re-opens R5. R5's status flips from "closed
+2026-05-19" back to OPEN, folded into R15.
+
+---
+
+## R16 — `/readyz` LiteLLM subsystem self-blocked by the server's own SSRF allowlist
+
+**Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
+
+**Severity:** MEDIUM. Does not block the core Phase 9 e2e suite (the
+harness now asserts the postgres subsystem ok flag directly rather than
+the aggregate `/readyz` 200, and all LLM-feature scenarios are
+`@requires-paid-keys` and excluded by default). But it keeps the
+aggregate readiness probe permanently red, and if it reflects a real
+outbound-policy misconfiguration it would also break every LLM route at
+runtime.
+
+**Violation:** `GET /readyz` returns `503` because the LiteLLM
+subsystem check fails:
+
+```
+$ curl -sS http://localhost:4000/readyz
+{"postgres":{"ok":true,"latency_ms":3},
+ "valkey":{"ok":true,"latency_ms":3},
+ "litellm":{"ok":false,"latency_ms":2,
+            "error":"Outbound blocked by SSRF policy (host_not_allowed; host=litellm)"}}
+(503)
+```
+
+postgres and valkey are healthy. The LiteLLM check fails because the
+server's own SSRF / outbound allowlist rejects the hostname `litellm`
+— i.e. the server is blocking a request to its own internal compose
+service. An SSRF allowlist that blocks the app's own first-party
+internal dependency is misconfigured: internal service hostnames
+(`litellm`, `postgres`, `valkey`, …) must be on the allowlist, or the
+readiness check must use a connection path that is not subject to the
+user-facing SSRF policy.
+
+**Required server behavior:** EITHER
+
+- add the internal LiteLLM service host to the SSRF outbound
+  allowlist (internal compose service names are first-party, not
+  user-supplied URLs — they are not an SSRF surface); OR
+- have the `/readyz` LiteLLM probe bypass the SSRF policy entirely
+  (it is a server-controlled internal health ping, not a
+  user-directed fetch).
+
+**If instead the slim-test stack legitimately does not run LiteLLM**,
+the LiteLLM subsystem should be reported as `skipped`/`not_configured`
+rather than `ok:false` with an SSRF error — and must not drag the
+aggregate probe to 503. A subsystem that is intentionally absent is
+not a readiness failure.
+
+**Reject:**
+- "503 on a degraded subsystem is correct probe behavior" — true in
+  general, but the *cause* here is the server blocking itself, which
+  is a config bug, not a genuine dependency outage.
+
+**Verification:** `GET /readyz` returns `200` with `litellm.ok:true`
+(allowlist fixed) OR `litellm` reported as `skipped` and excluded from
+the aggregate. The Phase 9 `health.feature` "/readyz" scenario already
+tolerates 200-or-503 and asserts postgres ok, so it passes either way;
+R16 is about getting the aggregate probe honest.
+
+**Second facet — `POST /api/transcribe` returns `502 {"error":"Upstream
+blocked by SSRF policy"}` for an EMPTY file instead of `400`.** The
+same SSRF allowlist self-block surfaces on the transcription path:
+
+```
+$ printf "" > /tmp/empty.wav
+$ curl -sS -X POST http://localhost:4000/api/transcribe \
+    -H "Authorization: Bearer <seed-token>" \
+    -F "file=@/tmp/empty.wav;type=audio/wav" -w ' (%{http_code})'
+{"error":"Upstream blocked by SSRF policy"} (502)
+```
+
+Two distinct server defects on this one request:
+
+1. **No empty-file input validation.** A zero-byte upload must be
+   rejected with `400` *before* any upstream call. The server instead
+   forwards it to the STT upstream. (Phase 9 `transcription.feature`
+   "Empty file returns 400" asserts the documented `400`.)
+2. **SSRF policy blocks the internal STT upstream** — same allowlist
+   misconfiguration as the `/readyz` LiteLLM facet above. The internal
+   LiteLLM / STT service host is first-party and must be allowlisted
+   (or the proxy path must bypass the user-facing SSRF policy).
+
+The empty-file scenario is therefore tagged `@blocked-r16` in the
+Phase 9 suite until BOTH facets are fixed: empty input → `400`, and a
+non-empty input reaches the upstream without an SSRF self-block.
+
+---
+
+## R17 — `POST /api/v1/keys/create` enforces API-key name uniqueness GLOBALLY instead of per-tenant
+
+**Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
+
+**Severity:** HIGH — this is a **tenant-isolation defect**. One
+tenant's choice of API-key names constrains every other tenant's
+namespace, and it leaks the existence of other tenants' key names
+(tenant B learns "a key named X exists somewhere" from the 409).
+
+**Violation:** Two *distinct* seeded tenants cannot both create an API
+key with the same `name`. The second tenant gets a 409:
+
+```
+# tenant A creates a key named "dupname" → 200
+$ curl -sS -X POST .../api/v1/keys/create -H "Authorization: Bearer <tenantA>" \
+    -d '{"name":"dupname","scopes":["read"]}'
+{"success":true,"data":{"id":"...","name":"dupname","key":"pak_..."}}
+
+# tenant B — a completely separate seeded tenant — creates a key with
+# the SAME name → 409
+$ curl -sS -X POST .../api/v1/keys/create -H "Authorization: Bearer <tenantB>" \
+    -d '{"name":"dupname","scopes":["read"]}'
+{"success":false,"error":"An API key with that name already exists","code":"API_KEY_NAME_TAKEN"}
+```
+
+The uniqueness constraint on the API-keys table is on `name` alone
+rather than on `(tenant_id, name)` (or `(user_id, name)`). API-key
+names are per-tenant labels; they must be scoped to the owning tenant.
+
+**Required server behavior:** The uniqueness constraint MUST be
+composite — `(tenant_id, name)` / `(user_id, name)`. Two different
+tenants creating keys with the same human-readable name is normal and
+must succeed. `API_KEY_NAME_TAKEN` should only fire when the *same*
+tenant reuses a name.
+
+This requires a migration to drop the global unique index on `name`
+and add the composite one. Since the server is < 24h old and not in
+production, there is no data-migration cost.
+
+**Reject:**
+- "The e2e harness should use unique key names" — the harness *has*
+  been updated to suffix names with a unique token so the suite is
+  green, but that does not excuse the server constraint being wrong.
+  A real BYOK user on tenant B will hit `API_KEY_NAME_TAKEN` for a
+  name they have never used. R17 stands.
+- "Global key-name uniqueness is a feature" — it is not; it is a
+  cross-tenant information leak and a usability bug.
+
+**Verification (must pass before R17 is closed):** two distinct
+tenants each create an API key with the identical `name` — both
+return `200`. The same tenant reusing a name still returns `409`.
+
+---
+
+## R18 — `POST /api/auth/sign-in/email` rejects every non-browser caller with `403 MISSING_OR_NULL_ORIGIN`
+
+**Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
+This is the **original GA-1 problem** (Better Auth Origin rejection)
+resurfacing on the `sign-in` route specifically — R1's seed-tenant
+endpoint bypassed it, but plain `/api/auth/sign-in/email` was never
+covered.
+
+**Severity:** MEDIUM. Does not block the core suite (seed-tenant
+already proves authenticated access; the sign-in scenario is
+additional coverage), but it means the documented `sign-in` route is
+untestable from any non-browser client and the scenario is tagged
+`@blocked-r18`.
+
+**Violation:** `POST /api/auth/sign-in/email` with valid credentials
+for a verified user returns:
+
+```
+HTTP/1.1 403 Forbidden
+{"message":"Missing or null Origin","code":"MISSING_OR_NULL_ORIGIN"}
+```
+
+whenever the request carries no `Origin` header or `Origin: null`.
+
+Critically, the e2e harness uses Node's built-in `fetch` (undici).
+**undici sends `Origin: null` on a non-browser request** — it does not
+omit the header, it sends the literal `null`. Better Auth's
+trustedOrigins check treats `null` as a rejected origin → 403.
+
+Reproduction (Node, exactly as the harness runs):
+
+```js
+const r = await fetch("http://localhost:4000/api/auth/sign-in/email", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ email, password }),
+});
+// → 403  {"message":"Missing or null Origin","code":"MISSING_OR_NULL_ORIGIN"}
+```
+
+A raw `curl` (which sends NO Origin header at all, not `null`) gets
+`200` — so the rejection is specifically triggered by `Origin: null`.
+
+**Why the harness cannot work around this:** per Phase 9 CONTEXT
+operating rule 3 ("No client-side workarounds. No header spoofing in
+e2e") and memory `client_immutable`, the harness is forbidden from
+spoofing an `Origin` header. The real Electron client sets a correct
+Origin via `webRequest` in `main.js` — but the harness drives raw
+`fetch`, and replicating the browser Origin would be a spoof.
+
+**Required server behavior:** When `OPENWHISPR_TEST_ROUTES === "true"`
+AND `NODE_ENV !== "production"` (the same double-gate as R1's
+seed-tenant), Better Auth's trustedOrigins must accept a missing /
+`null` Origin on `/api/auth/sign-in/email`. This is the SAME bypass
+already implemented for `/api/_test/seed-tenant`; it just needs to
+extend to the credential sign-in route under the test gate.
+
+Equivalently: the server may expose the sign-in path through the same
+test-route family with the Origin bypass. The constraint is that a
+seeded test tenant must be able to complete a real `sign-in/email`
+round trip from a non-browser test client without a header spoof.
+
+**Reject:**
+- "Make the harness send `Origin: http://localhost`" — header spoof,
+  forbidden by CONTEXT rule 3.
+- "Set `trustedOrigins: ['*']` globally" — too broad; R1 already
+  rejected this. Gate it on `OPENWHISPR_TEST_ROUTES` like seed-tenant.
+- "Drop the sign-in scenario" — sign-in is a documented route on a
+  real user journey; it deserves coverage. The fix belongs server-side.
+
+**Verification (must pass before R18 is closed):** with
+`OPENWHISPR_TEST_ROUTES=true`, a Node-`fetch` `POST
+/api/auth/sign-in/email` with valid seeded credentials returns `200`
+with a session token. The Phase 9 `auth.feature` "Sign-in with
+verified user" scenario (currently `@blocked-r18`) passes.
+
+---
+
+## R14 / R15 / R16 / R17 / R18 verification protocol
+
+15. **R14 seed-tenant duplicate** — re-POSTing a seeded email returns
+    200 (idempotent) or 409 (clean conflict), never 500.
+16. **R15 better-auth routes** — `verification-status` (with and
+    without `?email=`) and `delete-account` return 2xx for a valid
+    session. The two `@blocked-r15`-tagged auth.feature scenarios pass
+    once this lands.
+17. **R16 readyz litellm** — `/readyz` returns 200 with `litellm.ok`
+    true, or reports litellm as `skipped` and not counted against the
+    aggregate. Second facet: `POST /api/transcribe` with an empty file
+    returns `400` (input validation), and a non-empty upload reaches
+    the STT upstream without a `502` SSRF self-block.
+18. **R17 api-key name scope** — two distinct tenants can each create
+    an API key with the same `name` (both 200); a single tenant
+    reusing a name still 409s.
+19. **R18 sign-in Origin** — with `OPENWHISPR_TEST_ROUTES=true`, a
+    Node-`fetch` `POST /api/auth/sign-in/email` with valid seeded
+    credentials returns `200` (not `403 MISSING_OR_NULL_ORIGIN`).
