@@ -1129,6 +1129,21 @@ verified user" scenario (currently `@blocked-r18`) passes.
 
 ## R19 — slim-core worker cannot deliver verification email: SMTP target `192.168.96.2:587` is unreachable; real sign-up → sign-in is impossible
 
+**Status:** ✅ **CLOSED 2026-05-20** — server commit `988171b6`
+(`fix(61): ship mailpit in slim-core base so sign-up email delivers`).
+Recommended option (a) applied: `mailpit` is now a first-class service
+in the base `docker-compose.yml` (no overlay required), and
+`SMTP_PORT=1025` is pinned on the base api + worker services so they
+reach it on its real port. The redundant `mailpit` + `SMTP_PORT`
+entries were removed from `compose/docker-compose.dev-tools.yml`.
+
+Verified end-to-end on a plain `docker compose up -d` (no overlays):
+real `POST /api/auth/sign-up/email` → worker logs `email.sent` (zero
+`ECONNREFUSED`) → verification email delivered to the bundled Mailpit
+(`http://127.0.0.1:8025`) → `verify-email` 302 → `POST
+/api/auth/sign-in/email` returns `200` with a session and
+`emailVerified:true`. The real first-run user journey now completes.
+
 **Discovered:** 2026-05-20, live manual probe of the cloud sign-up
 journey against the slim-core stack (not an e2e harness run — a real
 `POST /api/auth/sign-up/email` followed by `POST /api/auth/sign-in/email`).
