@@ -530,3 +530,107 @@ For each row above, the protocol to verify the fix is:
 
 Phase 9 `KNOWN-FAILURES.md` and `tests/e2e/features/*.feature` get
 updated as each row closes. No `@blocked-rN` tag is permanent.
+
+---
+
+## R13 — `/api/_test/seed-tenant` rejects every request with 401 — R1 regression / non-conformance
+
+**Discovered:** 2026-05-20, Phase 9 e2e full run (Task 7).
+
+**Severity:** BLOCKER — 46 of 52 Phase 9 e2e scenarios depend on a
+seeded authenticated tenant. The suite is dead in the water until this
+is fixed. This is R1 re-opened: R1 was reported "closed 2026-05-19" but
+the shipped endpoint does not honor the R1 contract.
+
+**Violation:** The endpoint is *registered* (the route exists — see
+proof below) but the handler unconditionally returns
+`HTTP 401 {"error":"unauthorized"}` for every request, regardless of
+body, headers, or `Origin`. The R1 spec (this file, lines 33-69)
+mandates the handler:
+
+- returns `200 {token, user}` for a valid POST body,
+- **"Skip the `trustedOrigins` / `MISSING_OR_NULL_ORIGIN` check
+  entirely"**,
+- **mints a bearer** for an as-yet-unauthenticated caller.
+
+An endpoint whose sole purpose is to mint the *first* bearer for a
+test tenant cannot itself require a bearer. Requiring auth to call the
+auth-bootstrap endpoint is circular and makes the endpoint unusable —
+which is exactly what the 401 indicates is happening.
+
+**Proof the route is registered (gates pass, handler rejects):**
+
+```
+# Nonexistent test route — 404 (route not found)
+$ curl -sS -X POST http://localhost:4000/api/_test/does-not-exist -i | head -1
+HTTP/1.1 404 Not Found
+
+# seed-tenant POST — 401 (route FOUND, handler rejects)
+$ curl -sS -X POST http://localhost:4000/api/_test/seed-tenant \
+    -H 'content-type: application/json' \
+    -d '{"email":"smoke@test.local","password":"P-test-1!","name":"smoke","verified":true}' -i | head -1
+HTTP/1.1 401 Unauthorized
+{"error":"unauthorized"}
+
+# seed-tenant GET — 404 (method not allowed → route is POST-only, as designed)
+$ curl -sS -X GET http://localhost:4000/api/_test/seed-tenant -i | head -1
+HTTP/1.1 404 Not Found
+```
+
+The 404→401→404 triplet proves: `OPENWHISPR_TEST_ROUTES=true` IS wired
+(the route mounted), but the seed-tenant handler is gated behind the
+**same auth middleware as production routes**. The R1 "bypasses
+required inside the handler" list was not implemented — the handler is
+sitting behind the Better Auth session middleware instead of in front
+of it.
+
+Adding `Origin: http://localhost:3000` does not change the result —
+the rejection is `unauthorized` (missing session), not
+`MISSING_OR_NULL_ORIGIN`. This is an *authentication* gate, not an
+origin gate.
+
+**Required server behavior:** Mount the `/api/_test/seed-tenant`
+handler **before / outside** the Better Auth session-required
+middleware, exactly as R1 specified. The handler itself performs the
+gate checks (`NODE_ENV !== "production"` AND
+`OPENWHISPR_TEST_ROUTES === "true"`) and then creates the user +
+mints the bearer with no prior session. A valid POST must return
+`200 {token, user: {id, email, emailVerified: true, createdAt}}`.
+
+**Verification (must pass before R13 is closed):**
+
+```
+curl -sS -X POST http://localhost:4000/api/_test/seed-tenant \
+  -H 'content-type: application/json' \
+  -d '{"email":"r13@test.local","password":"P-test-1!","name":"r13","verified":true}'
+# EXPECT: 200  {"token":"<bearer>","user":{"id":"...","email":"r13@test.local","emailVerified":true,"createdAt":"..."}}
+# ACTUAL: 401  {"error":"unauthorized"}
+```
+
+Then `npm run test:e2e` from the client repo must exit 0 (currently
+46 failed / 6 passed, all 46 failures = this one bug).
+
+**Reject:**
+- "The e2e harness should send a bearer to seed-tenant" — there is no
+  bearer to send; seed-tenant is the thing that produces the first
+  bearer. Circular.
+- "Add a static test bearer to the client/harness env" — embedded
+  credentials, anti-pattern (memory `client_immutable` / project
+  CLAUDE.md § Secrets).
+- "Harness seeds via `/api/auth/sign-up/email` instead" — that path
+  returns `token: null` pending email verification; it is exactly the
+  problem R1 was filed to solve. Regressing to it is not an option.
+
+**Cross-reference:** This re-opens R1. R1's status in this document's
+summary table should flip from "closed 2026-05-19" back to OPEN until
+R13's verification curl returns 200.
+
+---
+
+## R13 verification protocol
+
+14. **R13 seed-tenant auth bypass** — the verification curl above
+    returns `200 {token, user}` (not 401). `npm run test:e2e` against
+    slim-core with `OPENWHISPR_TEST_ROUTES=true` exits 0. Until then,
+    Phase 9 cannot reach DONE — it is DONE-with-server-followups with
+    R13 as the blocking follow-up.

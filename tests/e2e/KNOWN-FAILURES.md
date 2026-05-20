@@ -1,13 +1,22 @@
 # Known Failures
 
-Scenarios currently expected to fail or be skipped. Post-R1–R12 closure
-(2026-05-19), the list is minimal: operator-gated paid-keys scenarios
-and one pending audio fixture. No active `@blocked-rN` tags remain.
+Post-R1–R12-closure status, **as actually observed on the 2026-05-20
+full run**. The run surfaced a BLOCKER: `/api/_test/seed-tenant` does
+not honor the R1 contract (returns 401, not `{token, user}`). Until the
+server fixes that, 46 of 52 scenarios are blocked by a single server
+bug, filed as **R13**.
 
-| Tag | Scenario | Root cause | Owner | Linked finding | Last verified |
+| Tag | Scenario(s) | Root cause | Owner | Linked finding | Last verified |
 |---|---|---|---|---|---|
-| `@requires-paid-keys` | 8 scenarios in transcription / reasoning / agent-stream / realtime-token (incl. OpenAI realtime) | LiteLLM proxy on the server needs upstream API keys configured (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `ASSEMBLYAI_API_KEY`, `DEEPGRAM_API_KEY`). Operator gate, not a server bug. | operator | n/a (env) | 2026-05-20 |
+| `@blocked-r13` | All 46 scenarios that require a seeded authenticated tenant (auth, notes-cjm, folders-cjm, conversations-cjm, transcriptions-cjm, api-keys, usage-config, plus the paid-key scenarios which also seed first) | Server `/api/_test/seed-tenant` returns `401 {"error":"unauthorized"}` for every request — the handler sits behind the production Better Auth session middleware instead of in front of it. R1 contract violated; R1 re-opened. | server | `../../.planning/phases/08-client-server-audit/SERVER-REQUIREMENTS.md` § R13 | 2026-05-20 |
+| `@requires-paid-keys` | 8 scenarios in transcription / reasoning / agent-stream / realtime-token (incl. OpenAI realtime) | LiteLLM proxy on the server needs upstream API keys configured (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `ASSEMBLYAI_API_KEY`, `DEEPGRAM_API_KEY`). Operator gate, not a server bug. **Currently masked by R13** — these scenarios seed a tenant first, so they fail on R13 before reaching the paid-key path. | operator | n/a (env) | 2026-05-20 |
 | pending fixture | `transcription.feature → Multipart upload with a real WAV returns transcribed text` | Audio fixture file not yet checked in: `tests/e2e/fixtures/audio/hello-world-3s.wav`. Step def short-circuits via `test.skip()`. Advisor decision (2026-05-19): "Audio fixture pending stays pending — once R1 lands, the @requires-paid-keys transcription scenario can run; the fixture is its own follow-up." | client | n/a | 2026-05-20 |
+
+> **`@blocked-r13` is documentary, not an active suite tag.** No `@blocked-r13`
+> tag is written into the `.feature` files — the failures are a runtime
+> server bug, not a statically-skipped scenario. The tag exists here so the
+> triage table has a stable identifier. Once R13 closes, this row is deleted
+> and the run is re-executed; nothing in the `.feature` files needs editing.
 
 ### `@requires-paid-keys` scenarios (operator concern, NOT server bugs)
 
@@ -64,8 +73,34 @@ All twelve requirements filed in Phase 8
 | R11 | 2026-05-19 | Transcriptions RECORD CRUD (5 endpoints, distinct from `/api/transcribe` audio inference) implemented. | n/a — covered by new `transcriptions-cjm.feature`. |
 | R12 | 2026-05-19 | v1 envelope `{success, data?, error?, code?}` on the 3 `/api/v1/keys/*` endpoints. | n/a — covered by new `api-keys.feature`. |
 
+## Harness bugs fixed during the 2026-05-20 run (Task 7)
+
+Two genuine harness bugs were found and fixed while bringing the suite
+to a runnable state (these are ours to fix, per the triage protocol):
+
+1. **Duplicate step definition.** `the response JSON field {string} is
+   non-empty` was defined in *both* `steps/realtime.steps.ts:76` and
+   `steps/transcription.steps.ts:75`. `bddgen` aborts on ambiguous
+   steps. Removed the `transcription.steps.ts` copy; the
+   `realtime.steps.ts` definition is functionally identical and shared.
+2. **Cucumber-expression alternation collision.** The api-keys step
+   text `the v1/keys ...` contains a `/`, which Cucumber expressions
+   treat as *alternative text* (`bird/birds`). `bddgen` could not match
+   the literal feature step. Reworded to `the v1 keys ...` in both
+   `features/api-keys.feature` and `steps/api-keys.steps.ts`.
+
+Neither fix masks a real failure — they are pure harness/codegen bugs.
+
 ## Last full run
 
-- 2026-05-20 — pending. The first post-closure run is gated on Task 6
-  (operator boots slim-core with `OPENWHISPR_TEST_ROUTES=true`) followed
-  by Task 7 (`npm run test:e2e`).
+- **2026-05-20 — 6 passed / 46 failed.** Single root cause for all 46
+  failures: `seed-tenant failed (status 401): {"error":"unauthorized"}`
+  → server bug R13. The 6 passing scenarios are exactly those that need
+  no seeded tenant: `health.feature` (livez, readyz, /api/health),
+  `auth.feature → check-user new email`, `reasoning.feature → no-auth
+  401`, `transcription.feature → missing-auth 401`.
+- The run is NOT green. Per the Phase 9 plan stop condition, a non-green
+  run whose every failure is triaged and filed is an acceptable Task 7
+  deliverable: 46/46 failures trace to one filed server bug (R13). No
+  client-side workaround was applied; no harness bug masks a real
+  failure. Phase 9 status: **DONE-with-server-followups** (R13 blocking).

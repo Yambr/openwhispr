@@ -71,10 +71,3 @@ When(
     await captureResponse(res);
   },
 );
-
-Then("the response JSON field {string} is non-empty", async ({}, field: string) => {
-  const body = world.lastBody as Record<string, unknown> | null;
-  expect(body).toBeTruthy();
-  const v = body![field];
-  expect(typeof v === "string" && v.length > 0).toBeTruthy();
-});

@@ -23,19 +23,19 @@ Feature: API keys via cloudApiRequest IPC — v1 envelope (R12)
   Scenario: POST /api/v1/keys/create returns plaintext key with V1 envelope (success:true)
     When I cloud-create an API key with name "e2e-key-1" and scopes "read"
     Then the cloud request succeeds
-    And the v1/keys response contains success true and data
+    And the v1 keys response contains success true and data
     And the created API key plaintext is non-empty
 
   Scenario: GET /api/v1/keys/list returns V1 envelope wrapping keys array
     When I cloud-create an API key with name "e2e-key-2" and scopes "read"
     And I cloud-list API keys
     Then the cloud request succeeds
-    And the v1/keys response contains success true and data
-    And the v1/keys list includes the created key id
+    And the v1 keys response contains success true and data
+    And the v1 keys list includes the created key id
 
   Scenario: POST /api/v1/keys/{id}/revoke removes the key from list
     When I cloud-create an API key with name "e2e-key-3" and scopes "read"
     And I cloud-revoke the created API key
     Then the cloud request succeeds
     And I cloud-list API keys
-    Then the v1/keys list does not include the revoked key id
+    Then the v1 keys list does not include the revoked key id

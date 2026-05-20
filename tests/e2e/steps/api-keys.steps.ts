@@ -60,7 +60,7 @@ When("I cloud-revoke the created API key", async ({}) => {
 });
 
 Then(
-  "the v1/keys response contains success true and data",
+  "the v1 keys response contains success true and data",
   async ({}) => {
     const data = world.lastCloudEnvelope?.data as V1<unknown> | null;
     expect(data, "no inner v1 envelope").toBeTruthy();
@@ -74,13 +74,13 @@ Then("the created API key plaintext is non-empty", async ({}) => {
   expect((apiKeysState.createdPlaintext ?? "").length).toBeGreaterThan(0);
 });
 
-Then("the v1/keys list includes the created key id", async ({}) => {
+Then("the v1 keys list includes the created key id", async ({}) => {
   const data = world.lastCloudEnvelope?.data as V1<ListResponse> | null;
   const ids = (data?.data?.keys ?? []).map((k) => k.id);
   expect(ids).toContain(apiKeysState.createdId);
 });
 
-Then("the v1/keys list does not include the revoked key id", async ({}) => {
+Then("the v1 keys list does not include the revoked key id", async ({}) => {
   const data = world.lastCloudEnvelope?.data as V1<ListResponse> | null;
   const ids = (data?.data?.keys ?? []).map((k) => k.id);
   expect(ids).not.toContain(apiKeysState.createdId);
