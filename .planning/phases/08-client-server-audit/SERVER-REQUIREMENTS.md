@@ -225,6 +225,8 @@ client doesn't migrate. The deprecation header is therefore noise.
 
 ## R5 — `GET /api/auth/verification-status?email=<x>`: server must accept the param
 
+**Status:** ✅ **CLOSED 2026-05-20** — server commit `85a67858` (Phase 59 Track D, folded into R15). The `?email=` param is now OPTIONAL in the `VerificationStatusQuery` wire-schema: present or absent, the route succeeds (200) and identity is always session-derived. A present value is still RFC-5321-validated.
+
 **Discovered:** Phase 8 audit (F3).
 
 **Violation:** Client calls
@@ -673,6 +675,8 @@ still → 401 (auth not globally disabled).
 
 ## R14 — `/api/_test/seed-tenant` 500s on a duplicate-email POST instead of 409/idempotent
 
+**Status:** ✅ **CLOSED 2026-05-20** — server commits `c96ed3e9` + `d391961e` (Phase 59 Track A). seed-tenant is now idempotent on a duplicate email: a re-POST returns `200 {token,user}` for the existing user, never 500.
+
 **Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
 
 **Severity:** MEDIUM. The Phase 9 e2e harness has been fixed to never
@@ -754,6 +758,8 @@ Either is acceptable. A `500` is not.
 ---
 
 ## R15 — `/api/auth/verification-status` and `/api/auth/delete-account` reject every valid auth form with 401
+
+**Status:** ✅ **CLOSED 2026-05-20** — server commit `85a67858` (Phase 59 Track D). Facet 1 fixed: `verification-status` `?email=` is now OPTIONAL (200 when absent, not 400) — this also closes the re-opened **R5**. Facets 2+3 ("401 a valid session") did NOT reproduce on a live re-probe: a genuine Better Auth session **cookie** resolves correctly (200) on both `verification-status` and `delete-account`. The relayed 401 was the seed-tenant **Bearer** token hitting the cookie-only routes — correct-by-design per BACKEND_SPEC (cookie-only, no Bearer). No resolver bug; no server change needed for 2+3.
 
 **Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
 Re-opens **R5** (which was marked "closed 2026-05-19").
@@ -875,6 +881,8 @@ the divergence is server-internal.
 
 ## R16 — `/readyz` LiteLLM subsystem self-blocked by the server's own SSRF allowlist
 
+**Status:** ✅ **CLOSED 2026-05-20** — server commits `f512dea5` + `d416f231` (Phase 59 Track B). Facet 1: the internal `litellm` compose host is added to the SSRF outbound allowlist (the purpose-built `OUTBOUND_PRIVATE_HOST_ALLOWLIST` mechanism — `.env.full.example` already carried it; the slim `.env` was incomplete). `/readyz` now returns `200` with `litellm.ok:true`; an intentionally-absent litellm is honestly reported `skipped` and excluded from the aggregate. Facet 2: `POST /api/transcribe` rejects a zero-byte file part with `400 EMPTY_AUDIO` before any upstream call (streaming-safe — only one chunk is peeked, O(1) memory preserved).
+
 **Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
 
 **Severity:** MEDIUM. Does not block the core Phase 9 e2e suite (the
@@ -963,6 +971,8 @@ non-empty input reaches the upstream without an SSRF self-block.
 
 ## R17 — `POST /api/v1/keys/create` enforces API-key name uniqueness GLOBALLY instead of per-tenant
 
+**Status:** ✅ **CLOSED 2026-05-20** — server commit `3a7098af` (Phase 59 Track E). Scope determination: the `/api/v1/keys` list + revoke handlers both scope by `user_id`, so API keys are USER-owned. Migration `0028_api_keys_name_scope` re-scopes the active-name partial unique index from `(tenant_id, name)` (functionally global in v1's single-default-tenant RLS posture) to `(user_id, name) WHERE revoked_at IS NULL`. Two distinct owners can each hold a key with the same name; the same owner reusing an active name still gets `409 API_KEY_NAME_TAKEN`.
+
 **Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
 
 **Severity:** HIGH — this is a **tenant-isolation defect**. One
@@ -1016,6 +1026,8 @@ return `200`. The same tenant reusing a name still returns `409`.
 ---
 
 ## R18 — `POST /api/auth/sign-in/email` rejects every non-browser caller with `403 MISSING_OR_NULL_ORIGIN`
+
+**Status:** ✅ **CLOSED 2026-05-20** — server commits `22d29d7c` + `cd4c4f9e` (Phase 59 Track C). A verify-first Node-`fetch` re-probe with valid seeded credentials REPRODUCED the `403 MISSING_OR_NULL_ORIGIN` (re-probe log committed at `.planning/phases/59-client-e2e-server-followups/r18-reprobe.log` in the server repo). Better Auth throws this before `trustedOrigins` is consulted, so a predicate cannot rescue it. Fix: `validateOriginBoot()` + `advanced.disableOriginCheck`, double-gated on `OPENWHISPR_TEST_ROUTES==="true"` AND non-production — production CSRF posture unchanged. Live-verified: Node-`fetch` `sign-in/email` with valid seeded creds now returns `200`.
 
 **Discovered:** 2026-05-20, Phase 9 e2e third full run triage (Task 7).
 This is the **original GA-1 problem** (Better Auth Origin rejection)
