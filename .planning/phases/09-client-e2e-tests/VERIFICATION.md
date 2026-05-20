@@ -1,101 +1,137 @@
-# Phase 9 Verification
+# Phase 9 Verification — post-replan, post-R1-R12-closure
 
-Phase 9 closes the client-side half of the cross-repo QA milestone:
-Playwright + `@cucumber/cucumber` + `playwright-bdd` harness drives
-HTTP-level + Electron-UI scenarios against the locally-running slim-core
-`openwhispr-server`. The harness is committed and runnable; runtime
-coverage is partially gated by Phase 8 finding S5.
+Replaces the stale first-execute-pass VERIFICATION.md (which used the
+old S5/F2/F3 nomenclature). This report reflects the gap-closure replan
+(`b9284d15`), the R1-R12 closure, and the **actual** `npm run test:e2e`
+run executed 2026-05-20.
 
----
+**Headline result:** the e2e harness is correct, complete, and runnable.
+The suite is NOT green — but every one of the 46 failures traces to a
+single server contract bug (`/api/_test/seed-tenant` returns 401), filed
+as **R13**. No client-side workaround was applied. Per the Phase 9 plan
+stop condition, a non-green run whose every failure is triaged and filed
+is an acceptable Task 7 deliverable.
 
-## Check 1: every MATCH endpoint in Phase 8 matrix is exercised by ≥1 e2e scenario
-
-**PASS** — see `tests/e2e/CJM.md` for the row-by-row mapping. Each of
-the 21 MATCH rows + the 2 MISMATCH rows in Phase 8
-`COMPATIBILITY-MATRIX.md` has at least one covering scenario in
-`tests/e2e/features/`. The two MISMATCH rows are handled as:
-- **F1** `/api/health` → covered by a scenario that asserts the
-  Deprecation + Link headers (validates that the server still emits
-  the back-compat alias correctly).
-- **F2/S1** `/api/openai-realtime-token` → scenario exists, tagged
-  `@skip` with a comment pointing at the finding.
-
-The 7 `MISSING(server)` rows (Stripe x4 + Referrals x3) and the BYOK
-third-party calls are explicitly listed in `CJM.md` under "Out of scope"
-— **intentional non-coverage** per Phase 8 recommendation, since these
-surfaces are UI-hidden in the corporate-minimal default build.
-
-The 13 `MISSING(client)` rows (notes/folders/conversations/transcriptions
-sync surfaces) are covered at the **server-contract level** by
-`notes-sync.feature` (notes only — the rest of the sync surfaces aren't
-yet on a feature roadmap and adding scenarios for them would be
-speculative). Documented in CJM.md.
-
-## Check 2: `npm run test:e2e` exits 0 on a clean run against slim-core server
-
-**PARTIAL PASS** — on 2026-05-15 against the live stack:
-- 4 unblocked scenarios all PASS (livez, /api/health with headers,
-  reason no-auth → 401, transcribe no-auth → 401). Duration: 397ms.
-- 25 scenarios filtered out by the `@blocked-s5` / `@skip` /
-  `@requires-paid-keys` tags (default playwright-bdd `tags` filter).
-
-This is the **maximum achievable PASS state** given Phase 8 finding S5.
-The blocker is server-side (slim-core compose missing the pgbouncer
-overlay); the test runner is operating correctly. Once S5 closes, the
-`@blocked-s5` tag can be removed wholesale from the .feature files and
-the suite is expected to broaden to ~21 PASS without further harness
-changes.
-
-## Check 3: CJM.md is complete (no TBD cells)
-
-**PASS** — `tests/e2e/CJM.md` covers all auth, notes, transcription,
-reasoning/agent, realtime, usage/config, and health endpoints with a
-status icon per row. The only "—" entry is
-`GET /api/auth/verification-status`, which is covered by the Phase 8 F3
-fix track rather than by a scenario (since the fix removes the unused
-`?email=` query and the scenario would just re-document the current
-behavior).
-
-## Check 4: KNOWN-FAILURES.md entries each link to a Phase 8 finding or a new ticket
-
-**PASS** — all 4 entries in `tests/e2e/KNOWN-FAILURES.md` link to
-either a named Phase 8 finding (S5, F2/S1), an operator gate
-(`@requires-paid-keys`), or a known pending fixture. No untriaged
-failures.
+**Phase status: DONE-with-server-followups.** Blocking follow-up: R13.
 
 ---
 
-## Findings discovered during Phase 9 execute
+## Check 1 — Sync CJM coverage: every MATCH endpoint exercised
 
-1. **S5 — slim-core compose missing pgbouncer overlay**. Promoted from
-   "design assumption" to "confirmed runtime failure" via live-probing
-   the running api container. Logged as an amendment to Phase 8
-   `SERVER-GAPS.md`. Blocks 21 of 29 scenarios.
-2. **F1 confirmed on the wire** — `/api/health` returns
-   `deprecation: true` + `link: </livez>; rel="successor-version"`
-   headers exactly as Phase 8 predicted. Client migration to `/livez`
-   remains the cleanest fix.
-3. **`/readyz` 503 due to S5** — postgres-side ENOTFOUND propagates to
-   the readiness probe (`{"postgres":{"ok":false,"error":"getaddrinfo
-   ENOTFOUND pgbouncer"},...}`). Same root cause; tagged accordingly.
+**PASS (harness coverage).** The four CJM feature files drive the full
+sync surface through the real client wire path
+(`window.electronAPI.cloudApiRequest` IPC), not raw HTTP:
+
+| Family | Endpoints | Feature file |
+|---|---|---|
+| Notes | 7 (`create`, `batch-create`, `list`, `update`, `search`, `delete`, `delete-all`) | `notes-cjm.feature` |
+| Folders | 5 (`create`, `batch-create`, `list`, `update`, `delete`) | `folders-cjm.feature` |
+| Conversations | 6 (`create`, `messages` POST, `messages` GET, `update`, `search`, `delete`) | `conversations-cjm.feature` |
+| Transcriptions | 5 (`create`, `batch-create`, `list`, `batch-delete`, `delete`) | `transcriptions-cjm.feature` |
+| API keys (v1) | 3 (`/api/v1/keys/list`, `/create`, `/:id/revoke`) | `api-keys.feature` |
+
+`tests/e2e/CJM.md` carries the row-by-row endpoint→feature.scenario map.
+`grep -rE 'fetch\([^)]*BACKEND_URL.*/api/(notes|folders|conversations|transcriptions)/' tests/e2e/steps/`
+returns zero hits — no sync scenario bypasses the IPC wire path.
+
+These scenarios FAIL at runtime, but the failure is upstream of the
+endpoint under test: the `Background` seed step (`seedTenant`) returns
+401 before any sync verb is exercised. The coverage is in place; the
+server bug prevents execution. See Check 6.
+
+## Check 2 — `npm run test:e2e` exit status
+
+**FAIL (server bug R13).** Run timestamp 2026-05-20.
+
+```
+6 passed (15.4s)
+46 failed
+```
+
+All 46 failures emit the identical error:
+`Error: seed-tenant failed (status 401): {"error":"unauthorized"}`.
+
+The 6 passing scenarios are exactly those that need no seeded tenant:
+- `health.feature` — `/livez` 200, `/readyz` 200, `/api/health`
+  first-class no-deprecation (R4 verified PASS).
+- `auth.feature` — `check-user with new email returns exists:false`.
+- `reasoning.feature` — `Reason without auth returns 401`.
+- `transcription.feature` — `Missing auth returns 401`.
+
+## Check 3 — no client-side workarounds introduced
+
+**PASS.** `git diff main -- main.js preload.js src/` returns zero
+changes. No test-only branches, no header spoofs, no mocks, no embedded
+credentials anywhere in the client. Upstream-parity preserved per
+memory `client_immutable`.
+
+Two harness bugs were fixed in `tests/e2e/` during the run (allowed —
+the harness is ours):
+1. Duplicate `the response JSON field {string} is non-empty` step
+   removed from `transcription.steps.ts` (also in `realtime.steps.ts`).
+2. `the v1/keys ...` step text reworded to `the v1 keys ...` — a literal
+   `/` is Cucumber-expression alternation and broke `bddgen` matching.
+
+Neither masks a real failure; both are pure codegen bugs.
+
+## Check 4 — CJM.md completeness
+
+**PASS.** `tests/e2e/CJM.md` contains all 7 Notes + 5 Folders +
+6 Conversations + 5 Transcriptions + 3 v1/keys rows mapped to specific
+feature.scenario coverage. No TBD cells. No active `@blocked-s5` /
+`@blocked-rN` tags (history-only references in the closure log).
+
+## Check 5 — KNOWN-FAILURES.md state
+
+**PASS (documentation).** `tests/e2e/KNOWN-FAILURES.md` now lists:
+- `@blocked-r13` — documentary row for the 46 R13-blocked scenarios
+  (NOT a static `.feature` tag; the failure is a runtime server bug).
+- `@requires-paid-keys` — operator-gate row (currently masked by R13).
+- pending-fixture row — `hello-world-3s.wav` audio fixture.
+
+No active `@blocked-rN` tag is written into any `.feature` file.
+
+## Check 6 — R1-R12 closure verified at runtime
+
+| R | Subject | Runtime evidence | Verdict |
+|---|---|---|---|
+| R1 | `/api/_test/seed-tenant` | `POST` returns `401 {"error":"unauthorized"}`, NOT `200 {token, user}`. Route is registered (POST→401 vs nonexistent route→404) but handler is gated behind production auth middleware. | **REGRESSION → re-opened as R13** |
+| R2 | Stripe/Referrals cut | CLIENT-CUT recorded in CLIENT-CUTS.md (CC-1, CC-2); no scenarios exercise these paths. | PASS (no-op) |
+| R3 | `/api/openai-realtime-token` shape | `realtime-token.feature` scenarios send `{model, language, streams}` and assert `{clientSecret}` / `{clientSecrets[]}`. Cannot reach the endpoint — blocked by R13 seed step + `@requires-paid-keys`. | UNVERIFIED (R13-blocked) |
+| R4 | `/api/health` no deprecation | `health.feature → GET /api/health is first-class — no deprecation signals` **PASSED**. `curl -i /api/health` confirms 200, no `deprecation`, no `link` header. | **PASS** |
+| R5 | `?email=` on verification-status | `auth.feature → Verification status accepts ?email= query param` is blocked by the R13 seed step. | UNVERIFIED (R13-blocked) |
+| R6 | Slim-core boots clean | `health.feature → GET /readyz returns 200` **PASSED**; `curl /readyz` shows `postgres/valkey/litellm` all `ok:true`. | **PASS** |
+| R7 | Dockerfile byok-guard COPY | Server build concern; slim-core is up and healthy (operator-verified). | PASS (indirect) |
+| R8 | Notes CRUD | `notes-cjm.feature` (7 scenarios) blocked by R13 seed step. | UNVERIFIED (R13-blocked) |
+| R9 | Folders CRUD | `folders-cjm.feature` (5 scenarios) blocked by R13 seed step. | UNVERIFIED (R13-blocked) |
+| R10 | Conversations + messages | `conversations-cjm.feature` (6 scenarios) blocked by R13 seed step. | UNVERIFIED (R13-blocked) |
+| R11 | Transcriptions CRUD | `transcriptions-cjm.feature` (5 scenarios) blocked by R13 seed step. | UNVERIFIED (R13-blocked) |
+| R12 | API keys v1 envelope | `api-keys.feature` (3 scenarios) blocked by R13 seed step. | UNVERIFIED (R13-blocked) |
+
+R4 and R6 are positively verified at runtime. R1 is a confirmed
+regression. R3/R5/R8-R12 are correctly covered by the harness but
+cannot be exercised until R13 unblocks the seed path — they are not
+client failures and not harness failures.
 
 ---
 
-## Final summary
+## New findings filed
 
-- **Total scenarios written:** 29 across 8 features
-- **Unblocked + PASS on current stack:** 4 (livez, /api/health, reason
-  no-auth, transcribe no-auth)
-- **Blocked on S5 (server pgbouncer overlay):** 21
-- **Blocked on F2/S1 (OpenAI realtime schema):** 1 (`@skip`)
-- **Operator-gated (paid keys):** 3 (subset of S5-blocked; will unblock
-  with both fixes)
-- **Pending fixture (audio):** 1
-- **0 new client bugs found.** The two test failures during the run
-  pointed to (a) S5 (server) and (b) a harness construction issue
-  (`Background` running for `@blocked-s5`-excluded scenarios), both
-  of which were addressed in the same Phase 9 commit set.
+| Finding | File | Severity | Summary |
+|---|---|---|---|
+| R13 | `../08-client-server-audit/SERVER-REQUIREMENTS.md` | BLOCKER | `/api/_test/seed-tenant` returns 401 for every request; handler sits behind production auth middleware. R1 re-opened. |
 
-**Phase 9 status: DONE** to the boundary defined by Phase 8. Re-running
-the suite after S5 closes is a follow-up task tracked in
-`tests/e2e/KNOWN-FAILURES.md` row 1 — not a Phase 9 re-execute.
+No new CLIENT-CUTs. No client `src/` patches.
+
+---
+
+## Verdict
+
+Phase 9's deliverable — a complete e2e harness driving the real client
+wire path, with every gap triaged and filed — is **met**. The suite is
+not green solely because of server bug R13. Once the server team mounts
+the `seed-tenant` handler in front of the auth middleware (R13), the
+46 currently-blocked scenarios are expected to flip green in a re-run
+with no further client or harness changes.
+
+**Phase 9 status: DONE-with-server-followups (R13 blocking a green run).**
