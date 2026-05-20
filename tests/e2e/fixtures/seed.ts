@@ -19,12 +19,12 @@
  * Test-tenant pruning is the server team's concern; we no longer call
  * /api/auth/delete-account on cleanup.
  *
- * NOTE on uniqueness: the seed endpoint is NOT idempotent on email — a
- * duplicate-email POST currently 500s server-side (filed as SERVER
- * requirement R14). Therefore `makeTenant()` MUST yield a globally
- * unique email per call: it combines RUN_ID with a process-local
- * monotonic counter so two scenarios that pass the same `label` (e.g.
- * every notes-cjm scenario calls makeTenant("notes")) never collide.
+ * NOTE on uniqueness: as of R14's closure (server commits c96ed3e9 +
+ * d391961e) the seed endpoint IS idempotent on email — a duplicate POST
+ * returns 200 for the existing user. `makeTenant()` still yields a
+ * globally unique email per call (RUN_ID + a process-local monotonic
+ * counter) so scenarios sharing a `label` get distinct, independent
+ * tenants rather than silently aliasing the same user.
  */
 
 export type TestTenant = {
@@ -135,6 +135,57 @@ export async function seedTenant(tenant: TestTenant): Promise<SeedResult> {
 
   tenant.token = json.token;
   return { ok: true, token: json.token, user: seeded, tenant };
+}
+
+export type SignInResult =
+  | { ok: true; cookie: string; token: string | null }
+  | { ok: false; status: number; body: string };
+
+/**
+ * POST /api/auth/sign-in/email — completes a real Better Auth credential
+ * sign-in for an already-seeded tenant and returns the session cookie.
+ *
+ * Why this exists: the seed-tenant bearer (R1/R13) is honored by the
+ * custom Bearer middleware (/api/usage, /api/notes/*, /api/v1/keys/*) but
+ * NOT by the Better-Auth-mounted routes (/api/auth/verification-status,
+ * /api/auth/delete-account) — those are cookie-only by design (server
+ * R15 closure note). To drive those routes the harness must hold a
+ * genuine session cookie, which means a real sign-in. This is the
+ * documented client credential path, not a workaround: the production
+ * Electron client signs in and carries the same session cookie.
+ *
+ * Requires SERVER-REQUIREMENTS R18 (server commits 22d29d7c + cd4c4f9e):
+ * sign-in/email accepts a missing/null Origin under OPENWHISPR_TEST_ROUTES.
+ */
+export async function signIn(tenant: TestTenant): Promise<SignInResult> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/sign-in/email`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: tenant.email, password: tenant.password }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    return { ok: false, status: res.status, body };
+  }
+
+  const setCookie = res.headers.getSetCookie?.() ?? [];
+  const cookie = setCookie.map((c) => c.split(";")[0]).join("; ");
+  if (!cookie) {
+    return {
+      ok: false,
+      status: res.status,
+      body: `sign-in/email OK but no Set-Cookie header: ${(
+        await res.text().catch(() => "")
+      ).slice(0, 200)}`,
+    };
+  }
+
+  const json = (await res.json().catch(() => null)) as
+    | { token?: unknown }
+    | null;
+  const token = typeof json?.token === "string" ? json.token : null;
+  return { ok: true, cookie, token };
 }
 
 /**

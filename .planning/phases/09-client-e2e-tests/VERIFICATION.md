@@ -154,9 +154,37 @@ operator-gated, or filed as a server R-row.
 
 ---
 
-**Conclusion:** Phase 9 reaches **DONE-with-server-followups**. The
-core e2e suite is green and exits 0. R14–R18 are open server-side
-follow-ups that do not block the green run; they are filed for the
-server team with harsh-review language and verification protocols.
+**Conclusion (third run, point-in-time):** Phase 9 reached
+**DONE-with-server-followups**. The core e2e suite was green and exited
+0. R14–R18 were open server-side follow-ups filed for the server team
+with harsh-review language and verification protocols.
 
-**Phase 9 status: DONE-with-server-followups.**
+---
+
+## Closure addendum — 2026-05-20 fourth run (R14–R18 closed)
+
+The server team's Phase 59 closed all five follow-ups the same day
+(R14 `c96ed3e9`+`d391961e`, R15 `85a67858`, R16 `f512dea5`+`d416f231`,
+R17 `3a7098af`, R18 `22d29d7c`+`cd4c4f9e`). Each fix was independently
+re-verified live against the slim-core stack:
+
+- R15 — `verification-status` `?email=` optional (200 with/without);
+  `verification-status` + `delete-account` resolve a genuine session
+  **cookie** (cookie-only routes by design — re-closes R5).
+- R16 — `/readyz` → 200 `litellm.ok:true`; empty-file `/api/transcribe`
+  → 400.
+- R18 — Node-`fetch` `sign-in/email` → 200 (null Origin accepted).
+
+The three formerly `@blocked-rN` scenarios + the R16 empty-file
+scenario were un-tagged. The harness gained a `signIn()` fixture helper
+and a `Given a signed-in tenant` step to drive the cookie-only
+`/api/auth/*` routes with a real session cookie — the documented client
+credential path, no Origin spoof, no client/`src` changes. The
+`@blocked-rN` exclusion list was removed from `playwright.config.ts`.
+
+Fourth full run: **44 passed / 0 failed / 0 skipped**, `npm run
+test:e2e` exits 0, ~8.3s.
+
+**Phase 9 status: DONE.** Core suite fully green; all server
+requirements R1–R18 closed and re-verified. Remaining gate is the
+operator-controlled `@requires-paid-keys` group only.

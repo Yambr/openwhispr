@@ -353,3 +353,4 @@ builder-effective-config.yaml
 tests/e2e/.env.e2e
 tests/e2e/reports/
 tests/e2e/.playwright-bdd/
+test-results/

@@ -4,6 +4,7 @@ import {
   BACKEND_URL,
   makeTenant,
   seedTenant,
+  signIn,
   type TestTenant,
 } from "../fixtures/seed";
 import { authHeaders, world } from "./world";
@@ -34,6 +35,32 @@ Given("a signed-up tenant labeled {string}", async ({}, label: string) => {
   }
   world.tenant = result.tenant;
 });
+
+Given(
+  "a signed-in tenant labeled {string}",
+  async ({}, label: string) => {
+    // Seed a pre-verified tenant, then complete a real Better Auth
+    // sign-in/email to obtain a genuine session cookie. The cookie-only
+    // /api/auth/* routes (verification-status, delete-account) do not
+    // accept the seed-tenant bearer — this is the documented client
+    // credential path (server R15 closure note).
+    const tenant: TestTenant = makeTenant(label);
+    const seeded = await seedTenant(tenant);
+    if (!seeded.ok) {
+      throw new Error(
+        `seed-tenant failed (status ${seeded.status}): ${seeded.body.slice(0, 240)}`,
+      );
+    }
+    world.tenant = seeded.tenant;
+    const session = await signIn(seeded.tenant);
+    if (!session.ok) {
+      throw new Error(
+        `sign-in/email failed (status ${session.status}): ${session.body.slice(0, 240)}`,
+      );
+    }
+    world.sessionCookie = session.cookie;
+  },
+);
 
 When("the tenant signs up", async ({}) => {
   expect(world.tenant).not.toBeNull();
@@ -108,16 +135,31 @@ When(
 );
 
 When(
-  "I GET {string} with that tenant email param and bearer",
+  "I DELETE {string} with the session cookie",
   async ({}, path: string) => {
-    // Per R5 closure: the server accepts ?email=<value> on
-    // /api/auth/verification-status without warning; identity is still
-    // derived from Bearer/session. Send both to assert tolerance.
+    // The Better-Auth-mounted /api/auth/delete-account route is
+    // cookie-only — it does not accept the seed-tenant bearer (server
+    // R15 closure note). Drive it with the genuine session cookie.
+    const res = await fetch(`${BACKEND_URL}${path}`, {
+      method: "DELETE",
+      headers: { cookie: world.sessionCookie ?? "" },
+    });
+    await captureResponse(res);
+  },
+);
+
+When(
+  "I GET {string} with that tenant email param and the session cookie",
+  async ({}, path: string) => {
+    // Per R5/R15 closure: ?email= is OPTIONAL on
+    // /api/auth/verification-status (200 with or without it); identity
+    // is session-derived. The route is cookie-only — drive it with the
+    // genuine session cookie, send ?email= to assert tolerance.
     const url = new URL(`${BACKEND_URL}${path}`);
     url.searchParams.set("email", world.tenant!.email);
     const res = await fetch(url.toString(), {
       method: "GET",
-      headers: { ...authHeaders(world.tenant?.token ?? null) },
+      headers: { cookie: world.sessionCookie ?? "" },
     });
     await captureResponse(res);
   },

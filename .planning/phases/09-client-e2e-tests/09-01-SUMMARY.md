@@ -169,11 +169,23 @@ None.
 
 ## Phase status
 
-**DONE-with-server-followups.** The e2e harness drives the real client
-wire path and the core suite exits 0 (40/0/0). R14–R18 are open
-server-side follow-ups that do not block the green run; they are filed
-for the server team with harsh-review language and verification
-protocols.
+**DONE.** The e2e harness drives the real client wire path and the
+core suite exits 0.
+
+- *Third run (point-in-time):* 40/0/0 with R14–R18 filed as open
+  server follow-ups.
+- *Fourth run (2026-05-20, after server Phase 59 closed R14–R18):*
+  **44/0/0** — the three formerly `@blocked-rN` scenarios (R15
+  delete-account, R15 verification-status, R18 sign-in) + the R16
+  empty-file scenario were un-tagged once the server fixes were
+  re-verified live. The harness gained a `signIn()` fixture helper +
+  `Given a signed-in tenant` step to drive the cookie-only `/api/auth/*`
+  routes with a real session cookie (documented credential path, no
+  spoof, no `src/` changes). The `@blocked-rN` exclusion list was
+  removed from `playwright.config.ts`.
+
+All server requirements R1–R18 are closed and re-verified. No
+client-side workaround was applied at any point.
 
 ## Self-Check: PASSED
 

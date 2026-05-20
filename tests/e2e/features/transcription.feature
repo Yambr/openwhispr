@@ -10,14 +10,9 @@ Feature: Cloud transcription
     Then the response status is 200
     And the response JSON field "text" is non-empty
 
-  @blocked-r16
   Scenario: Empty file returns 400
-    # BLOCKED by SERVER-REQUIREMENTS R16 (second facet): an empty-file
-    # upload returns 502 {"error":"Upstream blocked by SSRF policy"}
-    # instead of 400. The server forwards the zero-byte file to the STT
-    # upstream (no empty-file input validation) and its own SSRF
-    # allowlist then blocks the internal upstream host. Un-tag when R16
-    # lands.
+    # R16 closed (server commits f512dea5 + d416f231): a zero-byte file
+    # part is rejected with 400 before any upstream call.
     Given a signed-up tenant labeled "transcribe"
     When I POST a multipart "/api/transcribe" with an empty file
     Then the response status is 400

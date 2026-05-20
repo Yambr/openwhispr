@@ -31,6 +31,10 @@ export type CloudApiEnvelope<T = unknown> = {
 
 export type World = {
   tenant: TestTenant | null;
+  // Genuine Better Auth session cookie from a real sign-in/email, used
+  // to drive the cookie-only /api/auth/* routes (verification-status,
+  // delete-account) — the seed-tenant bearer is not honored there.
+  sessionCookie: string | null;
   // Last HTTP response captured by a When step so Then steps can assert
   // (used for raw-fetch flows: health, realtime-token, auth, etc.).
   lastResponse: Response | null;
@@ -56,6 +60,7 @@ export type World = {
 
 export const world: World = {
   tenant: null,
+  sessionCookie: null,
   lastResponse: null,
   lastBody: undefined,
   lastBodyText: null,
@@ -73,6 +78,7 @@ export const world: World = {
 
 export function resetWorld(): void {
   world.tenant = null;
+  world.sessionCookie = null;
   world.lastResponse = null;
   world.lastBody = undefined;
   world.lastBodyText = null;

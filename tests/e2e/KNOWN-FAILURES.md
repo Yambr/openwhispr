@@ -1,30 +1,43 @@
 # Known Failures
 
-Post-R1–R13-closure status, **as actually observed on the 2026-05-20
-third full run (Task 7)**.
+Post-R1–R18-closure status, **as observed on the 2026-05-20 fourth
+full run** (after the server team verified R14–R18 closed in Phase 59).
 
-The core suite is **GREEN**: `npm run test:e2e` exits 0 — **40 passed
-/ 0 failed / 0 skipped** in ~7.5s against the live slim-core server
+The core suite is **GREEN**: `npm run test:e2e` exits 0 — **44 passed
+/ 0 failed / 0 skipped** in ~8.3s against the live slim-core server
 (`OPENWHISPR_TEST_ROUTES=true`).
 
-The triage of the earlier 20-passed/30-failed run resolved every
-failure into one of two buckets: **harness bug we fixed**, or **server
-bug filed as a new R-row (R14–R18)** and tagged out. Nothing is masked.
+All R-rows R1–R18 are closed. The three formerly `@blocked-rN`
+scenarios (R15 delete-account, R15 verification-status, R18 sign-in)
+plus the R16 empty-file scenario were un-tagged and now run green —
+that is the +4 over the previous 40-passed run.
 
 ## Active suite gates
 
+The only standing gate is the operator-controlled `@requires-paid-keys`
+group. There are **no `@blocked-rN` gates** — every server requirement
+is closed.
+
 | Tag | Scenario(s) | Root cause | Owner | Linked finding | Last verified |
 |---|---|---|---|---|---|
-| `@blocked-r15` | `auth.feature → Delete account returns 200`; `auth.feature → Verification status accepts ?email= query param` | `/api/auth/delete-account` and `/api/auth/verification-status` return 401 for **every** valid auth form — seed-tenant bearer, a genuine `set-auth-token` bearer, AND a genuine fresh Better Auth session cookie. `verification-status` additionally now *requires* `?email=` (400 without it — the inverse of R5). Re-opens R5. | server | `../../.planning/phases/08-client-server-audit/SERVER-REQUIREMENTS.md` § R15 | 2026-05-20 |
-| `@blocked-r16` | `transcription.feature → Empty file returns 400` | An empty-file `POST /api/transcribe` returns `502 {"error":"Upstream blocked by SSRF policy"}` instead of `400`. Server forwards the zero-byte file to the STT upstream (no empty-file validation) and its own SSRF allowlist then blocks the internal upstream host. | server | SERVER-REQUIREMENTS.md § R16 | 2026-05-20 |
-| `@blocked-r18` | `auth.feature → Sign-in with verified user returns a session bearer` | `POST /api/auth/sign-in/email` returns `403 MISSING_OR_NULL_ORIGIN` for any caller sending `Origin: null` — which Node's undici `fetch` always does from a non-browser client. The harness is forbidden from spoofing an Origin header (CONTEXT rule 3). Server must accept a null Origin on sign-in under `OPENWHISPR_TEST_ROUTES`. | server | SERVER-REQUIREMENTS.md § R18 | 2026-05-20 |
 | `@requires-paid-keys` | 8 scenarios across `transcription` / `reasoning` / `agent-stream` / `realtime-token` | Call upstream paid providers (OpenAI / AssemblyAI / Deepgram / LiteLLM). Require the operator to provision real upstream keys on the server. **Operator concern, not a server bug.** Excluded by default; `E2E_INCLUDE_PAID=1` to run them. | operator | n/a (env) | 2026-05-20 |
 | pending fixture | `transcription.feature → Multipart upload with a real WAV returns transcribed text` | Audio fixture not yet checked in: `tests/e2e/fixtures/audio/hello-world-3s.wav`. Also `@requires-paid-keys`. Advisor decision: the fixture is its own follow-up. | client | n/a | 2026-05-20 |
 
-All `@blocked-rN` tags ARE written into the `.feature` files and
-excluded by the `playwright.config.ts` tag filter by default. Run with
-`E2E_INCLUDE_BLOCKED=1` to re-probe them once the server team reports a
-fix.
+### How the R15/R16/R18 scenarios were un-blocked
+
+- **R15** (server commit `85a67858`) — `verification-status` `?email=`
+  is now optional; both it and `delete-account` resolve a genuine
+  Better Auth session **cookie** (they are cookie-only by design — the
+  seed-tenant bearer is not honored there). The harness gained a
+  `signIn()` fixture helper + a `Given a signed-in tenant` step that
+  completes a real `sign-in/email` and carries the session cookie.
+  This is the documented client credential path, not a workaround.
+- **R16** (server commits `f512dea5` + `d416f231`) — empty-file
+  `POST /api/transcribe` now returns `400` before any upstream call;
+  `/readyz` LiteLLM probe passes (internal host allowlisted).
+- **R18** (server commits `22d29d7c` + `cd4c4f9e`) — `sign-in/email`
+  accepts a null Origin under `OPENWHISPR_TEST_ROUTES`, so Node's
+  undici `fetch` drives it directly. No Origin spoof.
 
 ## `@requires-paid-keys` scenarios (operator concern, NOT server bugs)
 
@@ -64,8 +77,10 @@ When a new failure appears:
 
 ## Server requirement closure log
 
-R1–R13 are closed by the server team. R14–R18 were filed by the
-2026-05-20 Phase 9 e2e third run (Task 7).
+**All of R1–R18 are closed.** R14–R18 were filed by the 2026-05-20
+Phase 9 third run and closed the same day by the server team's
+Phase 59. Closure was independently re-verified live against the
+slim-core stack (2026-05-20 fourth run).
 
 | ID | Status | Subject |
 |---|---|---|
@@ -73,16 +88,16 @@ R1–R13 are closed by the server team. R14–R18 were filed by the
 | R2 | ✅ closed | Stripe + Referrals confirmed not in contract-tests. |
 | R3 | ✅ closed | `/api/openai-realtime-token` shape per BACKEND_SPEC. |
 | R4 | ✅ closed | `/api/health` deprecation header removed. |
-| R5 | ❌ RE-OPENED (folded into R15) | `?email=` on `/api/auth/verification-status` — server now *requires* the param and 401s every auth form. |
+| R5 | ✅ closed (via R15) | `?email=` on `/api/auth/verification-status` is now OPTIONAL. |
 | R6 | ✅ closed | Slim-core compose boots; postgres reachable. |
 | R7 | ✅ closed | Dockerfile `byok-guard` COPY. |
 | R8–R12 | ✅ closed | Notes / Folders / Conversations / Transcriptions / v1-keys CRUD surfaces — all verified GREEN by the CJM feature files. |
 | R13 | ✅ closed | seed-tenant reachable without a bearer (`auth:false`). |
-| R14 | 🔴 OPEN | seed-tenant 500s on a duplicate-email POST (should be 409 or idempotent). MEDIUM. Harness no longer triggers it (unique emails per call). |
-| R15 | 🔴 OPEN | `/api/auth/verification-status` + `/api/auth/delete-account` 401 every valid auth form; `verification-status` requires `?email=`. Re-opens R5. HIGH. |
-| R16 | 🔴 OPEN | `/readyz` LiteLLM subsystem self-blocked by the server's own SSRF allowlist (aggregate probe stuck at 503). Empty-file `/api/transcribe` 502s instead of 400. MEDIUM. |
-| R17 | 🔴 OPEN | `/api/v1/keys/create` enforces API-key name uniqueness GLOBALLY instead of per-tenant — tenant-isolation defect. HIGH. Harness no longer triggers it (unique names). |
-| R18 | 🔴 OPEN | `/api/auth/sign-in/email` 403s `MISSING_OR_NULL_ORIGIN` for any non-browser caller (undici sends `Origin: null`). MEDIUM. |
+| R14 | ✅ closed | seed-tenant idempotent on duplicate email (commits `c96ed3e9` + `d391961e`). |
+| R15 | ✅ closed | `verification-status` `?email=` optional; cookie-only `/api/auth/*` routes resolve a genuine session (commit `85a67858`). Re-closes R5. |
+| R16 | ✅ closed | `/readyz` LiteLLM allowlisted; empty-file `/api/transcribe` → 400 (commits `f512dea5` + `d416f231`). |
+| R17 | ✅ closed | API-key name uniqueness re-scoped to `(user_id, name)` (commit `3a7098af`, migration 0028). |
+| R18 | ✅ closed | `sign-in/email` accepts a null Origin under `OPENWHISPR_TEST_ROUTES` (commits `22d29d7c` + `cd4c4f9e`). |
 
 ## Harness bugs fixed during the 2026-05-20 run (Task 7)
 
@@ -140,14 +155,13 @@ masks a real failure.
 
 ## Last full run
 
-- **2026-05-20 (Task 7, third run) — 40 passed / 0 failed / 0 skipped,
-  ~7.5s.** `npm run test:e2e` exits 0 against the live slim-core
-  server with `OPENWHISPR_TEST_ROUTES=true`.
-- Every scenario that is NOT in the green run is either an
-  operator-gated `@requires-paid-keys` scenario or a `@blocked-rN`
-  scenario backed by a filed server requirement (R15 / R16 / R18). No
-  client-side workaround was applied; no harness bug masks a real
-  failure.
-- Phase 9 status: **DONE-with-server-followups** — the core suite is
-  green; R14–R18 are open server follow-ups that do not block the
-  green run.
+- **2026-05-20 (fourth run) — 44 passed / 0 failed / 0 skipped,
+  ~8.3s.** `npm run test:e2e` exits 0 against the live slim-core
+  server with `OPENWHISPR_TEST_ROUTES=true`, after the server team
+  closed R14–R18 in Phase 59.
+- Every scenario that is NOT in the green run is operator-gated
+  (`@requires-paid-keys`). There are no `@blocked-rN` gates left — all
+  server requirements are closed. No client-side workaround was
+  applied; no harness bug masks a real failure.
+- Phase 9 status: **DONE** — the core suite is fully green and all
+  server follow-ups (R14–R18) are closed and re-verified.
