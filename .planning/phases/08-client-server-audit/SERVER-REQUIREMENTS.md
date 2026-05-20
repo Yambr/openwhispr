@@ -1124,3 +1124,110 @@ verified user" scenario (currently `@blocked-r18`) passes.
 19. **R18 sign-in Origin** — with `OPENWHISPR_TEST_ROUTES=true`, a
     Node-`fetch` `POST /api/auth/sign-in/email` with valid seeded
     credentials returns `200` (not `403 MISSING_OR_NULL_ORIGIN`).
+
+---
+
+## R19 — slim-core worker cannot deliver verification email: SMTP target `192.168.96.2:587` is unreachable; real sign-up → sign-in is impossible
+
+**Discovered:** 2026-05-20, live manual probe of the cloud sign-up
+journey against the slim-core stack (not an e2e harness run — a real
+`POST /api/auth/sign-up/email` followed by `POST /api/auth/sign-in/email`).
+
+**Severity:** HIGH. This is not a test-harness concern — it breaks the
+**real first-run user journey**. A genuine new user cannot create an
+account and sign in to the cloud:
+
+1. `POST /api/auth/sign-up/email` → `200 {token: null, user: {...,
+   emailVerified: false}}` — Better Auth defers the session pending
+   email verification (correct).
+2. `POST /api/auth/sign-in/email` → `403 {"code":"EMAIL_NOT_VERIFIED"}`
+   — correct *given* an unverified user.
+3. The verification email that step 1 is supposed to send **never
+   arrives**, so the user is permanently stuck at step 2. The slim-core
+   `OPENWHISPR_TEST_ROUTES` seed endpoint (R1/R13) bypasses this by
+   minting a pre-verified user — but that is a test-only route. A real
+   user has no path through.
+
+**Root cause (from `docker compose logs worker`):** the worker's email
+job fails on every attempt with:
+
+```
+{"level":50,"service":"worker","event":"email.failed",
+ "to":"livetest-...@test.local",
+ "subject":"Verify your OpenWhispr email address",
+ "err":{"code":"ESOCKET","syscall":"connect","errno":-111,
+        "address":"192.168.96.2","port":587,
+        "message":"connect ECONNREFUSED 192.168.96.2:587"},
+ "msg":"email send failed"}
+```
+
+The worker is configured to send SMTP to `192.168.96.2:587`. Two
+distinct problems:
+
+1. **No SMTP host on `:587` exists in the slim-core network.** The job
+   `ECONNREFUSED`s on every retry. Whatever `192.168.96.2` was, it is
+   not listening on 587 in the running stack.
+2. **Mailpit is not a service in the slim-core `docker-compose.yml`.**
+   `docker compose ps mailpit` → `no such service`, even though a
+   Mailpit container is running (`Up 42 hours`) — it belongs to a
+   different compose project / overlay. Mailpit's SMTP listener is on
+   **1025**, not 587. So even if the worker pointed at Mailpit's IP,
+   the port would be wrong, and Mailpit is not part of the stack the
+   slim-core base compose brings up.
+
+**Required server behavior:** the slim-core stack (`docker compose
+up -d`, no overlays — same bar as R6) MUST deliver verification email
+end-to-end so a real sign-up → verify → sign-in journey completes.
+Either:
+
+- **(a)** include a dev mail catcher (Mailpit) as a first-class service
+  in the slim-core `docker-compose.yml`, and point the worker's SMTP
+  config at it by compose service name on its real port (Mailpit SMTP
+  = `1025`, not 587). A developer then reads the verification link from
+  the Mailpit UI; OR
+- **(b)** under the existing `OPENWHISPR_TEST_ROUTES` / non-production
+  gate, expose the verification token through a test-only route (e.g.
+  `GET /api/_test/verification-token?email=`) so the sign-up → verify
+  → sign-in journey can be driven without SMTP at all; OR
+- **(c)** make the slim-core profile auto-verify on sign-up when
+  `OPENWHISPR_TEST_ROUTES === "true"` AND `NODE_ENV !== "production"`
+  — but this couples sign-up to the test gate and is the least clean
+  of the three.
+
+(a) is the most faithful to a real deployment and is the recommended
+fix. The constraint is that a plain slim-core bring-up must not leave
+the worker `ECONNREFUSED`-looping on a dead SMTP host.
+
+**Reject:**
+- "Tell users to use the seed endpoint" — seed-tenant is a test-only
+  route; it is not a real user journey and is not exposed in
+  production. The sign-up path is the documented client journey
+  (`src/components/EmailVerificationStep.tsx` exists precisely because
+  the client expects an email-verification step).
+- "Point the worker at the host's mail relay" — there is no relay; the
+  slim-core stack must be self-contained per R6.
+- "It's fine, the e2e suite is green" — the e2e suite seeds
+  pre-verified tenants and never exercises SMTP. R19 is exactly the
+  gap that proves green contract tests are not a substitute for a real
+  first-run journey check.
+- Any client-side change — the client correctly POSTs sign-up and
+  polls `verification-status`; the failure is 100% server-side mail
+  delivery.
+
+**Verification (must pass before R19 is closed):** against a plain
+`docker compose up -d` slim-core stack, a real `POST
+/api/auth/sign-up/email` results in a delivered verification email
+(retrievable from the bundled Mailpit, or a test-route token), and
+after verification `POST /api/auth/sign-in/email` returns `200` with a
+session. `docker compose logs worker` shows `email.sent`, not
+`email.failed` / `ECONNREFUSED`.
+
+---
+
+## R19 verification protocol
+
+20. **R19 verification email delivery** — on a plain slim-core
+    `docker compose up -d`, a real sign-up delivers a verification
+    email (Mailpit or test-route token), and post-verification sign-in
+    returns `200`. No `ECONNREFUSED 192.168.96.2:587` in the worker
+    logs.
