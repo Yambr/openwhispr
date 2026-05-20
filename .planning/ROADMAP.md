@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Build-time Env Refactor** - Replace all inventoried hardcodes with build-time variables via Vite define and electron-builder env
 - [ ] **Phase 4: OAuth Gating, Build Docs, and Parity Gate** - Add per-provider OAuth flags, write BUILD_CONFIG.md, and verify default-build behavioral parity
 - [x] **Phase 8: Client↔Server Compatibility Audit** - Cross-repo audit of every client HTTP call against openwhispr-server routes; produced COMPATIBILITY-MATRIX (21 MATCH, 2 MISMATCH, 7 MISSING-server, 13 MISSING-client), FIXES-CLIENT (F1-F5), SERVER-GAPS (S1-S4). 0 blockers for corporate-minimal default build; 1 HIGH for OpenAI Realtime path.
-- [x] **Phase 9: Client E2E Tests (Playwright + Cucumber)** - Implemented Gherkin/CJM e2e suite (29 scenarios in 8 features): auth, notes-sync, transcription+LLM, agent-stream, realtime-token, usage-config, health. Playwright + @cucumber/cucumber + playwright-bdd, driving Electron via _electron.launch + HTTP-level fetch. Current PASS: 4 unblocked scenarios; 21 tagged @blocked-s5 pending server pgbouncer overlay; 1 @skip pending F2/S1 OpenAI realtime schema. 0 new client bugs discovered during execute.
+- [x] **Phase 9: Client E2E Tests (Playwright + Cucumber)** - Gherkin/CJM e2e suite (12 features) driving the real client wire path against a local slim-core openwhispr-server (`docker compose up`, `http://localhost:4000` only — no direct upstream calls). Playwright + @cucumber/cucumber + playwright-bdd. Final run: 44 passed / 0 failed / 0 skipped, `npm run test:e2e` exits 0. All server requirements R1-R18 filed and closed (server Phase 59), re-verified live. Only standing gate is operator-controlled @requires-paid-keys. 0 client/src changes — client-immutable preserved.
 
 ## Phase Details
 
@@ -161,14 +161,14 @@ Plans:
 **Goal:** A runnable Gherkin/Cucumber + Playwright e2e suite drives the Electron client via `_electron.launch` against a locally-running slim-core openwhispr-server (`docker compose up` in the server repo), covering the four CJM areas: auth (signup/login/refresh/logout), notes sync (CRUD), cloud transcription + LLM reasoning, and OAuth/billing/health. Test failures triage into either client fixes (applied here) or server gaps (filed back via Phase 8 SERVER-GAPS).
 **Requirements:** QA-04, QA-05, QA-06
 **Depends on:** Phase 8
-**Plans:** TBD
+**Plans:** 09-01 (complete)
 
 Success Criteria (what must be TRUE):
-  1. `tests/e2e/` exists in the client repo with: Playwright config, `@cucumber/cucumber` config, `.feature` files for each of the 4 CJM areas, and TypeScript step definitions
-  2. `npm run test:e2e` boots the Electron app via `_electron.launch` against `npm run dev`, points it at `http://localhost:4000` (slim-core api), and executes all features end-to-end
-  3. README in `tests/e2e/` documents how to bring up the slim-core server (`docker compose up` in `../openwhispr-server`), seed a test tenant, and run the suite
-  4. CJM coverage matrix in `tests/e2e/CJM.md` maps every Phase-8-MATCHed endpoint to at least one Gherkin scenario; every client-shipped user journey has at least one Background → Given/When/Then path
-  5. All scenarios either PASS, or fail with a recorded ticket in `tests/e2e/KNOWN-FAILURES.md` linked to the server gap or client bug that caused it
+  1. `tests/e2e/` exists in the client repo with: Playwright config, `@cucumber/cucumber` config, `.feature` files for each of the 4 CJM areas, and TypeScript step definitions ✅
+  2. `npm run test:e2e` boots the Electron app via `_electron.launch` against `npm run dev`, points it at `http://localhost:4000` (slim-core api), and executes all features end-to-end ✅
+  3. README in `tests/e2e/` documents how to bring up the slim-core server (`docker compose up` in `../openwhispr-server`), seed a test tenant, and run the suite ✅
+  4. CJM coverage matrix in `tests/e2e/CJM.md` maps every Phase-8-MATCHed endpoint to at least one Gherkin scenario; every client-shipped user journey has at least one Background → Given/When/Then path ✅
+  5. All scenarios either PASS, or fail with a recorded ticket in `tests/e2e/KNOWN-FAILURES.md` linked to the server gap or client bug that caused it ✅
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 9 to break down)
+- [x] 09-01-PLAN.md — Re-plan post-R1-R12 closure: CJM features via cloudApiRequest IPC wire path, seed-tenant fixture, worker-scoped Electron app. Final: 44/0/0, R1-R18 closed.
