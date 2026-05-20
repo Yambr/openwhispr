@@ -20,11 +20,12 @@ softening this document.
 
 ## R1 — `/api/_test/seed-tenant` (NEW endpoint required)
 
-**Status:** ⚠️ **RE-OPENED 2026-05-20 via R13.** Reported "closed
-2026-05-19" by the server team, but the shipped endpoint returns
-`401` on every request (handler mounted behind production auth
-middleware). R1 is NOT closed until R13's verification curl returns
-`200 {token, user}`. See [R13](#r13--apit_testseed-tenant-rejects-every-request-with-401--r1-regression--non-conformance).
+**Status:** ✅ **CLOSED 2026-05-20** (via R13). First reported "closed
+2026-05-19", then re-opened when the shipped endpoint returned `401`
+on every request (handler sat behind the production `dualAuthHook`).
+Genuinely closed by server commit `8f30df26` — the route now declares
+`config: { auth: false }` to opt out of the dual-auth hook, and R13's
+verification curl returns `200 {token, user}`. See [R13](#r13--apit_testseed-tenant-rejects-every-request-with-401--r1-regression--non-conformance).
 
 **Discovered:** 2026-05-19, Phase 9 e2e first unblocked run.
 
@@ -630,6 +631,33 @@ Then `npm run test:e2e` from the client repo must exit 0 (currently
 **Cross-reference:** This re-opens R1. R1's status in this document's
 summary table should flip from "closed 2026-05-19" back to OPEN until
 R13's verification curl returns 200.
+
+**Status:** ✅ **CLOSED 2026-05-20** — server commit `8f30df26`
+(`fix(R13): seed-tenant reachable without a bearer — opt out of
+dualAuthHook`). Root cause: the global `dualAuthHook` only skips a
+route when `routeOptions.config.auth === false`; the shipped
+seed-tenant route declared `config: { rateLimit: false }` with no
+`auth: false`, so the production auth gate fired ahead of the handler.
+Fix added `auth: false` to the route config (same as `reset-setup`).
+
+Secondary blocker also fixed in the same commit: Phase 57 Track E
+`validateIngressBoot` refuses a plaintext `http://` ingress origin
+under `NODE_ENV=production`, which prevented the no-Traefik slim stack
+from booting at all. `docker-compose.yml` `NODE_ENV` is now
+`${NODE_ENV:-production}` (prod default unchanged) and the slim-test
+`.env` opts down to `development`.
+
+Verification triplet now returns the spec-required `404 → 200 → 404`:
+
+```
+POST /api/_test/does-not-exist → 404
+POST /api/_test/seed-tenant    → 200 {"token":"...","user":{...,"emailVerified":true,...}}
+GET  /api/_test/seed-tenant    → 404
+```
+
+Minted bearer confirmed usable: `Authorization: Bearer <token>` on
+`/api/_test/health-authed` → 200; the same route without a bearer
+still → 401 (auth not globally disabled).
 
 ---
 
