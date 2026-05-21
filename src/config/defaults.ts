@@ -103,4 +103,10 @@ export {
   // WebSocket realtime ASR + the 141kB useChatStreaming chat hook. Same
   // mechanism — direct named re-export for Rolldown DCE.
   STREAMING_ENABLED,
+  // Phase 10 PLD-01: PROVIDER_LOCKDOWN_ENABLED gates alternative cloud
+  // providers (OpenAI/Groq/Mistral/Custom), enterprise providers
+  // (Bedrock/Azure/Vertex), and all BYOK / API-key surfaces. Same mechanism —
+  // direct named re-export so Rolldown propagates the literal across the
+  // module boundary for DCE; the `Generated.*` alias form is forbidden.
+  PROVIDER_LOCKDOWN_ENABLED,
 } from "./build-config.generated";

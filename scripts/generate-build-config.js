@@ -83,6 +83,16 @@ const BOOL_DEFAULTS = Object.freeze({
   // explicitly opt in, STREAMING_ENABLED is forced back to false so the
   // default offline build does not crash on first record.
   STREAMING_ENABLED: true,
+  // Phase 10 PLD-01: corporate-minimal provider lockdown. When true, strips
+  // every alternative cloud provider (OpenAI/Groq/Mistral/Custom), every
+  // enterprise provider (Bedrock/Azure/Vertex), and every BYOK ("paste your
+  // API key") surface from the bundle — leaving exactly two processing paths,
+  // Cloud (our server only) and Local (offline whisper.cpp / Parakeet).
+  // Env var: OPENWHISPR_PROVIDER_LOCKDOWN (any value other than "false"
+  // enables it; unset = false here because BOOL_DEFAULTS[boolKey] is consulted
+  // only when env is unset). Default false keeps upstream parity for
+  // non-corporate builds.
+  PROVIDER_LOCKDOWN_ENABLED: false,
 });
 
 const BOOL_KEYS = Object.keys(BOOL_DEFAULTS);
@@ -511,7 +521,7 @@ function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming}.generated.cjs (17 string keys + 6 booleans)"
+    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming}.generated.cjs (17 string keys + 7 booleans)"
   );
 }
 
