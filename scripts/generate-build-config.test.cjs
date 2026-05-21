@@ -68,3 +68,69 @@ test("BOOL_KEYS includes PROVIDER_LOCKDOWN_ENABLED", () => {
     "BOOL_KEYS should contain PROVIDER_LOCKDOWN_ENABLED"
   );
 });
+
+// Phase 10 PLD-02: lockdown implies all three OAuth provider flags off.
+
+function withEnvMap(map, fn) {
+  const keys = Object.keys(map);
+  const saved = keys.map((k) => ({
+    k,
+    had: Object.prototype.hasOwnProperty.call(process.env, k),
+    prev: process.env[k],
+  }));
+  for (const k of keys) {
+    if (map[k] === undefined) delete process.env[k];
+    else process.env[k] = map[k];
+  }
+  try {
+    fn();
+  } finally {
+    for (const { k, had, prev } of saved) {
+      if (had) process.env[k] = prev;
+      else delete process.env[k];
+    }
+  }
+}
+
+test("PROVIDER_LOCKDOWN=true forces all three OAUTH_* flags off", () => {
+  withEnvMap({ OPENWHISPR_PROVIDER_LOCKDOWN: "true" }, () => {
+    const resolved = buildResolved();
+    assert.strictEqual(resolved.OAUTH_GOOGLE_ENABLED, false);
+    assert.strictEqual(resolved.OAUTH_APPLE_ENABLED, false);
+    assert.strictEqual(resolved.OAUTH_MICROSOFT_ENABLED, false);
+  });
+});
+
+test("PROVIDER_LOCKDOWN overrides an explicit OPENWHISPR_OAUTH_GOOGLE=true (lockdown wins)", () => {
+  withEnvMap(
+    {
+      OPENWHISPR_PROVIDER_LOCKDOWN: "true",
+      OPENWHISPR_OAUTH_GOOGLE: "true",
+      OPENWHISPR_OAUTH_APPLE: "true",
+      OPENWHISPR_OAUTH_MICROSOFT: "true",
+    },
+    () => {
+      const resolved = buildResolved();
+      assert.strictEqual(resolved.OAUTH_GOOGLE_ENABLED, false);
+      assert.strictEqual(resolved.OAUTH_APPLE_ENABLED, false);
+      assert.strictEqual(resolved.OAUTH_MICROSOFT_ENABLED, false);
+    }
+  );
+});
+
+test("lockdown unset -> OAUTH_* flags keep their BOOL_DEFAULTS value true", () => {
+  withEnvMap(
+    {
+      OPENWHISPR_PROVIDER_LOCKDOWN: undefined,
+      OPENWHISPR_OAUTH_GOOGLE: undefined,
+      OPENWHISPR_OAUTH_APPLE: undefined,
+      OPENWHISPR_OAUTH_MICROSOFT: undefined,
+    },
+    () => {
+      const resolved = buildResolved();
+      assert.strictEqual(resolved.OAUTH_GOOGLE_ENABLED, true);
+      assert.strictEqual(resolved.OAUTH_APPLE_ENABLED, true);
+      assert.strictEqual(resolved.OAUTH_MICROSOFT_ENABLED, true);
+    }
+  );
+});
