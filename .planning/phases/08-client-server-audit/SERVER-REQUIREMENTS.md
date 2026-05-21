@@ -2148,3 +2148,154 @@ isn't)? Pending peer `gowm923y` response.
 **Severity:** MEDIUM — corporate-minimal Cloud users have no working
 transcription until the upstream key is valid; reasoning/agent are fine.
 Client untouched either way.
+
+---
+
+## R28 — `/api/reason` rejects `null` for optional fields → 400 on first run
+
+**Status:** ✅ **CLOSED 2026-05-22** — server commit `2af65a83`. The
+wire-schema optional fields were declared `.optional()`, which accepts
+"key absent" or a typed value but not `null`; changed to `.nullish()`
+(`.optional().nullable()`) on every optional field in `reason.ts` and
+`agent.ts` (`/api/agent/stream` had the same defect). Handlers were
+already null-safe (`body.model ?? default`), so no handler change —
+no server-side null-stripping workaround. Verified live on the rebuilt
+api: `POST /api/reason` with `model/agentName/customPrompt/systemPrompt/
+language` all `null` → `200` real output; `/api/agent/stream` with
+`systemPrompt/sessionId` null → `200`.
+
+**Original report (filed 2026-05-22).** Breaks first-run transcription
+post-processing and the chat agent.
+
+**Discovered:** 2026-05-22. User report: "first attempt fails, works
+after restart" + "chat doesn't work" + UI toast "Transcription failed:
+Invalid request".
+
+**Symptom.** `POST /api/reason` returns `400 {"error":"Invalid request"}`
+when an optional field is present with a `null` value. Bisected:
+
+```
+{"text":"hi"}                  → 200   (field absent)
+{"text":"hi","model":null}     → 400   Invalid request
+{"text":"hi","agentName":null} → 400   Invalid request
+{"text":"hi","customDictionary":[]} → 200
+{"text":"hi","sttProvider":"groq"}  → 200
+```
+
+So the server's request schema accepts **absent** or **string** for
+`model` / `agentName`, but **rejects `null`**.
+
+**Why this breaks the client (client is correct).** The client
+(`src/helpers/ipcHandlers.js` ~5621) builds the `/api/reason` body from
+`opts.model`, `opts.agentName`, etc. On the **first** dictation in a
+session — before any agent/model has been selected — these are `null`,
+so the body literally contains `"model":null,"agentName":null`. The
+server 400s. After an app restart the settings store has resolved
+non-null values, so the same call succeeds — exactly the "fails first,
+works after restart" report. The chat agent path 400s for the same
+reason.
+
+Sending `null` for an unset optional field is valid JSON and standard
+client behavior. `BACKEND_SPEC.md`'s `/api/reason` card documents
+`model` / `agentName` as optional — "optional" must accept `null`,
+not only "key absent".
+
+**Expected.** The `/api/reason` request schema treats `null` as
+equivalent to absent for every optional field (`model`, `agentName`,
+`customPrompt`, `systemPrompt`, `language`, and any other nullable
+optional). A nullable optional is `{ type: ["string","null"] }` /
+`.nullable().optional()`, not `.optional()` alone.
+
+**Suggested resolution.** Server widens the `/api/reason` (and audit
+`/api/agent/stream` for the same pattern) request schema so optional
+fields accept `null`. Client must not be patched to strip nulls — that
+is a client workaround for a server schema defect.
+
+**Severity:** CRITICAL — first dictation of every fresh session and the
+entire chat agent are broken on the corporate-minimal build.
+
+---
+
+## R29 — `/api/ready` intermittently returns 503
+
+**Status:** ✅ **CLOSED 2026-05-22** — server commit `bcf5c072`. Root
+cause confirmed: the readiness probe hit LiteLLM `/health`, which is a
+*deep* diagnostic — it fans out and pings every model in `model_list`
+(Groq/OpenRouter/OpenAI). Any provider blip or rate-limit made `/health`
+non-200, so the probe flapped `503` even though the proxy itself was
+fully serving. Fixed by pointing the probe at `/health/readiness`
+instead — that returns `{"status":"healthy","db":"connected"}` with no
+per-provider fan-out, the correct "proxy can accept requests" signal
+for a tight healthcheck poll. Verified live: `/api/ready` → `200`
+stable 5/5 consecutive polls.
+
+**See R29b** for the separate SSRF-dispatcher facet found during this
+verification.
+
+**Original report (filed 2026-05-22).** `/api/ready` intermittently
+returned `503`.
+
+**Symptom.** `GET /api/ready` (the compose healthcheck target from R25)
+intermittently returns `503` rather than `200`:
+
+```
+req-8g  /api/ready  → 503  (11ms)
+req-8h  /api/ready  → 503  (10ms)
+```
+
+interleaved with `200`s. Fast response time (~10ms) suggests one of the
+three readiness checks (`ssrf_dispatcher` / `litellm_client` /
+`litellm_upstream`) flaps — most likely `litellm_upstream` reachability
+under transient load, or a check that is too strict for a healthy-but-busy
+upstream.
+
+**Open question to server.** Is the 503 a real not-ready state (litellm
+genuinely unreachable at that instant) or an over-strict / flaky
+readiness check? If the latter, the upstream check needs a tolerance /
+retry so a momentary blip doesn't mark the whole api unhealthy and pull
+it out of rotation.
+
+**Severity:** MEDIUM — if the readiness check flaps, the R25
+healthcheck will cycle the container unhealthy↔healthy under normal
+load. Needs server triage.
+
+---
+
+## R29b — `/api/ready` ssrf_dispatcher check gates on the global, not LiteLLM egress
+
+**Status:** 🟡 **OPEN — server triaging** — filed 2026-05-22. Found
+during R29 verification. Non-blocking for live Cloud verification.
+
+**Discovered:** 2026-05-22. After the R24 fix, `/api/ready` was
+observed returning `not_ready` with
+`ssrf_dispatcher: {ok:false, error:"global undici dispatcher is not the
+SSRF-wrapped Agent"}` while `litellm_client` and `litellm_upstream`
+were both `ok` — i.e. Cloud was fully functional but readiness said
+not-ready.
+
+**Root cause.** The R24 fix made the LiteLLM client hold its **own**
+SSRF-wrapped dispatcher (`opts.request`), so it no longer depends on
+the process global. The global dispatcher is therefore free to be
+overwritten by lazily-loaded code (Better Auth OIDC fetch, web-search
+adapters) — harmless for Cloud. But the `/api/ready` `ssrf_dispatcher`
+check still inspects the **global** dispatcher. Once the global is
+legitimately overwritten, the check reports `not_ready` even though the
+Cloud egress path is fully SSRF-protected. Under the R25 healthcheck
+this would cycle the container unhealthy after the first OAuth redirect.
+
+**Expected.** The Cloud-readiness gate must assert what actually gates
+Cloud — that the **LiteLLM client's egress dispatcher** is SSRF-wrapped
+— not the mutable process global. The global SSRF dispatcher still
+matters (it protects Better Auth OIDC redirects and web-search adapters
+from SSRF), so the signal should not be dropped entirely — but it
+belongs as an **informational warning**, not a hard Cloud-readiness
+gate. Server plan: split into a cloud-gating check (LiteLLM egress
+SSRF-wrapped) vs. an informational warn (global dispatcher state).
+
+**Suggested resolution.** Server reshapes the `/api/ready` contract per
+the split above. Server is running an advisor on the exact readiness
+contract form.
+
+**Severity:** MEDIUM — does not break Cloud functionality (live verify
+all green), but a false `not_ready` after the first OAuth redirect
+would make the R25 healthcheck cycle the container. Client untouched.
