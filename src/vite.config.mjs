@@ -126,10 +126,12 @@ export default defineConfig(({ mode }) => {
         // AssemblyAI / Deepgram realtime ASR preload method literals nor the
         // 141kB useChatStreaming agent hook.
         let streamingEnabled = false;
+        let providerLockdown = false;
         if (fs.existsSync(buildConfigPath)) {
           // require.cache already busted above; safe to re-require.
           const buildConfig = require(buildConfigPath);
           streamingEnabled = buildConfig.STREAMING_ENABLED === true;
+          providerLockdown = buildConfig.PROVIDER_LOCKDOWN_ENABLED === true;
         }
         if (!streamingEnabled) {
           const streamingProvidersStub = path.resolve(
@@ -145,7 +147,27 @@ export default defineConfig(({ mode }) => {
             find: /^\.\/streamingProviders$/,
             replacement: streamingProvidersStub,
           });
-
+        } else if (providerLockdown) {
+          // Streaming on + lockdown: keep realtime, but cut the deepgram /
+          // assemblyai alternative-provider catalog entries by aliasing to the
+          // single-entry lockdown catalog (NOT the stub — the stub disables
+          // streaming entirely).
+          const streamingProvidersLockdown = path.resolve(
+            __dirname,
+            "helpers",
+            "streamingProviders.lockdown.js"
+          );
+          baseAlias.push({
+            find: /^.*\/helpers\/streamingProviders(\.js)?$/,
+            replacement: streamingProvidersLockdown,
+          });
+          baseAlias.push({
+            find: /^\.\/streamingProviders$/,
+            replacement: streamingProvidersLockdown,
+          });
+        }
+        // useChatStreaming stub aliasing stays gated on !streamingEnabled only.
+        if (!streamingEnabled) {
           const useChatStreamingStub = path.resolve(
             __dirname,
             "components",
