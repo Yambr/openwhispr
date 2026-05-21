@@ -4089,6 +4089,23 @@ class IPCHandlers {
     };
 
     const fetchRealtimeToken = async (event, options, { streams } = {}) => {
+      // PROVIDER_LOCKDOWN: Design B realtime path. The desktop's own Better Auth
+      // session bearer IS the WSS credential — the server validates it, strips
+      // the Authorization header, and substitutes LITELLM_MASTER_KEY upstream.
+      // No ephemeral OpenAI client_secret is minted; /api/openai-realtime-token
+      // is never called; BYOK keys are never touched. (Mirrors STREAMING_ENABLED
+      // gate style.)
+      if (BuildConfig.PROVIDER_LOCKDOWN_ENABLED === true) {
+        const authHeader = await getAuthHeader(event);
+        const bearer = authHeader && authHeader.Authorization;
+        const match = typeof bearer === "string" && bearer.match(/^Bearer\s+(.+)$/);
+        if (!match || !match[1]) {
+          throw new Error("Not authenticated");
+        }
+        const token = match[1];
+        return streams === 2 ? [token, token] : token;
+      }
+
       const postServerToken = async (path, body = {}) => {
         const apiUrl = getApiUrl();
         if (!apiUrl) {
@@ -5058,8 +5075,11 @@ class IPCHandlers {
       }
 
       const connectInner = async () => {
-        const isCloud = options.mode !== "byok";
-        const apiKey = await fetchRealtimeToken(event, { mode: options.mode });
+        // Under lockdown there is no BYOK mode — the realtime path always routes
+        // through our WSS proxy with the session bearer (Design B).
+        const effectiveMode = BuildConfig.PROVIDER_LOCKDOWN_ENABLED ? "openwhispr" : options.mode;
+        const isCloud = effectiveMode !== "byok";
+        const apiKey = await fetchRealtimeToken(event, { mode: effectiveMode });
         const streaming = new OpenAIRealtimeStreaming();
         setupDictationCallbacks(streaming, event);
         await streaming.connect({
