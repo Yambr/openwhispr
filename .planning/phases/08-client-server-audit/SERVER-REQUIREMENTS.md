@@ -1144,26 +1144,27 @@ real `POST /api/auth/sign-up/email` → worker logs `email.sent` (zero
 /api/auth/sign-in/email` returns `200` with a session and
 `emailVerified:true`. The real first-run user journey now completes.
 
-**R19 follow-up facet — RE-OPENED 2026-05-21 (verification link host).**
-The delivered email's verification link points at
-`http://api.localhost/api/auth/verify-email?token=…` — the internal
-Traefik hostname. `docker-compose.yml` defaults `OPENWHISPR_API_URL` /
-`AUTH_URL` / `INGRESS_BASE_URL` to `https://api.localhost` (lines
-248-257), and the email-link builder uses that base URL. `api.localhost`
-does not resolve outside the Docker network, so a developer (or a real
-self-hoster on a non-Traefik slim deploy) clicking the link from a
-normal mail client gets a dead link — the link only works from inside
-the compose network. The R19 manual verification only completed
-because the probe rewrote the host to the published `localhost:4000`.
+**R19 follow-up facet — ✅ CLOSED 2026-05-21** — server commit `60e0e04b`
+(same commit as R20). The slim-core profile's origin vars
+(`INGRESS_BASE_URL` / `AUTH_URL` / `OPENWHISPR_API_URL`) are pinned to
+the published `http://localhost:4000` instead of the internal Traefik
+host `https://api.localhost`. Better Auth builds the verification link
+from `INGRESS_BASE_URL`, so the delivered link is now
+`http://localhost:4000/api/auth/verify-email?token=…` — reachable from a
+normal browser/mail client on a no-Traefik slim deploy. `docs/self-hosting.md`
+gained a "Verification-email link origin" subsection documenting that a
+self-hoster MUST set these vars to an externally reachable origin; the
+compose `docker-compose.yml` production default stays `https://`.
+Verified live: a real sign-up's emailed link host is `localhost:4000`
+and the `verify-email` round trip returns 302.
 
-Required: on the slim-core profile, the verification-email base URL
-must be a host reachable from where the user reads their mail. Either
-default `INGRESS_BASE_URL` (or the dedicated email-link base) to the
-published `http://localhost:4000` on the no-Traefik slim profile, or
-document that slim-core operators must set it. The link in the email
-must be clickable from a normal browser without manual rewriting.
-Severity: LOW for slim-core dev (workaround = rewrite host), but it
-WILL break a real self-hoster who doesn't front the stack with Traefik.
+> _History: this facet was filed RE-OPENED on 2026-05-21 (the delivered
+> link pointed at the internal Traefik host `http://api.localhost`,
+> unreachable outside the Docker network) and closed the same day by
+> server commit `60e0e04b` — see the ✅ CLOSED block above. Verified
+> live 2026-05-21: a real sign-up's emailed link host is
+> `localhost:4000` and the `verify-email` round trip returns 302
+> without any host rewriting._
 
 **Discovered:** 2026-05-20, live manual probe of the cloud sign-up
 journey against the slim-core stack (not an e2e harness run — a real
@@ -1271,6 +1272,40 @@ session. `docker compose logs worker` shows `email.sent`, not
 ---
 
 ## R20 — sync routes (`/api/notes/*`, `/api/usage`, …) reject every Better Auth bearer token; only the session cookie is accepted — the real signed-in client cannot sync
+
+**Status:** ✅ **CLOSED 2026-05-21** — server commit `60e0e04b`
+(`fix(R20+R19): resolve Better Auth bearer session.token on every sync
+route`). Root cause was NOT a missing bearer plugin (it was already
+mounted): Phase 57 envelope-encrypted `sessions.token` (plaintext column
+NULL at rest), but the encryption lens's WHERE-clause rewrite only
+handled fields ending in `_fp_lookup` — a convention with zero Better
+Auth callers. Better Auth's `findSession` issues a bare
+`{field:"token"}` equality clause, which passed through to
+`WHERE token = '<plaintext-NULL>'` → 401. The cookie survived via the
+`cookieCache` signed JWT (no DB lookup); the seed-tenant bearer survived
+via a raw-SQL plaintext INSERT — the two auth paths diverged.
+
+Fix: the lens now auto-rewrites a bare equality clause on a fingerprinted
+encrypted column to the `token_fp` SHA-256 fingerprint lookup, so Better
+Auth's own session resolution resolves correctly. The seed-tenant route
+was converged onto the same fingerprint path (it now writes `token_fp`,
+not the plaintext column) — seed bearer and real-sign-in bearer resolve
+through ONE code path. Migration 0030 moved the session-token unique
+index off the no-op plaintext column onto `token_fp`. No security
+regression: plaintext stays NULL at rest.
+
+Verified live against the slim stack (real journey, no seed-tenant):
+sign-up → 200, verify → 302, sign-in → 200, get-session → `session.token`,
+then `GET /api/notes/list` + `Authorization: Bearer <session.token>`
+→ **200**, `POST /api/notes/create` → **201**. `/api/folders/list`,
+`/api/conversations/list`, `/api/transcriptions/list`, `/api/usage`,
+`/api/v1/keys/list` all → **200** with the same bearer. An unknown
+bearer and a no-auth request both still → 401 (no auth bypass).
+
+Note re option (a): `GET /api/auth/token` was a red herring — the Better
+Auth bearer plugin does not expose a token-retrieval endpoint and never
+did; the client correctly obtains `session.token` from
+`GET /api/auth/get-session`, which works.
 
 **Discovered:** 2026-05-21, live manual probe of the real cloud sync
 journey against the slim-core stack, immediately after R19 unblocked
