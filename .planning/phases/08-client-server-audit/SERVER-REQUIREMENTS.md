@@ -1441,3 +1441,124 @@ chosen.
     `/api/transcriptions/*`, and `/api/usage`. The seed-tenant bearer
     and the real-sign-in bearer resolve through the same middleware
     path.
+
+---
+
+## R21 — `POST /api/auth/sign-up/email` issues no session; the email-verification screen is therefore permanently stuck at "Session expired"
+
+**Status:** 🔴 **OPEN — BLOCKER.** Filed 2026-05-21 from a live manual
+UI run of the real cloud sign-up journey (the Electron client driven
+through its actual onboarding screens against the slim-core stack — not
+an e2e harness, not a raw API probe).
+
+**Discovered:** 2026-05-21, driving the OpenWhispr Electron client's
+`AuthenticationStep` → `EmailVerificationStep` flow against
+`http://localhost:4000`. A real new user enters an email, sets a
+password, clicks "Create Account", and lands on "Check your email".
+Within one poll cycle (~5 s) the screen flips to **"Session expired.
+Please restart the sign-up process."** and never recovers — even after
+the verification link is opened and returns `302`.
+
+**Problem — observed wire behavior.** The renderer makes exactly the
+requests its shipped code prescribes (`src/components/AuthenticationStep.tsx`,
+`src/components/EmailVerificationStep.tsx:28-55`). Captured live from
+the renderer:
+
+```
+200  POST /api/check-user                {"exists":false}
+200  POST /api/auth/sign-up/email        {"token":null,"user":{…,"emailVerified":false}}
+200  GET  /api/auth/get-session          null
+401  GET  /api/auth/verification-status?email=…   {"error":"unauthorized"}
+```
+
+Confirmed with a direct API probe (plain `fetch`, no browser, no
+renderer — isolates it from any CORS/origin question):
+
+```
+POST /api/auth/sign-up/email   -> 200, Set-Cookie count: 0, body token:null
+GET  /api/auth/get-session     (with whatever sign-up returned) -> 200 body `null`
+GET  /api/auth/verification-status?email=…   -> 401 {"error":"unauthorized"}
+       … same 401 with Origin: http://localhost:5183
+       … same 401 with no cookie at all
+```
+
+**Root cause.** `POST /api/auth/sign-up/email` **returns no
+`Set-Cookie` header and `token: null`** — it creates the user row but
+establishes **no session of any kind**. Consequently `get-session`
+returns `null`, and the cookie-only route `/api/auth/verification-status`
+returns `401 unauthorized` on every poll. `EmailVerificationStep`'s
+poll loop treats a `401` as a dead session
+(`EmailVerificationStep.tsx:43-45`) and shows "Session expired".
+
+The verification screen is **structurally impossible to satisfy** as
+the server currently behaves: it polls a cookie-only endpoint during
+the one window — between `sign-up` and `verify` — when the server has
+issued no session. The real first-run user is hard-stuck before they
+can verify their email.
+
+**Why this is a server defect, not a client one.** The client is
+immutable (upstream-parity constraint) and its code is correct by its
+own contract: `sign-up/email` → `verification-status` polling →
+`onVerified()` is the documented Better Auth verification flow.
+`EmailVerificationStep` polls exactly the endpoint
+`docs/BACKEND_SPEC.md` line 133 says it polls. Nothing on the client
+can conjure a session the server never issued. This is **not** the
+cross-origin question from R5/R15 — the direct no-browser probe 401s
+identically with and without an `Origin` header and with no cookie.
+R5/R15 verified `verification-status` only with a cookie from a
+*completed* `sign-in`; the gap between `sign-up` and `verify` was never
+exercised until this live UI run.
+
+**Required (R21).** A user who has just completed
+`POST /api/auth/sign-up/email` MUST be able to poll their own
+verification status until they click the email link. Pick one — (a) is
+the smallest and matches Better Auth's normal behavior:
+
+  (a) **`sign-up/email` establishes a session** (sets the Better Auth
+      session cookie, returns a non-null `token`) even while
+      `emailVerified` is `false`. `get-session` then returns a real
+      session and the cookie-only `verification-status` resolves 200.
+      This is Better Auth's default when `requireEmailVerification`
+      does not block session creation — verify the slim-core config
+      did not disable it.
+  (b) **`verification-status` stops being cookie-only.** If the product
+      decision is "no session until verified", then
+      `verification-status` must authenticate by the `?email=` param
+      alone (it already accepts the param) so the just-signed-up,
+      not-yet-verified user can poll it. It must return
+      `{verified:false}` (200), never `401`, for a known unverified
+      email.
+
+Either way: the contract `EmailVerificationStep` depends on
+(`sign-up` → poll `verification-status` → `verified:true`) must be
+satisfiable end-to-end by a real user with no manual steps.
+
+**Severity:** BLOCKER. This breaks the real first-run journey for every
+new email/password user — they cannot get past "Check your email". The
+e2e suite is green because it uses the `seed-tenant` shortcut (a
+pre-verified tenant) and never drives the live `sign-up` →
+`verification-status` polling window through the UI.
+
+**Cross-reference:** related to R5/R15 (`verification-status` auth
+model) but distinct — R5/R15 covered the *verified-and-signed-in*
+state; R21 is the *signed-up-but-not-yet-verified* window, which has no
+session at all.
+
+**Repo boundary.** Server-side fix only. Do NOT patch the client —
+`EmailVerificationStep.tsx` / `AuthenticationStep.tsx` are upstream
+parity code and behave correctly. Findings stay in this file; the fix
+lands in `openwhispr-server`.
+
+## R21 verification protocol
+
+22. **R21 real UI sign-up → verification poll** — drive the actual
+    Electron client onboarding screens (not the e2e harness, not a raw
+    API probe): enter a fresh email, set a password, click "Create
+    Account". The "Check your email" screen MUST keep showing
+    "Waiting for verification…" (never "Session expired"). Open the
+    emailed verification link; within one poll cycle the screen MUST
+    advance to the verified state and on into the app. Confirm with a
+    direct probe that `POST /api/auth/sign-up/email` either sets a
+    session cookie / returns a non-null token, OR that
+    `GET /api/auth/verification-status?email=<unverified>` returns
+    `200 {verified:false}` rather than `401`.
