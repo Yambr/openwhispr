@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "./useAuth";
 import { CACHE_CONFIG } from "../config/constants";
+import { BILLING_ENABLED } from "../config/defaults";
 import { withSessionRefresh } from "../lib/auth";
 import { useBillingActions } from "./billingActions";
 
@@ -181,8 +182,12 @@ export function useUsage(): UseUsageResult | null {
   const isSubscribed = data?.isSubscribed ?? false;
   const status = data?.status ?? "active";
   const isPastDue = (data?.plan === "pro" || data?.plan === "business") && status === "past_due";
-  const isOverLimit = !isSubscribed && limit > 0 && wordsUsed >= limit;
-  const isApproachingLimit = !isSubscribed && limit > 0 && wordsUsed >= limit * 0.8 && !isOverLimit;
+  // Phase quick-260521-wt4 FIX1: under BILLING_ENABLED=false (corporate build)
+  // there is no plan gating — const-fold both limit booleans to false so
+  // Rolldown DCEs the limit arithmetic. Flag-on behavior is unchanged.
+  const isOverLimit = BILLING_ENABLED && !isSubscribed && limit > 0 && wordsUsed >= limit;
+  const isApproachingLimit =
+    BILLING_ENABLED && !isSubscribed && limit > 0 && wordsUsed >= limit * 0.8 && !isOverLimit;
 
   return {
     plan: data?.plan ?? "free",
