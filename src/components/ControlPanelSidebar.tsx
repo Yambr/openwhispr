@@ -70,8 +70,13 @@ export default function ControlPanelSidebar({
     () => localStorage.getItem("upgradeProDismissed") === "true"
   );
 
-  const showLimitBanner = authLoaded && isSignedIn && !isProUser && isOverLimit;
+  // Phase quick-260521-wt4 FIX1: gate both banner booleans behind BILLING_ENABLED
+  // so the corporate build (BILLING_ENABLED=false) const-folds them to false,
+  // leaving the banner JSX unreferenced for Rolldown DCE. Default build unchanged.
+  const showLimitBanner =
+    BILLING_ENABLED && authLoaded && isSignedIn && !isProUser && isOverLimit;
   const showUpgradeBanner =
+    BILLING_ENABLED &&
     !showLimitBanner &&
     authLoaded &&
     (!isSignedIn || usageLoaded !== false) &&

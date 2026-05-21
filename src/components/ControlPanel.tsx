@@ -41,7 +41,7 @@ import {
 import { fetchProviders as fetchStreamingProviders } from "../stores/streamingProvidersStore";
 import HistoryView from "./HistoryView";
 import { syncService } from "../services/SyncService.js";
-import { REFERRALS_ENABLED } from "../config/defaults";
+import { REFERRALS_ENABLED, BILLING_ENABLED } from "../config/defaults";
 import ReferralEntry from "./ReferralEntry";
 
 const platform = getCachedPlatform();
@@ -218,7 +218,7 @@ export default function ControlPanel() {
   useEffect(() => {
     const dispose = window.electronAPI?.onLimitReached?.(
       (data: { wordsUsed: number; limit: number }) => {
-        if (!hasShownUpgradePrompt.current) {
+        if (BILLING_ENABLED && !hasShownUpgradePrompt.current) {
           hasShownUpgradePrompt.current = true;
           setLimitData(data);
           setShowUpgradePrompt(true);
@@ -632,12 +632,16 @@ export default function ControlPanel() {
         onOk={() => {}}
       />
 
-      <UpgradePrompt
-        open={showUpgradePrompt}
-        onOpenChange={setShowUpgradePrompt}
-        wordsUsed={limitData?.wordsUsed}
-        limit={limitData?.limit}
-      />
+      {/* Phase quick-260521-wt4 FIX1: BILLING_ENABLED gates the render so the
+          corporate build DCEs UpgradePrompt entirely. */}
+      {BILLING_ENABLED && (
+        <UpgradePrompt
+          open={showUpgradePrompt}
+          onOpenChange={setShowUpgradePrompt}
+          wordsUsed={limitData?.wordsUsed}
+          limit={limitData?.limit}
+        />
+      )}
 
       <PostMigrationOnboarding
         open={showPostMigration}
@@ -893,7 +897,9 @@ export default function ControlPanel() {
             {activeView === "integrations" && (
               <Suspense fallback={null}>
                 <IntegrationsView
-                  isPaid={!!(usage?.isSubscribed || usage?.isTrial)}
+                  isPaid={
+                    BILLING_ENABLED ? !!(usage?.isSubscribed || usage?.isTrial) : true
+                  }
                   onUpgrade={() => {
                     setSettingsSection("plansBilling");
                     setShowSettings(true);
