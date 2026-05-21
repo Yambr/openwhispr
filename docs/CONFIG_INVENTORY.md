@@ -72,6 +72,13 @@ BYOK and enterprise key-management surface. Two configuration notes:
   dead-code-eliminates transitively in the corporate bundle — no standalone
   `!PROVIDER_LOCKDOWN_ENABLED` wrapper is needed or added.
 
+The provider-lockdown DCE contract is mechanically verified by
+`npm run verify:provider-lockdown` (Phase 10 Plan 06): a 2-scenario bundle-grep
+gate that asserts every OAuth / alternative-cloud / BYOK / enterprise literal is
+PRESENT in the default build (parity) and ABSENT under
+`OPENWHISPR_PROVIDER_LOCKDOWN=true`. See
+[`docs/BUILD_CONFIG.md` § Provider Lockdown Flag](./BUILD_CONFIG.md#provider-lockdown-flag-phase-10).
+
 ## Verification Notes
 
 To verify this inventory is complete before starting Phase 3, re-run the discovery greps documented in the plan (`02-02-PLAN.md`, Task 1, Step 1 grep block) and confirm that every match is either (a) present as a row in the table above with a real `file:line` reference, or (b) explicitly out of scope per the documented exclusions (HuggingFace download URLs, GitHub release URLs for sidecar binaries, `docs.openwhispr.com` and similar documentation navigation links, `openwhispr.com/terms`, `openwhispr.com/privacy`, `openwhispr.com/contact-sales`). Any new match not covered by either rule should be added as a new row before proceeding. Note that `GOOGLE_CALENDAR_CLIENT_ID` and `GOOGLE_CALENDAR_CLIENT_SECRET` are runtime user-supplied secrets (no hardcoded values in source) and are therefore not inventory targets.

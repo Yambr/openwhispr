@@ -496,6 +496,49 @@ For each flow:
 
 ---
 
+## Phase 10 Provider Lockdown Smoke Checklist
+
+A self-hoster who routes **all** AI through their own backend should build the
+corporate-minimal variant with `OPENWHISPR_PROVIDER_LOCKDOWN=true`. This removes
+the BYOK / provider-choice / enterprise / OAuth surface entirely — the shipped
+client offers strictly **Cloud** (your backend) and **Local** (offline
+whisper.cpp / Parakeet) and nothing else. There is no API-key input for end
+users to mis-configure, no alternative cloud provider to route around your
+backend, and no enterprise-credential UI.
+
+```bash
+OPENWHISPR_PROVIDER_LOCKDOWN=true \
+  OPENWHISPR_BACKEND_URL=https://corp.example.com \
+  npm run pack
+```
+
+### Automated gate
+
+```bash
+npm run verify:provider-lockdown
+```
+
+Two scenarios, ~1–2 min: the `default` scenario asserts every provider / BYOK /
+OAuth / enterprise literal is PRESENT (upstream parity preserved when the flag is
+unset); the `lockdown` scenario asserts all of them are physically ABSENT from
+the renderer bundle and the preload surface. Must exit 0 before release.
+
+### Manual verification
+
+1. `OPENWHISPR_PROVIDER_LOCKDOWN=true npm run pack`, then launch the binary.
+2. Welcome screen: only "Continue with email" — no Apple / Google / Microsoft button.
+3. Transcription setup: a binary Cloud / Local toggle — no OpenAI / Groq / Mistral / Custom provider tabs, no "API Key" input.
+4. Chat-agent and Dictation-agent settings: the inference-mode selector offers exactly two modes — `OpenWhispr` (Cloud) and `Local` — no Providers / Self-Hosted / Enterprise mode buttons.
+5. No Enterprise provider section and no self-hosted endpoint / BYOK panel anywhere in settings.
+6. Restore default build: `unset OPENWHISPR_PROVIDER_LOCKDOWN && npm run pack`.
+
+> **Note:** `OPENWHISPR_PROVIDER_LOCKDOWN=true` *implies* the three
+> `OPENWHISPR_OAUTH_*` flags off — you do not need to set them separately, and an
+> explicit `OPENWHISPR_OAUTH_GOOGLE=true` will not re-introduce OAuth under
+> lockdown. See [`docs/BUILD_CONFIG.md` § Provider Lockdown Flag](./BUILD_CONFIG.md#provider-lockdown-flag-phase-10).
+
+---
+
 ## Upstream Parity Build
 
 To recreate the pre-2026-05-08-pivot upstream Yambr fork behavior, set all three Phase 04.1 feature flags to `true`:

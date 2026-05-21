@@ -76,6 +76,34 @@ The flags do NOT appear in `docs/CONFIG_INVENTORY.md` because they are net-new P
 
 > **Resolver semantics.** `scripts/generate-build-config.js#resolveBool` parses unset → `default`, the literal string `"false"` → `false`, anything else (`"true"`, `"1"`, `"yes"`, etc.) → `true`. The semantics are identical for OAuth flags (default `true`) and feature flags (default `false`); the asymmetric "explicit `true` required for opt-in" some readers expect is NOT how the resolver currently works. If you set `OPENWHISPR_BILLING=anything-not-false` it enables billing.
 
+### Provider Lockdown Flag (Phase 10)
+
+A single boolean flag that produces the **corporate-minimal** build variant. When
+enabled it strips every alternative AI provider, every BYOK (bring-your-own-key)
+surface, the enterprise-provider UI, and all OAuth sign-in buttons — leaving
+**exactly two processing paths**: **Cloud** (the OpenWhispr corporate backend
+only) and **Local** (offline whisper.cpp / Parakeet). Same gating pattern as the
+Phase 04.1 feature flags (build-time DCE, default `false`, no runtime drift when
+unset).
+
+| Name | Purpose | Default | Allowed values | Read at | Source-of-truth file |
+|------|---------|---------|----------------|---------|----------------------|
+| `OPENWHISPR_PROVIDER_LOCKDOWN` | When `true`, emits `PROVIDER_LOCKDOWN_ENABLED = true` and removes, via renderer DCE + main if-blocks + the generated `preload-byok.generated.cjs` submodule: (1) the Apple / Google / Microsoft OAuth sign-in buttons — the welcome screen becomes email/password only; (2) the alternative cloud provider choice (OpenAI / Groq / Mistral / Custom) in the transcription and reasoning pickers — Cloud mode talks only to the corporate backend; (3) the enterprise provider UI (AWS Bedrock / Azure / Google Vertex) and its credential fields; (4) every BYOK surface — "Paste your API key" inputs, per-provider key storage, `CustomModelInput`, and the `v1/keys` API-key management UI. The inference-mode selector is reduced from 5 modes (`openwhispr` / `providers` / `local` / `self-hosted` / `enterprise`) to 2 (`OpenWhispr` Cloud + `Local`). **Implies the three `OPENWHISPR_OAUTH_*` flags off:** the generator force-resolves `OAUTH_GOOGLE_ENABLED` / `OAUTH_APPLE_ENABLED` / `OAUTH_MICROSOFT_ENABLED` to `false` when lockdown is on — an explicit `OPENWHISPR_OAUTH_GOOGLE=true` **cannot** override lockdown. | `false` | Anything other than `"false"` is treated as `true`; absent = default | build (renderer DCE + main if-block + generated preload submodule) | `scripts/generate-build-config.js` BOOL_DEFAULTS + `src/config/build-config.generated.cjs` |
+
+**Worked example — corporate-minimal build pointed at a private backend:**
+
+```bash
+OPENWHISPR_PROVIDER_LOCKDOWN=true \
+  OPENWHISPR_BACKEND_URL=https://corp.example.com \
+  npm run pack
+```
+
+This regenerates `build-config.generated.{ts,cjs}` with `PROVIDER_LOCKDOWN_ENABLED = true`
+(and all three `OAUTH_*_ENABLED` forced `false`), builds the renderer with the
+provider / BYOK / enterprise / OAuth branches dead-code-eliminated, and packages
+an unsigned `--dir` build. Verify the result with
+`npm run verify:provider-lockdown` (see [Verification gates](#verification-gates)).
+
 ### LLM Providers
 
 (generator: `scripts/generate-build-config.js`)
@@ -158,10 +186,11 @@ The factory module is regenerated per build with either the full method block or
 
 ### Verification gates
 
-Three CI-runnable scripts mechanically prove the contract end-to-end:
+Four CI-runnable scripts mechanically prove the contract end-to-end:
 
 - `npm run verify:oauth-gating` — 4 scenarios (default + each OAuth provider individually disabled). Greps both `src/dist/assets/*.js` and `preload.js` + `preload-gcal.generated.cjs` for provider-specific symbols. ~2–4 min runtime (4 sequential renderer builds).
 - `npm run verify:feature-gating` — 4 scenarios (default + each feature flag individually enabled). Greps both `src/dist/assets/*.js` and `preload.js` + `preload-{billing,referrals,streaming}.generated.cjs`. Symmetric inverse of the OAuth gate (default expects ABSENT, opt-in expects PRESENT).
+- `npm run verify:provider-lockdown` — 2 scenarios (default + `OPENWHISPR_PROVIDER_LOCKDOWN=true`). Greps `src/dist/assets/*.js` and `preload.js` + all `preload-*.generated.cjs` (including `preload-byok.generated.cjs`) for four target groups — OAuth desktop-sign-in literals, alternative-cloud provider key-console URLs, BYOK IPC channels, and enterprise key-management channels. The `default` scenario asserts every literal is PRESENT (upstream parity), the `lockdown` scenario asserts every literal is ABSENT. ~1–2 min runtime (2 builds + 1 restore build).
 - `npm run verify:pack-regen` — CFG-08 regression: runs `OPENWHISPR_OAUTH_GOOGLE=false npm run pack` end-to-end and asserts the generator actually re-ran (the previously committed `build-config.generated.ts` is overwritten with `OAUTH_GOOGLE_ENABLED = false`). Catches the original Phase 4 smoke-test bug where `prepack` did not chain the generator step.
 
 ## Worked Examples
