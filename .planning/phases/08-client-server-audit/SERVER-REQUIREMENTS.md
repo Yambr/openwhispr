@@ -1616,3 +1616,114 @@ lands in `openwhispr-server`.
     session cookie / returns a non-null token, OR that
     `GET /api/auth/verification-status?email=<unverified>` returns
     `200 {verified:false}` rather than `401`.
+
+---
+
+## R22 — after a real sign-up→verify the user lands in the app with NO session at all: no cookie, no bearer, `get-session` → `null`
+
+**Status:** 🔴 **OPEN — BLOCKER.** Filed 2026-05-21 from a live manual
+UI run: the OpenWhispr Electron client driven through the real
+onboarding (`AuthenticationStep` → `EmailVerificationStep`) against the
+slim-core stack on `main` (post R20+R21).
+
+**Discovered:** 2026-05-21, extending the live UI verification to the
+post-R21 state. R21 fixed the verification *polling* — the screen now
+advances past "Check your email" — but driving one step further
+revealed the user is dropped into the app **unauthenticated**.
+
+**Problem — observed post-verify auth state.** A real new user
+completes sign-up, the verification email arrives, the link is opened
+(`verify-email` → `302`), and the screen advances to "Email verified —
+Your account is all set" and on into the app. At that point, probed
+live from the running client:
+
+```
+cookie jar @ http://localhost:4000   →  []   (empty — no session cookie)
+all cookies in the renderer session  →  0
+userData/auth-token.bin              →  does not exist (no bearer token)
+renderer fetch /api/auth/get-session →  200, body `null`  (no session)
+renderer localStorage isSignedIn     →  "true"   ← client THINKS it is signed in
+window.electronAPI.cloudApiRequest("GET","/api/usage")  →  {success:false,error:"Not authenticated"}
+```
+
+The client has set `isSignedIn=true` and shown "Your account is all
+set", but there is **no session of any kind** — no cookie, no bearer,
+`get-session` returns `null`. Every cloud sync call fails
+`Not authenticated`. The first-run user cannot sync notes, transcribe,
+or use the agent — they are inside the app but logged out.
+
+**Root cause.** Same family as R21. Under `requireEmailVerification`,
+Better Auth's `sign-up/email` issues no session (R21 established that).
+`GET /api/auth/verify-email` flips `email_verified` to `true` — but it
+**does not create a session either**. So across the entire
+sign-up→verify journey the server never establishes a session. R21
+made the verification *screen* satisfiable; it did not make the
+verified user *signed in*.
+
+Contrast with the **login** path (`sign-in/email`), which works end to
+end: it returns `set-auth-token`, the client gets a bearer, and
+`cloudApiRequest` succeeds. The defect is specific to the
+sign-up→verify path having no session-establishing step.
+
+**Why this is a server defect, not a client one.** The client is
+immutable (upstream-parity constraint) and its flow is correct by its
+own contract: `signUp.email()` → poll `verification-status` →
+`onVerified()` → into the app. The client reasonably expects that
+completing email verification — the final step of onboarding — leaves
+the user signed in, as every normal auth flow does. There is no
+client-side step that *should* be re-issuing a sign-in: the user has
+just proven both their password (at sign-up) and their email (at
+verify). The server owns session establishment; it establishes one for
+`sign-in/email` and must do the equivalent for the verify completion.
+`main.js` already has the machinery to consume a server-issued token
+(`applySessionTokenAndRefresh` / the auth-bridge at
+`main.js:655-692`) — the server simply never hands one over on the
+verify path.
+
+**Required (R22).** Completing email verification MUST leave the user
+with a working session. Pick one — (a) is the smallest:
+
+  (a) **`GET /api/auth/verify-email` establishes a session on success**
+      — sets the Better Auth session cookie (and/or returns a bearer
+      token) as part of the `302`, so the just-verified user is signed
+      in. This is Better Auth's `autoSignInAfterVerification`-style
+      behavior; verify the slim-core config did not disable it.
+  (b) **The verify-completion redirect carries a token the client's
+      auth-bridge already accepts.** `main.js`'s auth-bridge consumes
+      `?bearer_token=` / `?token=` and calls
+      `applySessionTokenAndRefresh`. If verify-email's post-verify
+      redirect (or the deep link) delivered a token through that
+      existing channel, the client would pick it up with no client
+      change.
+
+Either way: after `sign-up → verify` a `GET /api/auth/get-session`
+from the client MUST return a real session, and
+`window.electronAPI.cloudApiRequest("GET","/api/usage")` MUST succeed.
+
+**Severity:** BLOCKER. Every new email/password user finishes
+onboarding logged out. They see "Your account is all set", enter the
+app, and nothing cloud-backed works (`Not authenticated` on every sync
+/ transcribe / agent call). The only current workaround is to sign out
+and sign in again manually — which the UI gives them no reason to do,
+since it claims they are signed in.
+
+**Cross-reference:** direct continuation of R21. R21 = the
+verification *screen* can be satisfied (polling). R22 = the verified
+user is actually *signed in*. R21's fix is necessary but not
+sufficient for a working first-run journey.
+
+**Repo boundary.** Server-side fix only. Do NOT patch the client —
+`AuthenticationStep.tsx` / `EmailVerificationStep.tsx` are upstream
+parity code and behave correctly. The client already has the
+token-intake path (`applySessionTokenAndRefresh`). Findings stay in
+this file; the fix lands in `openwhispr-server`.
+
+## R22 verification protocol
+
+23. **R22 real sign-up→verify leaves the user signed in** — drive the
+    actual Electron client onboarding: fresh email → password →
+    "Create Account" → open the emailed link. After the screen
+    advances into the app, probe from the running client:
+    `GET /api/auth/get-session` MUST return a real session (not
+    `null`), and `cloudApiRequest("GET","/api/usage")` MUST return
+    `{success:true}`. No manual sign-out/sign-in step may be required.
