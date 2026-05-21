@@ -178,7 +178,14 @@ Plans:
 **Goal:** A single build-time flag `OPENWHISPR_PROVIDER_LOCKDOWN` (default `false`) produces a corporate-minimal client: zero OAuth buttons (email/password only), Cloud + Local as the only processing modes, and no alternative cloud provider, BYOK, or enterprise provider surface — all physically DCE'd from the bundle. Flag unset = byte-identical upstream parity.
 **Requirements**: PLD-01, PLD-02, PLD-03, PLD-04, PLD-05, PLD-06
 **Depends on:** Phase 9
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans executed — ✅ phase complete, goal ACHIEVED (verified 2026-05-21, live UAT passed)
+
+Success Criteria (what must be TRUE):
+  1. `OPENWHISPR_PROVIDER_LOCKDOWN` env var → `PROVIDER_LOCKDOWN_ENABLED` constant, default `false`; lockdown forces all three `OAUTH_*` flags off ✅
+  2. Under lockdown: zero OAuth buttons (email/password only), Cloud + Local the only processing modes, no alternative-cloud/BYOK/enterprise surface ✅
+  3. Gated code is physically DCE'd — `verify-provider-lockdown.js` bundle-grep gate: 2 scenarios, 40 greps, 0 violations ✅
+  4. Flag unset = byte-identical upstream parity (default scenario in the verify gate) ✅
+  5. Live UAT against slim-core server: welcome email/password-only, Settings → Language Models shows exactly OpenWhispr Cloud + Local ✅
 
 Plans:
 - [x] 10-01-PLAN.md — Add OPENWHISPR_PROVIDER_LOCKDOWN flag to build-config generator + defaults.ts re-export (PLD-01)
@@ -186,4 +193,4 @@ Plans:
 - [x] 10-03-PLAN.md — Gate transcription cloud-provider tabs + BYOK input under lockdown (PLD-03)
 - [x] 10-04-PLAN.md — Gate reasoning cloud-provider selector + EnterpriseSection under lockdown (PLD-04)
 - [x] 10-05-PLAN.md — Gate BYOK/enterprise key IPC, preload, CustomModelInput, ApiKeysService (PLD-05)
-- [ ] 10-06-PLAN.md — verify-provider-lockdown bundle-grep gate + docs + live UAT (PLD-06)
+- [x] 10-06-PLAN.md — verify-provider-lockdown bundle-grep gate + docs + live UAT (PLD-06)
