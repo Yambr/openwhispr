@@ -9,8 +9,9 @@ import logo from "../assets/logo.svg";
 import claudeIcon from "../assets/icons/providers/claude.svg";
 import openaiIcon from "../assets/icons/providers/openai.svg";
 import cursorIcon from "../assets/icons/providers/cursor.svg";
+import { OPENWHISPR_MCP_URL } from "../config/defaults";
 
-const MCP_URL = "https://mcp.openwhispr.com/mcp";
+const MCP_URL = OPENWHISPR_MCP_URL;
 const MCP_DOCS_URL = "https://docs.openwhispr.com/integrations/mcp";
 
 interface McpIntegrationCardProps {
