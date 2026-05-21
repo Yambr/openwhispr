@@ -2098,8 +2098,24 @@ guard on its single most important code path.
 
 ## R27 — `/api/transcribe` → 502: Groq upstream rejects the API key
 
-**Status:** 🟡 **OPEN — awaiting server clarification** — filed
-2026-05-22. Surfaced once R24 unblocked the transcription path.
+**Status:** ⚪ **NOT-A-BUG / CLOSED 2026-05-22.** Root cause was
+operational, not a server defect: the litellm container was running
+the **contract (mock) profile** (`litellm_config.contract.yaml`, 11
+`mock_response` entries) — a stale `LITELLM_CONFIG_FILE` left in
+shell-env from a contract/e2e test run (`.env` has no such var; its
+default is the production `litellm_config.yaml`). Mock chat models
+answered `/api/reason` and `/api/agent/stream`; the audio route has no
+clean `mock_response`, so transcription still hit real Groq and failed
+on the absent key. The `GROQ_API_KEY` was valid all along.
+**Resolution:** server restarted litellm with the production config
+(`docker compose up -d --force-recreate litellm`, `LITELLM_CONFIG_FILE`
+unset). Verified live through the real client: `/api/transcribe` →
+`200` `{"text":...,"sttProvider":"groq","sttModel":"whisper-large-v3"}`.
+No code change. Operational note for slim-core: bring litellm up with
+the production config, never the contract profile.
+
+**Original report (filed 2026-05-22).** Surfaced once R24 unblocked the
+transcription path.
 
 **Discovered:** 2026-05-22, live verification on the rebuilt api.
 
