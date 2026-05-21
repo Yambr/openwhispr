@@ -611,9 +611,30 @@ This endpoint is part of `auth.openwhispr.com`, not `${OPENWHISPR_API_URL}`. Ful
 
 **Wire protocol:** OpenAI Realtime API. The backend MUST implement the protocol byte-for-byte — the desktop client speaks the upstream OpenAI Realtime spec without modification (per Phase 05 D-04). The reference corporate-backend implementation is `~/openwhispr-server`'s Phase 4 work using [Speaches](https://speaches.ai/) + [LiteLLM](https://docs.litellm.ai/) `mode: realtime` — Speaches claims OpenAI Realtime compatibility (see [Speaches Realtime API docs](https://speaches.ai/usage/realtime-api/)), and LiteLLM v1.82.0+ raises the upstream WebSocket itself and forwards events bidirectionally.
 
-**Auth:**
-- `Authorization: Bearer <openai-api-key-or-realtime-token>` HTTP header at WebSocket upgrade time.
-- The `apiKey` parameter passed to `OpenAIRealtimeStreaming.connect({ apiKey, model })` is forwarded as the bearer token. For BYOK, this is the user's OpenAI API key. For cloud-token mode, this is a short-lived ephemeral token minted via `POST /api/openai-realtime-token` (see card above).
+**Auth — two designs by build flavor:**
+
+The `Authorization: Bearer <token>` HTTP header is always sent at WebSocket
+upgrade time; what the token *is* depends on the build flavor. The `apiKey`
+parameter passed to `OpenAIRealtimeStreaming.connect({ apiKey, model })` is
+forwarded verbatim as that bearer token.
+
+- **Design B — corporate build (`PROVIDER_LOCKDOWN_ENABLED`):** the desktop
+  opens the WebSocket to `OPENWHISPR_REALTIME_WSS_URL` (our server's
+  `/v1/realtime`, derived from `OPENWHISPR_BACKEND_URL`) and authenticates with
+  the **Better Auth session bearer** — the same session token `cloud-api-request`
+  uses, read from `tokenStore`. It is **NOT** an OpenAI API key and **NOT** an
+  ephemeral `client_secret`. `POST /api/openai-realtime-token` is never called
+  and no BYOK key is touched (`fetchRealtimeToken()` short-circuits at the top
+  under lockdown — `src/helpers/ipcHandlers.js`). The server validates the
+  session, **strips the desktop's `Authorization` header, and substitutes
+  `LITELLM_MASTER_KEY`** for the upstream LiteLLM connection. Egress is
+  LiteLLM-only; the desktop never contacts `api.openai.com` under lockdown.
+  The corporate default realtime model is `gpt-realtime`.
+- **Design A — default build (flag off):** `POST /api/openai-realtime-token`
+  mints a short-lived ephemeral OpenAI `client_secret` (see card above) and the
+  client streams directly. For BYOK mode the bearer is the user's own OpenAI
+  API key. **Design A is NOT used under `PROVIDER_LOCKDOWN` — Design B fully
+  replaces it.**
 - Custom header: `OpenAI-Beta: realtime=v1` is also sent — backends MAY ignore.
 
 **Required server semantics** (from `src/helpers/openaiRealtimeStreaming.js`):
