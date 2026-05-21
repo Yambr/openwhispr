@@ -25,6 +25,7 @@ import {
 } from "../utils/modelPickerStyles";
 import { useSettingsStore } from "../stores/settingsStore";
 import { getProviderIcon, isMonochromeProvider } from "../utils/providerIcons";
+import { PROVIDER_LOCKDOWN_ENABLED } from "../config/defaults";
 import { API_ENDPOINTS, normalizeBaseUrl } from "../config/constants";
 import { createExternalLinkHandler } from "../utils/externalLinks";
 import { getCachedPlatform } from "../utils/platform";
@@ -375,6 +376,22 @@ export default function TranscriptionModelPicker({
   }, []);
 
   const ensureValidCloudSelection = useCallback(() => {
+    // Under provider lockdown, Cloud mode talks only to our server. There is no
+    // alternative-provider tab and no custom-endpoint surface, so always pin the
+    // selection to the first (our-server) cloud provider — never "custom".
+    if (PROVIDER_LOCKDOWN_ENABLED) {
+      const firstProvider = cloudProviders[0];
+      if (firstProvider && selectedCloudProvider !== firstProvider.id) {
+        onCloudProviderSelect(firstProvider.id);
+        if (firstProvider.models?.length) {
+          onCloudModelSelect(firstProvider.models[0].id);
+        }
+      } else if (firstProvider && !selectedCloudModel && firstProvider.models?.length) {
+        onCloudModelSelect(firstProvider.models[0].id);
+      }
+      return;
+    }
+
     const isValidProvider = VALID_CLOUD_PROVIDER_IDS.includes(selectedCloudProvider);
 
     if (!isValidProvider) {
@@ -814,16 +831,18 @@ export default function TranscriptionModelPicker({
 
       {!effectiveLocal ? (
         <>
-          <ProviderTabs
-            providers={cloudProviderTabs}
-            selectedId={selectedCloudProvider}
-            onSelect={handleCloudProviderChange}
-            colorScheme="purple"
-            scrollable
-          />
+          {!PROVIDER_LOCKDOWN_ENABLED && (
+            <ProviderTabs
+              providers={cloudProviderTabs}
+              selectedId={selectedCloudProvider}
+              onSelect={handleCloudProviderChange}
+              colorScheme="purple"
+              scrollable
+            />
+          )}
 
           <div>
-            {selectedCloudProvider === "custom" ? (
+            {!PROVIDER_LOCKDOWN_ENABLED && selectedCloudProvider === "custom" ? (
               <div className="space-y-2">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-medium text-foreground">
@@ -859,40 +878,42 @@ export default function TranscriptionModelPicker({
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-foreground">
-                      {t("common.apiKey")}
-                    </label>
-                    <button
-                      type="button"
-                      onClick={createExternalLinkHandler(
-                        {
-                          groq: "https://console.groq.com/keys",
-                          mistral: "https://console.mistral.ai/api-keys",
-                          openai: "https://platform.openai.com/api-keys",
-                        }[selectedCloudProvider] || "https://platform.openai.com/api-keys"
-                      )}
-                      className="text-xs text-primary/70 hover:text-primary transition-colors cursor-pointer"
-                    >
-                      {t("transcription.getKey")}
-                    </button>
+                {!PROVIDER_LOCKDOWN_ENABLED && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-foreground">
+                        {t("common.apiKey")}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={createExternalLinkHandler(
+                          {
+                            groq: "https://console.groq.com/keys",
+                            mistral: "https://console.mistral.ai/api-keys",
+                            openai: "https://platform.openai.com/api-keys",
+                          }[selectedCloudProvider] || "https://platform.openai.com/api-keys"
+                        )}
+                        className="text-xs text-primary/70 hover:text-primary transition-colors cursor-pointer"
+                      >
+                        {t("transcription.getKey")}
+                      </button>
+                    </div>
+                    <ApiKeyInput
+                      apiKey={
+                        { groq: groqApiKey, mistral: mistralApiKey, openai: openaiApiKey }[
+                          selectedCloudProvider
+                        ] || openaiApiKey
+                      }
+                      setApiKey={
+                        { groq: setGroqApiKey, mistral: setMistralApiKey, openai: setOpenaiApiKey }[
+                          selectedCloudProvider
+                        ] || setOpenaiApiKey
+                      }
+                      label=""
+                      helpText=""
+                    />
                   </div>
-                  <ApiKeyInput
-                    apiKey={
-                      { groq: groqApiKey, mistral: mistralApiKey, openai: openaiApiKey }[
-                        selectedCloudProvider
-                      ] || openaiApiKey
-                    }
-                    setApiKey={
-                      { groq: setGroqApiKey, mistral: setMistralApiKey, openai: setOpenaiApiKey }[
-                        selectedCloudProvider
-                      ] || setOpenaiApiKey
-                    }
-                    label=""
-                    helpText=""
-                  />
-                </div>
+                )}
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-foreground">{t("common.model")}</label>
