@@ -15,6 +15,7 @@ import OpenAICompatiblePanel from "../OpenAICompatiblePanel";
 import { Toggle } from "../ui/toggle";
 import type { InferenceMode } from "../../types/electron";
 import type { InferenceScope } from "../../config/inferenceScopes";
+import { PROVIDER_LOCKDOWN_ENABLED } from "../../config/defaults";
 import {
   modelRegistry,
   isEnterpriseProvider,
@@ -60,39 +61,48 @@ export default function InferenceConfigEditor({ scope, onModeChange }: Inference
   const isSignedIn = useSettingsStore((s) => s.isSignedIn);
 
   const prefix = MODE_LABEL_PREFIX[scope];
+
+  const openwhisprEntry: InferenceModeOption = {
+    id: "openwhispr",
+    label: t(`${prefix}.openwhispr`),
+    description: t(`${prefix}.openwhisprDesc`),
+    icon: <Cloud className="w-4 h-4" />,
+    disabled: !isSignedIn,
+    badge: !isSignedIn ? t("common.freeAccountRequired") : undefined,
+  };
+  const providersEntry: InferenceModeOption = {
+    id: "providers",
+    label: t(`${prefix}.providers`),
+    description: t(`${prefix}.providersDesc`),
+    icon: <Key className="w-4 h-4" />,
+  };
+  const localEntry: InferenceModeOption = {
+    id: "local",
+    label: t(`${prefix}.local`),
+    description: t(`${prefix}.localDesc`),
+    icon: <Cpu className="w-4 h-4" />,
+  };
+  const selfHostedEntry: InferenceModeOption = {
+    id: "self-hosted",
+    label: t(`${prefix}.selfHosted`),
+    description: t(`${prefix}.selfHostedDesc`),
+    icon: <Network className="w-4 h-4" />,
+  };
+  const enterpriseEntry: InferenceModeOption = {
+    id: "enterprise",
+    label: t(`${prefix}.enterprise`),
+    description: t(`${prefix}.enterpriseDesc`),
+    icon: <Building2 className="w-4 h-4" />,
+  };
+
+  // Phase 10 PLD-04: under PROVIDER_LOCKDOWN_ENABLED the ternary literal-folds
+  // to `[]`, leaving providers/self-hosted/enterprise entries unreferenced so
+  // Rolldown DCEs them (and their Key/Network/Building2 icon imports). Default
+  // build keeps all 5 modes. Order: openwhispr first, local last.
   const modes: InferenceModeOption[] = [
-    {
-      id: "openwhispr",
-      label: t(`${prefix}.openwhispr`),
-      description: t(`${prefix}.openwhisprDesc`),
-      icon: <Cloud className="w-4 h-4" />,
-      disabled: !isSignedIn,
-      badge: !isSignedIn ? t("common.freeAccountRequired") : undefined,
-    },
-    {
-      id: "providers",
-      label: t(`${prefix}.providers`),
-      description: t(`${prefix}.providersDesc`),
-      icon: <Key className="w-4 h-4" />,
-    },
-    {
-      id: "local",
-      label: t(`${prefix}.local`),
-      description: t(`${prefix}.localDesc`),
-      icon: <Cpu className="w-4 h-4" />,
-    },
-    {
-      id: "self-hosted",
-      label: t(`${prefix}.selfHosted`),
-      description: t(`${prefix}.selfHostedDesc`),
-      icon: <Network className="w-4 h-4" />,
-    },
-    {
-      id: "enterprise",
-      label: t(`${prefix}.enterprise`),
-      description: t(`${prefix}.enterpriseDesc`),
-      icon: <Building2 className="w-4 h-4" />,
-    },
+    openwhisprEntry,
+    ...(PROVIDER_LOCKDOWN_ENABLED ? [] : [providersEntry, selfHostedEntry, enterpriseEntry]),
+    localEntry,
   ];
 
   const setField = useCallback(
@@ -159,10 +169,12 @@ export default function InferenceConfigEditor({ scope, onModeChange }: Inference
     <div className="space-y-3">
       <InferenceModeSelector modes={modes} activeMode={config.mode} onSelect={handleModeSelect} />
 
-      {config.mode === "providers" && renderModelSelector("cloud")}
+      {!PROVIDER_LOCKDOWN_ENABLED &&
+        config.mode === "providers" &&
+        renderModelSelector("cloud")}
       {config.mode === "local" && renderModelSelector("local")}
 
-      {config.mode === "self-hosted" && (
+      {!PROVIDER_LOCKDOWN_ENABLED && config.mode === "self-hosted" && (
         <OpenAICompatiblePanel
           baseUrl={config.remoteUrl ?? ""}
           setBaseUrl={setField("remoteUrl")}
@@ -191,7 +203,7 @@ export default function InferenceConfigEditor({ scope, onModeChange }: Inference
         </div>
       )}
 
-      {config.mode === "enterprise" && (
+      {!PROVIDER_LOCKDOWN_ENABLED && config.mode === "enterprise" && (
         <EnterpriseSection
           currentProvider={config.provider}
           reasoningModel={config.model}
