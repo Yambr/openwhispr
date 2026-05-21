@@ -161,6 +161,15 @@ function buildResolved() {
     process.env,
     "OPENWHISPR_OAUTH_PROTOCOL_SCHEME"
   );
+  // Phase 10 PLD-02: provider lockdown implies no OAuth providers. A single
+  // corporate build sets one env var (OPENWHISPR_PROVIDER_LOCKDOWN) instead of
+  // four. An explicit OPENWHISPR_OAUTH_*=true cannot re-enable a provider under
+  // lockdown — lockdown is the stronger corporate posture and always wins.
+  if (resolved.PROVIDER_LOCKDOWN_ENABLED === true) {
+    resolved.OAUTH_GOOGLE_ENABLED = false;
+    resolved.OAUTH_APPLE_ENABLED = false;
+    resolved.OAUTH_MICROSOFT_ENABLED = false;
+  }
   // Phase 05 D-01: apply derivation only when caller did not explicitly set
   // OPENWHISPR_REALTIME_WSS_URL (resolveValue returns "" both when unset
   // (DEFAULT) and when explicitly set to ""; either way derivation is safe to
