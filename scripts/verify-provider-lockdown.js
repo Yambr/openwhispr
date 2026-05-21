@@ -8,12 +8,14 @@
 //   - `default`  (env {}):                          all literals PRESENT  (upstream parity)
 //   - `lockdown` (OPENWHISPR_PROVIDER_LOCKDOWN=true): all literals ABSENT  (lockdown DCE)
 //
-// Modeled on scripts/verify-oauth-gating.js. Five target groups:
+// Modeled on scripts/verify-oauth-gating.js. Six target groups:
 //   OAUTH_TARGETS         — OAuth desktop-sign-in surface (welcome screen).
 //   ALT_CLOUD_TARGETS     — alternative cloud provider key-console URL literals.
 //   BYOK_TARGETS          — BYOK / enterprise IPC channel literals (preload-byok).
 //   ENTERPRISE_TARGETS    — enterprise provider config surface literals.
 //   TRANSCRIPTION_TARGETS — custom transcription provider code-path literals.
+//   SURFACE_TARGETS       — unreviewed renderer surface: the MCP integration
+//                           card's component-local docs-URL literal.
 //
 // Exclusions (same rationale as verify-oauth-gating.js):
 //   - i18n translation keys: `src/locales/{lang}/translation.json` is bundled
@@ -116,12 +118,38 @@ const TRANSCRIPTION_TARGETS = [
   "https://your-api.example.com/v1",
 ];
 
+// Unreviewed renderer surface literals cut from the corporate build:
+//   - "docs.openwhispr.com/integrations/mcp" — the McpIntegrationCard MCP_DOCS_URL.
+//     This is a component-LOCAL literal: it is declared and referenced only inside
+//     McpIntegrationCard.tsx. The card mount in IntegrationsView.tsx is gated
+//     behind `!PROVIDER_LOCKDOWN_ENABLED`, so the whole component (and this
+//     literal) DCEs out under lockdown — a valid absence signal.
+//
+// NOTE — targets resolved out by the Task 5 verify run (wholesale-bundling
+// limitation, same as i18n translation JSON):
+//   - "mcp.openwhispr.com" was DROPPED. OPENWHISPR_MCP_URL's value is emitted into
+//     the generated runtime-env.json / build-config module, which is bundled
+//     wholesale; the literal survives under lockdown regardless of the gate, so it
+//     is NOT a valid absence signal. The MCP card itself IS gated (Task 3) —
+//     verified via the docs-URL literal above and live.
+//   - Raw cloud model names ("GPT-5.5" etc.) were DROPPED. They originate in
+//     modelRegistryData.json, which ModelRegistry.ts imports wholesale; the labels
+//     survive as a bundled data module regardless of the gate. The cloud
+//     model-list leak is closed at the RENDER layer (Task 1 gate) and was verified
+//     LIVE; the bundle-grep cannot assert their absence. The only model-list
+//     code-path literal is the i18n key `reasoning.selectModel`, also wholesale-
+//     bundled — no valid grep target exists. See the plan Findings section.
+const SURFACE_TARGETS = [
+  "docs.openwhispr.com/integrations/mcp",
+];
+
 const GROUPS = {
   OAUTH: OAUTH_TARGETS,
   ALT_CLOUD: ALT_CLOUD_TARGETS,
   BYOK: BYOK_TARGETS,
   ENTERPRISE: ENTERPRISE_TARGETS,
   TRANSCRIPTION: TRANSCRIPTION_TARGETS,
+  SURFACE: SURFACE_TARGETS,
 };
 
 const ALL_GROUPS = Object.keys(GROUPS);
