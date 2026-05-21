@@ -16,6 +16,18 @@
 //   TRANSCRIPTION_TARGETS — custom transcription provider code-path literals.
 //   SURFACE_TARGETS       — unreviewed renderer surface: the MCP integration
 //                           card's component-local docs-URL literal.
+//   REALTIME_TARGETS      — realtime streaming targets that must be unreachable
+//                           from the lockdown RENDERER bundle: api.openai.com
+//                           realtime literals + the /api/openai-realtime-token
+//                           route. Under lockdown the realtime path routes
+//                           through our /v1/realtime WSS proxy with the session
+//                           bearer (Design B, quick task 260522-wt6 plan 01),
+//                           so neither literal may survive in src/dist/. This
+//                           group is checked dist-only: api.openai.com and the
+//                           route may legitimately appear in MAIN-process
+//                           source behind a PROVIDER_LOCKDOWN_ENABLED guard
+//                           (Design A default build), so a preload/main grep
+//                           is not a valid absence signal.
 //
 // Exclusions (same rationale as verify-oauth-gating.js):
 //   - i18n translation keys: `src/locales/{lang}/translation.json` is bundled
@@ -143,6 +155,18 @@ const SURFACE_TARGETS = [
   "docs.openwhispr.com/integrations/mcp",
 ];
 
+// Realtime streaming targets that must NOT be reachable from the lockdown
+// renderer bundle. Under PROVIDER_LOCKDOWN the realtime path connects to our
+// server's /v1/realtime WSS proxy (Design B) — the renderer never references
+// api.openai.com nor the ephemeral-token route. Checked dist-only (see header
+// note): both literals legitimately exist in main-process source behind a
+// PROVIDER_LOCKDOWN_ENABLED guard for the Design-A default build.
+const REALTIME_TARGETS = [
+  "wss://api.openai.com",
+  "api.openai.com/v1/realtime",
+  "/api/openai-realtime-token",
+];
+
 const GROUPS = {
   OAUTH: OAUTH_TARGETS,
   ALT_CLOUD: ALT_CLOUD_TARGETS,
@@ -150,9 +174,22 @@ const GROUPS = {
   ENTERPRISE: ENTERPRISE_TARGETS,
   TRANSCRIPTION: TRANSCRIPTION_TARGETS,
   SURFACE: SURFACE_TARGETS,
+  REALTIME: REALTIME_TARGETS,
 };
 
+// Groups whose absence is asserted ONLY against the renderer dist bundle
+// (not preload/main): the literals may legitimately survive in main-process
+// source behind a build-config guard.
+const DIST_ONLY_GROUPS = new Set(["REALTIME"]);
+
 const ALL_GROUPS = Object.keys(GROUPS);
+
+// REALTIME is an absence-only group: under lockdown the literals must be gone
+// from the renderer dist, but the default build does NOT guarantee their
+// presence there (the realtime WebSocket lives in the MAIN process, so the
+// renderer dist may legitimately not carry these literals). So REALTIME is
+// excluded from the default scenario's expectPresent positive control.
+const DEFAULT_PRESENT_GROUPS = ALL_GROUPS.filter((g) => g !== "REALTIME");
 
 const SCENARIOS = [
   {
@@ -160,7 +197,7 @@ const SCENARIOS = [
     // must be present.
     name: "default",
     env: {},
-    expectPresent: ALL_GROUPS,
+    expectPresent: DEFAULT_PRESENT_GROUPS,
     expectAbsent: [],
   },
   {
@@ -241,11 +278,13 @@ function checkGroupAbsent(scenarioName, group) {
         `${scenarioName}: target "${target}" expected absent in dist/, found: ${distOut.split("\n")[0]}`
       );
     }
-    const preloadOut = grepPreload(target);
-    if (preloadOut !== "") {
-      violations.push(
-        `${scenarioName}: target "${target}" expected absent in preload, found: ${preloadOut.split("\n")[0]}`
-      );
+    if (!DIST_ONLY_GROUPS.has(group)) {
+      const preloadOut = grepPreload(target);
+      if (preloadOut !== "") {
+        violations.push(
+          `${scenarioName}: target "${target}" expected absent in preload, found: ${preloadOut.split("\n")[0]}`
+        );
+      }
     }
   }
   return violations;
