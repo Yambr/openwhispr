@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { AUTH_URL, signOut, deleteAccount } from "../lib/auth";
-import { BILLING_ENABLED } from "@/config/defaults";
+import { BILLING_ENABLED, PROVIDER_LOCKDOWN_ENABLED } from "@/config/defaults";
 import MicPermissionWarning from "./ui/MicPermissionWarning";
 import MicrophoneSettings from "./ui/MicrophoneSettings";
 import PermissionCard from "./ui/PermissionCard";
@@ -245,24 +245,35 @@ function TranscriptionSection({
       disabled: !isSignedIn,
       badge: !isSignedIn ? t("common.freeAccountRequired") : undefined,
     },
-    {
-      id: "providers",
-      label: t("settingsPage.transcription.modes.providers"),
-      description: t("settingsPage.transcription.modes.providersDesc"),
-      icon: <Key className="w-4 h-4" />,
-    },
+    // Under provider lockdown the corporate-minimal build exposes only the
+    // OpenWhispr Cloud + Local transcription modes. The BYOK ("providers") and
+    // "self-hosted" modes are excluded so Rolldown DCEs their literals.
+    ...(PROVIDER_LOCKDOWN_ENABLED
+      ? []
+      : ([
+          {
+            id: "providers",
+            label: t("settingsPage.transcription.modes.providers"),
+            description: t("settingsPage.transcription.modes.providersDesc"),
+            icon: <Key className="w-4 h-4" />,
+          },
+        ] satisfies InferenceModeOption[])),
     {
       id: "local",
       label: t("settingsPage.transcription.modes.local"),
       description: t("settingsPage.transcription.modes.localDesc"),
       icon: <Cpu className="w-4 h-4" />,
     },
-    {
-      id: "self-hosted",
-      label: t("settingsPage.transcription.modes.selfHosted"),
-      description: t("settingsPage.transcription.modes.selfHostedDesc"),
-      icon: <Network className="w-4 h-4" />,
-    },
+    ...(PROVIDER_LOCKDOWN_ENABLED
+      ? []
+      : ([
+          {
+            id: "self-hosted",
+            label: t("settingsPage.transcription.modes.selfHosted"),
+            description: t("settingsPage.transcription.modes.selfHostedDesc"),
+            icon: <Network className="w-4 h-4" />,
+          },
+        ] satisfies InferenceModeOption[])),
   ];
 
   const handleTranscriptionModeSelect = (mode: InferenceMode) => {
@@ -357,7 +368,7 @@ function TranscriptionSection({
         </>
       )}
 
-      {transcriptionMode === "self-hosted" && (
+      {!PROVIDER_LOCKDOWN_ENABLED && transcriptionMode === "self-hosted" && (
         <SelfHostedPanel
           service="transcription"
           url={remoteTranscriptionUrl}

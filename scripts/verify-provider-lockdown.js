@@ -8,11 +8,12 @@
 //   - `default`  (env {}):                          all literals PRESENT  (upstream parity)
 //   - `lockdown` (OPENWHISPR_PROVIDER_LOCKDOWN=true): all literals ABSENT  (lockdown DCE)
 //
-// Modeled on scripts/verify-oauth-gating.js. Four target groups:
-//   OAUTH_TARGETS      — OAuth desktop-sign-in surface (welcome screen).
-//   ALT_CLOUD_TARGETS  — alternative cloud provider key-console URL literals.
-//   BYOK_TARGETS       — BYOK / enterprise IPC channel literals (preload-byok).
-//   ENTERPRISE_TARGETS — enterprise provider config surface literals.
+// Modeled on scripts/verify-oauth-gating.js. Five target groups:
+//   OAUTH_TARGETS         — OAuth desktop-sign-in surface (welcome screen).
+//   ALT_CLOUD_TARGETS     — alternative cloud provider key-console URL literals.
+//   BYOK_TARGETS          — BYOK / enterprise IPC channel literals (preload-byok).
+//   ENTERPRISE_TARGETS    — enterprise provider config surface literals.
+//   TRANSCRIPTION_TARGETS — custom transcription provider code-path literals.
 //
 // Exclusions (same rationale as verify-oauth-gating.js):
 //   - i18n translation keys: `src/locales/{lang}/translation.json` is bundled
@@ -101,11 +102,26 @@ const ENTERPRISE_TARGETS = [
   "save-bedrock-access-key-id",
 ];
 
+// Custom transcription provider code-path literals. The "custom" transcription
+// provider tab + its BYOK custom-endpoint panel live in TranscriptionModelPicker.tsx
+// behind `!PROVIDER_LOCKDOWN_ENABLED && selectedCloudProvider === "custom"`. The
+// SelfHosted transcription panel is mounted by SettingsPage.tsx / MeetingSettings.tsx
+// only when the lockdown-gated `self-hosted` mode entry exists. Under lockdown
+// Rolldown DCE removes these branches and their string literals.
+//   - `https://your-api.example.com/v1` — custom-endpoint Input placeholder, lives
+//     ONLY inside the `selectedCloudProvider === "custom"` JSX branch.
+// i18n keys (`transcription.customProvider`, `settingsPage.transcription.modes.*`)
+// are intentionally NOT used here — translation JSON is bundled wholesale.
+const TRANSCRIPTION_TARGETS = [
+  "https://your-api.example.com/v1",
+];
+
 const GROUPS = {
   OAUTH: OAUTH_TARGETS,
   ALT_CLOUD: ALT_CLOUD_TARGETS,
   BYOK: BYOK_TARGETS,
   ENTERPRISE: ENTERPRISE_TARGETS,
+  TRANSCRIPTION: TRANSCRIPTION_TARGETS,
 };
 
 const ALL_GROUPS = Object.keys(GROUPS);
