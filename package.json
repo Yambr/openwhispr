@@ -75,6 +75,7 @@
     "verify:pack-regen": "node scripts/verify-pack-regenerates-build-config.js",
     "verify:feature-gating": "node scripts/verify-feature-gating.js",
     "verify:realtime-routing": "node scripts/verify-realtime-routing.js",
+    "test:build-config": "node --test scripts/generate-build-config.test.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
