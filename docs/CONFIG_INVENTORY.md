@@ -50,6 +50,28 @@ _Enterprise note: enterprise provider endpoints (Bedrock, Azure, Vertex) are ent
 | src/config/constants.ts:77 | `https://api.groq.com/openai/v1` | `OPENWHISPR_GROQ_BASE_URL` | litellm | `API_ENDPOINTS.GROQ_BASE` — Groq OpenAI-compatible base URL. Used by `groq.ts` provider and transcription handlers. Also mirrored in `src/models/modelRegistryData.json:166` and `src/helpers/ipcHandlers.js:3589`. Renderer + main (IPC transcription path). Needs `VITE_` prefix for renderer consumption. Consolidate with the model-registry entry so both read from the same env var. See [BACKEND_SPEC §OpenAI-compatible endpoints](BACKEND_SPEC.md). |
 | src/config/constants.ts:78 | `https://api.mistral.ai/v1` | `OPENWHISPR_MISTRAL_BASE_URL` | litellm | `API_ENDPOINTS.MISTRAL_BASE` — Mistral API base URL. Used by Mistral transcription handler and model registry. Also mirrored in `src/models/modelRegistryData.json:185` and as `MISTRAL_TRANSCRIPTION_URL` at `src/helpers/ipcHandlers.js:61`. Main process only (all Mistral calls proxy through IPC). Consolidate three occurrences to a single env-var-backed constant. See [BACKEND_SPEC §OpenAI-compatible endpoints](BACKEND_SPEC.md). |
 
+## Phase 10 — Provider Lockdown (`OPENWHISPR_PROVIDER_LOCKDOWN`)
+
+When the build-time flag `OPENWHISPR_PROVIDER_LOCKDOWN` is set (emitted as the
+`PROVIDER_LOCKDOWN_ENABLED` constant), the corporate-minimal build strips the
+BYOK and enterprise key-management surface. Two configuration notes:
+
+- **BYOK key fields in `src/stores/settingsStore.ts` are kept (typed) but never
+  written.** The per-provider key fields (`openaiApiKey`, `anthropicApiKey`,
+  `geminiApiKey`, `groqApiKey`, `mistralApiKey`, `customTranscriptionApiKey`,
+  `customReasoningApiKey`, and the `bedrock*` / `azure*` / `vertex*` credential
+  fields), their setters, and `invalidateApiKeyCaches` remain declared. Removing
+  them would churn the store typings and every reader for no DCE benefit — the
+  UI and IPC that *write* them are already DCE'd under lockdown, so the fields
+  simply stay at their defaults. This is a deliberate discretion decision
+  (CONTEXT "Claude's Discretion") favouring typing honesty over field deletion.
+- **`CustomModelInput` (`src/components/ui/CustomModelInput.tsx`) carries no own
+  build-time gate.** Its only consumer is `EnterpriseProviderConfig.tsx`, which
+  lives inside the `EnterpriseSection` subtree that Phase 10 Plan 04 already
+  DCEs by gating the `EnterpriseSection` mount. `CustomModelInput` therefore
+  dead-code-eliminates transitively in the corporate bundle — no standalone
+  `!PROVIDER_LOCKDOWN_ENABLED` wrapper is needed or added.
+
 ## Verification Notes
 
 To verify this inventory is complete before starting Phase 3, re-run the discovery greps documented in the plan (`02-02-PLAN.md`, Task 1, Step 1 grep block) and confirm that every match is either (a) present as a row in the table above with a real `file:line` reference, or (b) explicitly out of scope per the documented exclusions (HuggingFace download URLs, GitHub release URLs for sidecar binaries, `docs.openwhispr.com` and similar documentation navigation links, `openwhispr.com/terms`, `openwhispr.com/privacy`, `openwhispr.com/contact-sales`). Any new match not covered by either rule should be added as a new row before proceeding. Note that `GOOGLE_CALENDAR_CLIENT_ID` and `GOOGLE_CALENDAR_CLIENT_SECRET` are runtime user-supplied secrets (no hardcoded values in source) and are therefore not inventory targets.
