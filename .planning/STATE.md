@@ -107,6 +107,9 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260509-x1a | Restore release.yml with macOS signing+notarization, merge corporate-build features, delete corporate-build.yml + build-and-notarize.yml | 2026-05-09 | 4adb576e | [260509-x1a-restore-release-yml-with-macos-signing-n](./quick/260509-x1a-restore-release-yml-with-macos-signing-n/) |
+| 260521-wt4-FIX1 | Gate Pro/upgrade/limit UI behind BILLING_ENABLED — usage limits neutralized, sidebar banners + UpgradePrompt DCE'd, integration cards unlocked in corporate build | 2026-05-21 | 8f9f63f3, 5d59e421 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
+| 260521-wt4-FIX2 | cloudBackupEnabled first-run default now follows PROVIDER_LOCKDOWN_ENABLED (on in corporate build) | 2026-05-21 | 76bdb747 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
+| 260521-wt4-FIX3 | dictationAgentMode fallback resolves to openwhispr under lockdown instead of cut `providers` mode | 2026-05-21 | 76bdb747 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
 
 ## Session Continuity
 
