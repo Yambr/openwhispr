@@ -69,6 +69,8 @@ Progress: [░░░░░░░░░░] 0%
 
 - Phase 04.1 inserted after Phase 04: Tree-shaking fix for OAUTH_*_ENABLED gating + ensure prepack regenerates build-config (URGENT)
   - Discovered during Phase 04 smoke test: `npm run pack` skips `generate-build-config.js` (only `prebuild` runs it, `prepack` doesn't), and `gcalStartOAuth` symbol still appears in the bundle when `OAUTH_GOOGLE_ENABLED=false` — gating is not actually tree-shaking the disabled code paths.
+- Phase 10 added: Corporate-minimal provider lockdown — build-time gate cutting all OAuth buttons, all alternative transcription/reasoning/agent providers, and all BYOK surfaces; client offers strictly Cloud (our server) or Local.
+  - Discovered during live UI verification against the slim-core openwhispr-server: the client's welcome screen shows Apple/Google/Microsoft OAuth buttons the server supports none of (server does google/github/oidc only, none configured on slim → 404), and the Transcription/Reasoning pickers expose OpenAI/Groq/Mistral/Custom + BYOK API-key input — upstream provider choices the corporate-minimal product must not surface (server routes all Cloud-mode calls internally via LiteLLM).
 
 ### Decisions
 
