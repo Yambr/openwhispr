@@ -111,6 +111,7 @@ None yet.
 | 260521-wt4-FIX2 | cloudBackupEnabled first-run default now follows PROVIDER_LOCKDOWN_ENABLED (on in corporate build) | 2026-05-21 | 76bdb747 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
 | 260521-wt4-FIX3 | dictationAgentMode fallback resolves to openwhispr under lockdown instead of cut `providers` mode | 2026-05-21 | 76bdb747 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
 | 260521-wt4-FIX4 | Transcription picker under lockdown exposes one cloud provider (no Custom/groq/mistral); self-hosted transcription mode + SelfHostedPanel now DCE'd in SettingsPage/MeetingSettings; verify:provider-lockdown extended with TRANSCRIPTION target group | 2026-05-21 | bffd60b6, cfaf30a1 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
+| 260522-wt5 | Provider-lockdown leaks: gated cloud reasoning model list (GPT-* names) in ReasoningModelSelector, gated MCP integration card in IntegrationsView, sourced MCP URL from OPENWHISPR_MCP_URL build-time var, extended verify:provider-lockdown with SURFACE target group | 2026-05-22 | fcccaff9, b112a66b, 3b9ddb28, f0b50f7b | [260522-wt5-lockdown-leaks-notes-mcp](./quick/260522-wt5-lockdown-leaks-notes-mcp/) |
 
 ## Session Continuity
 
