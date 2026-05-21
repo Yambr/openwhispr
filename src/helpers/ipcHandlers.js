@@ -5084,7 +5084,9 @@ class IPCHandlers {
         setupDictationCallbacks(streaming, event);
         await streaming.connect({
           apiKey,
-          model: options.model || "gpt-4o-mini-transcribe",
+          model:
+            options.model ||
+            (BuildConfig.PROVIDER_LOCKDOWN_ENABLED ? "gpt-realtime" : "gpt-4o-mini-transcribe"),
           preconfigured: isCloud,
         });
         this._dictationStreaming = streaming;

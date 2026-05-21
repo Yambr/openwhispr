@@ -16,7 +16,13 @@ import { resolvePrompt } from "../config/prompts";
 import { syncService } from "../services/SyncService.js";
 
 const REASONING_CACHE_TTL = 30000; // 30 seconds
-const REALTIME_MODELS = new Set(["gpt-4o-mini-transcribe", "gpt-4o-transcribe"]);
+const REALTIME_MODELS = new Set([
+  "gpt-4o-mini-transcribe",
+  "gpt-4o-transcribe",
+  // Corporate (PROVIDER_LOCKDOWN) default realtime model — recognized in every
+  // build (widening the set is parity-safe).
+  "gpt-realtime",
+]);
 
 function resolveReasoningRoute(text, settings, agentName) {
   const cleanupReachable =
@@ -68,7 +74,7 @@ const isValidApiKey = (key, provider = "openai") => {
 // when STREAMING_ENABLED=false at build time, removing the AssemblyAI /
 // Deepgram / OpenAI-realtime preload method literals from the renderer bundle.
 import STREAMING_PROVIDERS from "./streamingProviders";
-import { STREAMING_ENABLED } from "../config/defaults";
+import { STREAMING_ENABLED, PROVIDER_LOCKDOWN_ENABLED } from "../config/defaults";
 
 class AudioManager {
   constructor() {
@@ -1728,9 +1734,10 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
       // Return provider-appropriate default
       if (provider === "groq") return "whisper-large-v3-turbo";
       if (provider === "mistral") return "voxtral-mini-latest";
-      return "gpt-4o-mini-transcribe";
+      // Corporate (PROVIDER_LOCKDOWN) realtime default is gpt-realtime.
+      return PROVIDER_LOCKDOWN_ENABLED ? "gpt-realtime" : "gpt-4o-mini-transcribe";
     } catch (error) {
-      return "gpt-4o-mini-transcribe";
+      return PROVIDER_LOCKDOWN_ENABLED ? "gpt-realtime" : "gpt-4o-mini-transcribe";
     }
   }
 
@@ -1987,15 +1994,19 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
       return false;
     }
 
+    // Under PROVIDER_LOCKDOWN there is no BYOK mode — the realtime path always
+    // routes through our server's WSS proxy, so treat the mode as openwhispr.
+    const effectiveMode = PROVIDER_LOCKDOWN_ENABLED ? "openwhispr" : s.cloudTranscriptionMode;
+
     if (REALTIME_MODELS.has(s.cloudTranscriptionModel)) {
       // Realtime WS is OpenAI-only — other providers fall through to HTTP.
       if ((s.cloudTranscriptionProvider || "openai") !== "openai") return false;
-      if (s.cloudTranscriptionMode === "byok") return !!s.openaiApiKey;
-      if (s.cloudTranscriptionMode === "openwhispr") return !!(isSignedInOverride ?? s.isSignedIn);
+      if (effectiveMode === "byok") return !!s.openaiApiKey;
+      if (effectiveMode === "openwhispr") return !!(isSignedInOverride ?? s.isSignedIn);
       return false;
     }
 
-    if (s.cloudTranscriptionMode !== "openwhispr" || !(isSignedInOverride ?? s.isSignedIn)) {
+    if (effectiveMode !== "openwhispr" || !(isSignedInOverride ?? s.isSignedIn)) {
       return false;
     }
     if (this.context === "notes") {
@@ -2026,7 +2037,10 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
             language: warmupLang && warmupLang !== "auto" ? warmupLang : undefined,
             keyterms: this.getKeyterms(),
             model: cloudTranscriptionModel,
-            mode: cloudTranscriptionMode === "byok" ? "byok" : "openwhispr",
+            mode:
+              PROVIDER_LOCKDOWN_ENABLED || cloudTranscriptionMode !== "byok"
+                ? "openwhispr"
+                : "byok",
           });
           // Throw error to trigger retry if AUTH_EXPIRED
           if (!res.success && res.code) {
@@ -2248,7 +2262,10 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
           language: preferredLang && preferredLang !== "auto" ? preferredLang : undefined,
           keyterms: this.getKeyterms(),
           model: cloudTranscriptionModel,
-          mode: cloudTranscriptionMode === "byok" ? "byok" : "openwhispr",
+          mode:
+            PROVIDER_LOCKDOWN_ENABLED || cloudTranscriptionMode !== "byok"
+              ? "openwhispr"
+              : "byok",
         });
 
         if (!res.success) {
