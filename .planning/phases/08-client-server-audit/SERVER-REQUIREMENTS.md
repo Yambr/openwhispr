@@ -2299,3 +2299,78 @@ contract form.
 **Severity:** MEDIUM — does not break Cloud functionality (live verify
 all green), but a false `not_ready` after the first OAuth redirect
 would make the R25 healthcheck cycle the container. Client untouched.
+
+---
+
+## R30 — Realtime streaming: confirm `/v1/realtime` WSS proxy accepts the Better Auth bearer
+
+**Status:** ✅ **CLOSED 2026-05-22** — server verified live. The
+`/v1/realtime` WSS reverse proxy accepts the Better Auth session bearer
+(the same token the sync routes use, post-R20). Server's live check:
+sign-up → verify → sign-in → 32-char session bearer; WS handshake to
+`ws://localhost:4000/v1/realtime?intent=transcription` with
+`Authorization: Bearer <session.token>` → upgrade **OPEN**, proxied
+through LiteLLM. WS handshake with **no** bearer → rejected before
+upgrade (the `preHandler` auth gate fires pre-upgrade; no
+upgrade-smuggling bypass — threat-model T-03-07-02).
+
+**Model contract for the proxy path.** `/v1/realtime` is a transparent
+WS passthrough to LiteLLM — it does NOT inject or default the model
+(unlike `/api/openai-realtime-token`). The **client** sets the model in
+the session payload (first realtime event after open): top-level
+`model: "gpt-realtime"`. `gpt-realtime` is already in the LiteLLM
+`model_list` — no server config change. (If language-specific
+transcription is needed, `input_audio_transcription.model` is a
+separate whisper-family field — top-level `model` must still be a
+realtime model, not `gpt-4o-mini-transcribe`.)
+
+Client-side work (repoint streaming off the OpenAI-direct fallback onto
+this proxy with the Better Auth bearer) is tracked in client quick task
+`260522-wt6-realtime-streaming-lockdown`. `BACKEND_SPEC.md`'s realtime
+card is being rewritten for Design (B) as part of that task.
+
+**Original report (filed 2026-05-22).**
+
+**Discovered:** 2026-05-22, live verification — corporate-build realtime
+dictation failed `401` because the client fell back to a direct
+`wss://api.openai.com` connection with no BYOK key.
+
+**Context.** The server already implements Design (B) — a reverse WSS
+proxy at `/v1/realtime` (`apps/api/src/routes/realtime.ts`, Phase 03):
+desktop → Traefik → Fastify → LiteLLM → OpenAI Realtime. Desktop
+authenticates with the **Better Auth bearer**; the server strips the
+`Authorization` header on the upstream upgrade and substitutes
+`LITELLM_MASTER_KEY` (`buildRewriteRequestHeaders`). Egress to OpenAI is
+LiteLLM-only; the desktop never sees the master key. Registered
+conditionally when both the LiteLLM client and `LITELLM_MASTER_KEY` are
+present (`routes/index.ts:154`).
+
+`POST /api/openai-realtime-token` (Design A — ephemeral OpenAI
+`client_secret`, direct client→OpenAI) also exists but is **not** used
+by the corporate build — the corporate policy is server-only egress, so
+the client uses (B). (Filing note: on the slim-core stack
+`/api/openai-realtime-token` currently returns `400 UPSTREAM_REJECTED`;
+not corporate-relevant, left as-is.)
+
+**What this requirement verifies.**
+1. `/v1/realtime` accepts the **same Better Auth bearer** the sync
+   routes accept (post-R20). A WS handshake with a valid bearer must
+   pass the `preHandler` auth gate and complete the upgrade; no bearer
+   → `401`, upgrade aborted.
+2. The realtime model the corporate build uses is the server default
+   `gpt-realtime` (the client will send `model: "gpt-realtime"` or omit
+   `model` and let the server default apply — server to confirm which
+   is cleaner).
+3. `BACKEND_SPEC.md`'s WSS realtime card currently documents Design (A)
+   auth (`Bearer <openai-api-key-or-realtime-token>`). It must be
+   rewritten for (B): desktop sends the Better Auth bearer; the server
+   rewrites headers to the master key upstream. Client owns the
+   BACKEND_SPEC edit.
+
+**Expected.** Server confirms a live WS handshake on `/v1/realtime`
+with a real Better Auth bearer completes the upgrade; corporate client
+streams realtime dictation through our server, never to api.openai.com.
+
+**Severity:** HIGH — realtime dictation is broken in the corporate
+build until the client is repointed (client-side fix in progress) and
+this server path is confirmed.
