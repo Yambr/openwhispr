@@ -82,6 +82,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "bddgen --config tests/e2e/playwright.config.ts && playwright test --config tests/e2e/playwright.config.ts",
     "test:e2e:list": "bddgen --config tests/e2e/playwright.config.ts && playwright test --config tests/e2e/playwright.config.ts --list",
+    "test:lockdown-ui": "playwright test --config tests/ui/playwright.config.ts",
     "preview": "cd src && vite preview",
     "clean": "node cleanup.js"
   },
