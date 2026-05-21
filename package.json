@@ -74,6 +74,7 @@
     "verify:oauth-gating": "node scripts/verify-oauth-gating.js",
     "verify:pack-regen": "node scripts/verify-pack-regenerates-build-config.js",
     "verify:feature-gating": "node scripts/verify-feature-gating.js",
+    "verify:provider-lockdown": "node scripts/verify-provider-lockdown.js",
     "verify:realtime-routing": "node scripts/verify-realtime-routing.js",
     "test:build-config": "node --test scripts/generate-build-config.test.cjs",
     "test": "vitest run",

@@ -4,6 +4,7 @@ import {
   OAUTH_GOOGLE_ENABLED,
   OAUTH_APPLE_ENABLED,
   OAUTH_MICROSOFT_ENABLED,
+  PROVIDER_LOCKDOWN_ENABLED,
 } from "../config/defaults";
 import { openExternalLink } from "../utils/externalLinks";
 
@@ -176,6 +177,14 @@ export async function withSessionRefresh<T>(operation: () => Promise<T>): Promis
 const DESKTOP_OAUTH_CALLBACK_URL = "https://openwhispr.com/auth/desktop-callback";
 
 export async function signInWithSocial(provider: SocialProvider): Promise<{ error?: Error }> {
+  // Phase 10 PLD-06: corporate-minimal lockdown removes every OAuth surface.
+  // This `if (PROVIDER_LOCKDOWN_ENABLED)` against the build-time literal lets
+  // Rolldown const-fold the whole social-sign-in body away — including the
+  // `/api/desktop-signin/` deep-link URL — so no OAuth literal survives in the
+  // lockdown bundle (verified by scripts/verify-provider-lockdown.js).
+  if (PROVIDER_LOCKDOWN_ENABLED) {
+    return { error: new Error("Provider not enabled in this build") };
+  }
   // D-08 defensive guard: build flags short-circuit any disabled-provider invocation.
   // UI never reaches this branch because the corresponding button is absent (AuthenticationStep.tsx),
   // but stale localStorage / remote commands could still attempt the call.
