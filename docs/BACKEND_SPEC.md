@@ -287,7 +287,9 @@ The client only inspects `res.ok` and `res.status`. The body is not read.
 }
 ```
 
-All fields except `text` are conditional on the caller supplying them (`opts.*`). The server is expected to tolerate missing keys.
+All fields except `text` are conditional on the caller supplying them (`opts.*`). The server tolerates missing keys **and** undocumented extra keys (the request schema is `passthrough`, not `strict`).
+
+**Field constraints** (server request schema, R23): `text` is required, `string` 1–65536 chars. Optional strings: `model` (1–128), `customPrompt` / `systemPrompt` (≤16384), and `agentName` / `language` / `locale` / `sessionId` / `clientType` / `appVersion` / `clientVersion` / `sttProvider` / `sttModel` / `sttLanguage` / `audioFormat` (≤256 each). `customDictionary` is `string[]` (each entry ≤256). Optional numbers: `sttProcessingMs`, `sttWordCount`, `audioDurationMs`, `audioSizeBytes`, `clientTotalMs`. `promptMode` / `matchType` / `provider` are **response** fields — not part of the request.
 
 **Response body (success)**
 
@@ -334,6 +336,8 @@ The client reads exactly these five fields (`src/helpers/ipcHandlers.js:5630-563
 ```
 
 `messages` and `tools` shape mirrors the Vercel AI SDK `streamText` input. Server is expected to forward to whatever LLM provider it chooses.
+
+**Field constraints** (server request schema, R23): `messages` is required, an array of 0–50 `{ role, content }` objects. Optional: `model` (`string` 1–128), `systemPrompt` (`string` ≤16384), `tools` (array of ≤64 `{ name, description?, parameters }` objects), `sessionId` / `clientType` / `appVersion` (`string` ≤256 each). Undocumented top-level keys are tolerated (`passthrough`); the `messages` and `tools` sub-objects are `strict` (fixed shape).
 
 **Response body (success)**
 

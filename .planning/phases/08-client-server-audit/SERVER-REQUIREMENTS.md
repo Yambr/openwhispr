@@ -1774,10 +1774,58 @@ this file; the fix lands in `openwhispr-server`.
 
 ## R23 — `/api/reason` and `/api/agent/stream` reject the documented request body: every client field beyond `text` / `messages` triggers `400 Invalid request`
 
-**Status:** 🔴 **OPEN — BLOCKER.** Filed 2026-05-21 from the live UI
-full-journey run (sign-up → verify → sync → transcription → AI) against
-the slim-core stack on `main` with real upstream keys (R20+R21+R22 all
-live and green).
+**Status:** ✅ **CLOSED 2026-05-21** — server commit `b9f9085b` on
+`fix/r23-reason-agent-request-schema`. The `/api/reason` and
+`/api/agent/stream` request schemas were realigned with
+`docs/BACKEND_SPEC.md`: every documented field is now explicitly
+modelled as `.optional()` with its correct type (`text` / `messages`
+stay required and validated — `text` is `string 1..65536`, no
+`z.any()`), and the schema is `.passthrough()` instead of `.strict()`
+so an undocumented future client field is tolerated rather than
+`400`-ing. The erroneous `provider` / `promptMode` / `matchType` were
+removed from `ReasonRequest` — those are *response* fields; the handler
+now echoes them as the constant `"default"`. `ReasonResponse` was not
+changed. Production diff: 3 files (`reason.ts`, `wire-schemas/reason.ts`,
+`wire-schemas/agent.ts`); handler logic untouched.
+
+**Verified live 2026-05-21** — the full first-run journey driven
+through the real OpenWhispr Electron client UI against the slim-core
+stack, end to end:
+sign-up → verify (R22 bridge chain) → signed in → notes sync →
+transcription → AI. Both AI calls returned real LLM output through the
+real client wire path:
+- `cloudReason` (carrying the full documented request body) →
+  `{success:true}`, real cleanup text from `qwen3.6-plus` via
+  `openrouter` — no `400`.
+- `startAgentStream` → a real NDJSON stream (`text-delta` … `finish`,
+  `ended:true`).
+- `agent-web-search` → cleanly degraded: the server returns
+  `503 {"error":"Web search provider is not configured"}` in ~7 ms (no
+  Tavily key on the slim stack — expected), which the client's
+  `agent-web-search` IPC handler maps to `"Request timed out"` /
+  `code:"SERVER_ERROR"` per its upstream-parity 503 mapping
+  (`ipcHandlers.js:5786-5788`). Clean failure, not a bug.
+
+The server also confirmed via direct probe: full documented body →
+`200`; an undocumented extra key → `200` (passthrough); bare `{text}` →
+`200` (no regression).
+
+> _Note (not a defect): the web-search 503 case showed the client's
+> `agent-web-search` IPC handler replaces the server error body with a
+> fixed `"Request timed out"` for any `503`. That is upstream-parity
+> client code; for web-search-without-a-key the surfaced result is
+> still correct ("it didn't work"). The server's
+> `"Web search provider is not configured"` body simply does not reach
+> the user through that particular mapping. No change needed —
+> `BACKEND_SPEC.md` already documents the 503 mapping._
+
+> _History — original finding below. Filed 2026-05-21 from the live UI
+> full-journey run._
+
+**Status (original):** 🔴 **OPEN — BLOCKER.** Filed 2026-05-21 from the
+live UI full-journey run (sign-up → verify → sync → transcription → AI)
+against the slim-core stack on `main` with real upstream keys
+(R20+R21+R22 all live and green).
 
 **Discovered:** 2026-05-21. With R22 fixed, the verified user is now
 properly signed in and the journey reached the AI use-cases. Notes sync
