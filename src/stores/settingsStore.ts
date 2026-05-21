@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { API_ENDPOINTS } from "../config/constants";
+import { PROVIDER_LOCKDOWN_ENABLED } from "../config/defaults";
 import i18n, { normalizeUiLanguage } from "../i18n";
 import { hasStoredByokKey } from "../utils/byokDetection";
 import { ensureAgentNameInDictionary } from "../utils/agentName";
@@ -693,7 +694,9 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
     if (v === "light" || v === "dark" || v === "auto") return v;
     return "auto" as const;
   })(),
-  cloudBackupEnabled: readBoolean("cloudBackupEnabled", false),
+  // Phase quick-260521-wt4 FIX2: corporate build (PROVIDER_LOCKDOWN_ENABLED)
+  // first-run default is on; a stored value still wins.
+  cloudBackupEnabled: readBoolean("cloudBackupEnabled", PROVIDER_LOCKDOWN_ENABLED),
   telemetryEnabled: readBoolean("telemetryEnabled", false),
   audioRetentionDays: (() => {
     if (!isBrowser) return 30;
@@ -866,7 +869,10 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
       v === "enterprise"
     )
       return v;
-    return "providers" as InferenceMode;
+    // Phase quick-260521-wt4 FIX3: `providers` is cut from the corporate build
+    // by InferenceConfigEditor, so the fallback must be `openwhispr` under
+    // lockdown. Default build keeps the original `providers` fallback.
+    return (PROVIDER_LOCKDOWN_ENABLED ? "openwhispr" : "providers") as InferenceMode;
   })(),
   dictationAgentProvider: readString("dictationAgentProvider", ""),
   dictationAgentModel: readString("dictationAgentModel", ""),
