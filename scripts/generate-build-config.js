@@ -506,6 +506,93 @@ function emitPreloadStreaming(resolved, outPath) {
   fs.writeFileSync(outPath, header + body, "utf8");
 }
 
+// Phase 10 PLAN-05 (PLD-05 PROVIDER_LOCKDOWN_ENABLED): mirrors emitPreloadBilling /
+// emitPreloadReferrals / emitPreloadStreaming. When PROVIDER_LOCKDOWN_ENABLED is
+// NOT true the file exports a factory returning the BYOK + enterprise key IPC
+// method bindings; when lockdown is on it returns {} and contains zero BYOK /
+// enterprise key literals. preload.js does:
+//   const buildByokApi = require("./preload-byok.generated.cjs");
+//   ...buildByokApi(ipcRenderer),
+function emitPreloadByok(resolved, outPath) {
+  const lockdown = resolved.PROVIDER_LOCKDOWN_ENABLED === true;
+  const header = [
+    "// AUTO-GENERATED — do not edit. Produced by scripts/generate-build-config.js at build time.",
+    "// Phase 10 PLD-05 (PLAN-05): build-time gate over the BYOK + enterprise key preload IPC",
+    "// method exposures. When PROVIDER_LOCKDOWN_ENABLED=true the factory returns {} and the",
+    "// literal method names are physically absent from this file (verified by",
+    "// scripts/verify-feature-gating.js).",
+    "",
+    '"use strict";',
+    "",
+  ].join("\n");
+
+  let body;
+  if (!lockdown) {
+    body = [
+      "module.exports = function buildByokApi(ipcRenderer) {",
+      "  return {",
+      "    // BYOK per-provider API keys",
+      '    getOpenAIKey: () => ipcRenderer.invoke("get-openai-key"),',
+      '    saveOpenAIKey: (key) => ipcRenderer.invoke("save-openai-key", key),',
+      '    getAnthropicKey: () => ipcRenderer.invoke("get-anthropic-key"),',
+      '    saveAnthropicKey: (key) => ipcRenderer.invoke("save-anthropic-key", key),',
+      '    getGeminiKey: () => ipcRenderer.invoke("get-gemini-key"),',
+      '    saveGeminiKey: (key) => ipcRenderer.invoke("save-gemini-key", key),',
+      '    getGroqKey: () => ipcRenderer.invoke("get-groq-key"),',
+      '    saveGroqKey: (key) => ipcRenderer.invoke("save-groq-key", key),',
+      '    getMistralKey: () => ipcRenderer.invoke("get-mistral-key"),',
+      '    saveMistralKey: (key) => ipcRenderer.invoke("save-mistral-key", key),',
+      '    proxyMistralTranscription: (data) => ipcRenderer.invoke("proxy-mistral-transcription", data),',
+      '    getCustomTranscriptionKey: () => ipcRenderer.invoke("get-custom-transcription-key"),',
+      '    saveCustomTranscriptionKey: (key) => ipcRenderer.invoke("save-custom-transcription-key", key),',
+      '    getCleanupCustomKey: () => ipcRenderer.invoke("get-cleanup-custom-key"),',
+      '    saveCleanupCustomKey: (key) => ipcRenderer.invoke("save-cleanup-custom-key", key),',
+      "    // Enterprise provider key management (Bedrock / Azure / Vertex)",
+      '    getBedrockRegion: () => ipcRenderer.invoke("get-bedrock-region"),',
+      '    saveBedrockRegion: (value) => ipcRenderer.invoke("save-bedrock-region", value),',
+      '    getBedrockProfile: () => ipcRenderer.invoke("get-bedrock-profile"),',
+      '    saveBedrockProfile: (value) => ipcRenderer.invoke("save-bedrock-profile", value),',
+      '    getBedrockAccessKeyId: () => ipcRenderer.invoke("get-bedrock-access-key-id"),',
+      '    saveBedrockAccessKeyId: (key) => ipcRenderer.invoke("save-bedrock-access-key-id", key),',
+      '    getBedrockSecretAccessKey: () => ipcRenderer.invoke("get-bedrock-secret-access-key"),',
+      '    saveBedrockSecretAccessKey: (key) => ipcRenderer.invoke("save-bedrock-secret-access-key", key),',
+      '    getBedrockSessionToken: () => ipcRenderer.invoke("get-bedrock-session-token"),',
+      '    saveBedrockSessionToken: (key) => ipcRenderer.invoke("save-bedrock-session-token", key),',
+      '    getAzureEndpoint: () => ipcRenderer.invoke("get-azure-endpoint"),',
+      '    saveAzureEndpoint: (value) => ipcRenderer.invoke("save-azure-endpoint", value),',
+      '    getAzureApiKey: () => ipcRenderer.invoke("get-azure-api-key"),',
+      '    saveAzureApiKey: (key) => ipcRenderer.invoke("save-azure-api-key", key),',
+      '    getAzureDeployment: () => ipcRenderer.invoke("get-azure-deployment"),',
+      '    saveAzureDeployment: (value) => ipcRenderer.invoke("save-azure-deployment", value),',
+      '    getAzureApiVersion: () => ipcRenderer.invoke("get-azure-api-version"),',
+      '    saveAzureApiVersion: (value) => ipcRenderer.invoke("save-azure-api-version", value),',
+      '    getVertexProject: () => ipcRenderer.invoke("get-vertex-project"),',
+      '    saveVertexProject: (value) => ipcRenderer.invoke("save-vertex-project", value),',
+      '    getVertexLocation: () => ipcRenderer.invoke("get-vertex-location"),',
+      '    saveVertexLocation: (value) => ipcRenderer.invoke("save-vertex-location", value),',
+      '    getVertexApiKey: () => ipcRenderer.invoke("get-vertex-api-key"),',
+      '    saveVertexApiKey: (key) => ipcRenderer.invoke("save-vertex-api-key", key),',
+      "    testEnterpriseConnection: (provider, config) =>",
+      '      ipcRenderer.invoke("test-enterprise-connection", provider, config),',
+      "    processEnterpriseReasoning: (text, modelId, agentName, config) =>",
+      '      ipcRenderer.invoke("process-enterprise-reasoning", text, modelId, agentName, config),',
+      "  };",
+      "};",
+      "",
+    ].join("\n");
+  } else {
+    body = [
+      "// PROVIDER_LOCKDOWN_ENABLED=true at build time — no BYOK / enterprise key preload methods exposed.",
+      "module.exports = function buildByokApi() {",
+      "  return {};",
+      "};",
+      "",
+    ].join("\n");
+  }
+
+  fs.writeFileSync(outPath, header + body, "utf8");
+}
+
 function main() {
   const repoRoot = path.resolve(__dirname, "..");
   const tsOut = path.join(repoRoot, "src", "config", "build-config.generated.ts");
@@ -514,6 +601,7 @@ function main() {
   const preloadBillingOut = path.join(repoRoot, "preload-billing.generated.cjs");
   const preloadReferralsOut = path.join(repoRoot, "preload-referrals.generated.cjs");
   const preloadStreamingOut = path.join(repoRoot, "preload-streaming.generated.cjs");
+  const preloadByokOut = path.join(repoRoot, "preload-byok.generated.cjs");
 
   const outDir = path.dirname(tsOut);
   if (!fs.existsSync(outDir)) {
@@ -527,10 +615,11 @@ function main() {
   emitPreloadBilling(resolved, preloadBillingOut);
   emitPreloadReferrals(resolved, preloadReferralsOut);
   emitPreloadStreaming(resolved, preloadStreamingOut);
+  emitPreloadByok(resolved, preloadByokOut);
 
   // eslint-disable-next-line no-console
   console.log(
-    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming}.generated.cjs (17 string keys + 7 booleans)"
+    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming,byok}.generated.cjs (17 string keys + 7 booleans)"
   );
 }
 

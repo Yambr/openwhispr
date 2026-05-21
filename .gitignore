@@ -323,6 +323,7 @@ preload-gcal.generated.cjs
 preload-billing.generated.cjs
 preload-referrals.generated.cjs
 preload-streaming.generated.cjs
+preload-byok.generated.cjs
 
 # Build outputs (anything starting with dist- or release-)
 dist-*/

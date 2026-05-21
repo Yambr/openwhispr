@@ -707,13 +707,17 @@ class IPCHandlers {
       return this.windowManager.resizeMainWindow(sizeKey);
     });
 
-    ipcMain.handle("get-openai-key", async (event) => {
-      return this.environmentManager.getOpenAIKey();
-    });
+    // Phase 10 PLD-05: BYOK OpenAI key channel — not registered under
+    // PROVIDER_LOCKDOWN (corporate build talks only to our server).
+    if (!BuildConfig.PROVIDER_LOCKDOWN_ENABLED) {
+      ipcMain.handle("get-openai-key", async (event) => {
+        return this.environmentManager.getOpenAIKey();
+      });
 
-    ipcMain.handle("save-openai-key", async (event, key) => {
-      return this.environmentManager.saveOpenAIKey(key);
-    });
+      ipcMain.handle("save-openai-key", async (event, key) => {
+        return this.environmentManager.saveOpenAIKey(key);
+      });
+    }
 
     ipcMain.handle("db-save-transcription", async (event, text, rawText, options) => {
       const result = this.databaseManager.saveTranscription(text, rawText, options);
@@ -2409,6 +2413,11 @@ class IPCHandlers {
       }
     });
 
+    // Phase 10 PLD-05: BYOK per-provider key channels + enterprise provider
+    // (Bedrock/Azure/Vertex) credential + test/reason channels are NOT
+    // registered under PROVIDER_LOCKDOWN — the corporate build carries no
+    // key-storage IPC and no enterprise-credential surface.
+    if (!BuildConfig.PROVIDER_LOCKDOWN_ENABLED) {
     ipcMain.handle("get-anthropic-key", async (event) => {
       return this.environmentManager.getAnthropicKey();
     });
@@ -2655,6 +2664,7 @@ class IPCHandlers {
         }
       }
     );
+    } // end if (!BuildConfig.PROVIDER_LOCKDOWN_ENABLED) — BYOK/enterprise key IPC
 
     ipcMain.handle("get-dictation-key", async () => {
       return this.environmentManager.getDictationKey();
@@ -2680,9 +2690,13 @@ class IPCHandlers {
       return this.environmentManager.saveActivationMode(mode);
     });
 
-    ipcMain.handle("save-anthropic-key", async (event, key) => {
-      return this.environmentManager.saveAnthropicKey(key);
-    });
+    // Phase 10 PLD-05: BYOK Anthropic save channel (separated from the main
+    // key block above) — not registered under PROVIDER_LOCKDOWN.
+    if (!BuildConfig.PROVIDER_LOCKDOWN_ENABLED) {
+      ipcMain.handle("save-anthropic-key", async (event, key) => {
+        return this.environmentManager.saveAnthropicKey(key);
+      });
+    }
 
     ipcMain.handle("get-ui-language", async () => {
       return this.environmentManager.getUiLanguage();
