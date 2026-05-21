@@ -172,3 +172,18 @@ Success Criteria (what must be TRUE):
 
 Plans:
 - [x] 09-01-PLAN.md — Re-plan post-R1-R12 closure: CJM features via cloudApiRequest IPC wire path, seed-tenant fixture, worker-scoped Electron app. Final: 44/0/0, R1-R18 closed.
+
+### Phase 10: Corporate-minimal provider lockdown — build-time gate cutting all OAuth buttons (Apple/Google/Microsoft), all alternative transcription/reasoning/agent providers (OpenAI/Groq/Mistral/Custom), and all BYOK surfaces (API key input, EnterpriseProviderConfig bedrock/azure/vertex). Client offers strictly two processing paths: Cloud (our server) or Local. Verified live against the local openwhispr-server slim stack.
+
+**Goal:** A single build-time flag `OPENWHISPR_PROVIDER_LOCKDOWN` (default `false`) produces a corporate-minimal client: zero OAuth buttons (email/password only), Cloud + Local as the only processing modes, and no alternative cloud provider, BYOK, or enterprise provider surface — all physically DCE'd from the bundle. Flag unset = byte-identical upstream parity.
+**Requirements**: PLD-01, PLD-02, PLD-03, PLD-04, PLD-05, PLD-06
+**Depends on:** Phase 9
+**Plans:** 6 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — Add OPENWHISPR_PROVIDER_LOCKDOWN flag to build-config generator + defaults.ts re-export (PLD-01)
+- [ ] 10-02-PLAN.md — Lockdown implies all three OAuth provider flags off (PLD-02)
+- [ ] 10-03-PLAN.md — Gate transcription cloud-provider tabs + BYOK input under lockdown (PLD-03)
+- [ ] 10-04-PLAN.md — Gate reasoning cloud-provider selector + EnterpriseSection under lockdown (PLD-04)
+- [ ] 10-05-PLAN.md — Gate BYOK/enterprise key IPC, preload, CustomModelInput, ApiKeysService (PLD-05)
+- [ ] 10-06-PLAN.md — verify-provider-lockdown bundle-grep gate + docs + live UAT (PLD-06)
