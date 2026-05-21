@@ -1941,8 +1941,20 @@ this file; the fix lands in `openwhispr-server`.
 
 ## R24 — Cloud AI is dead: `installGlobalSSRF()` not active in api runtime
 
-**Status:** 🔴 **OPEN** — filed 2026-05-21. BLOCKER: entire Cloud
-processing path (transcription, reasoning, agent) returns `500`.
+**Status:** ✅ **CLOSED 2026-05-22** — server commit `730bd892`.
+`installGlobalSSRF()` now returns the built dispatcher and `index.ts`
+binds it into `buildLitellmClient` via `opts.request` (variant (a)):
+the LiteLLM client holds its own SSRF-wrapped dispatcher and no longer
+reads the mutable global, so a later overwrite of `globalThis`'s
+dispatcher is irrelevant. Verified live on the rebuilt api: `/api/ready`
+→ `200` with all three checks `ok`; `/api/reason` → `200` real output;
+`/api/agent/stream` → `200` NDJSON with correct `finish`; zero
+`SsrfDispatcherNotInstalledError` in logs. `/api/transcribe` reaches
+the upstream (no longer 500 at the SSRF gate) — see R27 for the
+remaining Groq-key config gap.
+
+**Original report (filed 2026-05-21).** BLOCKER: entire Cloud
+processing path (transcription, reasoning, agent) returned `500`.
 
 **Discovered:** 2026-05-21, live verification through the real Electron
 client against the local slim-core stack (containers all "healthy").
@@ -1992,7 +2004,17 @@ with Cloud dead and no BYOK, Cloud users have zero working AI.
 
 ## R25 — No readiness/liveness gating: api serves traffic while structurally unable to
 
-**Status:** 🔴 **OPEN** — filed 2026-05-21. Process/architecture defect
+**Status:** ✅ **CLOSED 2026-05-22** — server commit `06d0812a`. New
+`/api/ready` endpoint runs the real structural assertions —
+SSRF-marker on the *current* global dispatcher (catches runtime
+overwrite, not just bootstrap), LiteLLM client constructed, upstream
+reachable. The compose `healthcheck` is switched from `/api/health`
+(liveness) to `/api/ready` (readiness), so an unable-to-serve container
+is marked unhealthy. `installGlobalSSRF()` fails fast (process exits)
+if the marker is absent. Verified live: `/api/ready` → `200`
+`{"status":"ready","checks":{ssrf_dispatcher,litellm_client,litellm_upstream all ok}}`.
+
+**Original report (filed 2026-05-21).** Process/architecture defect
 surfaced by R24.
 
 **Discovered:** 2026-05-21, same session as R24.
@@ -2036,9 +2058,19 @@ readiness.
 
 ## R26 — Cloud AI path has no e2e coverage against a real running server
 
-**Status:** 🔴 **OPEN** — filed 2026-05-21. Test-coverage gap.
+**Status:** 🟡 **PARTIAL 2026-05-22** — server commit `35d87d84` adds
+`tests/e2e/cloud-plane.e2e.test.ts` (compose up → sign-in →
+transcribe/reason/agent → assert 200). The R24 scenario it encodes was
+verified by hand via live curl, and 22 new unit tests (seam / bootstrap
+/ ssrf-request / readiness) are green. **Caveat:** the e2e file itself
+could not run through the harness — a pre-existing break in
+`tests/e2e/compose-helper.ts` (the `seed` service moved to
+`compose/overlays/contract-test.yml` after the megafile-split, so
+`bringStackUp()` no longer finds it). Logged server-side in
+`.planning/deferred-items.md` with a fix recipe. Closes once the
+compose-helper is fixed and the e2e runs green in CI.
 
-**Discovered:** 2026-05-21. R24 (Cloud AI 500) and the earlier R19–R23
+**Original report (filed 2026-05-21).** R24 (Cloud AI 500) and the earlier R19–R23
 blockers were each caught **only by live manual verification** through
 the real Electron client — never by the server's green test suite.
 
@@ -2061,3 +2093,42 @@ R24-class regression fails a test instead of a user.
 
 **Severity:** HIGH — without it, the slim-core stack has no automated
 guard on its single most important code path.
+
+---
+
+## R27 — `/api/transcribe` → 502: Groq upstream rejects the API key
+
+**Status:** 🟡 **OPEN — awaiting server clarification** — filed
+2026-05-22. Surfaced once R24 unblocked the transcription path.
+
+**Discovered:** 2026-05-22, live verification on the rebuilt api.
+
+**Symptom.** `POST /api/transcribe` → `502`
+`{"error":"Upstream transcription provider failure"}`. Logs:
+
+```
+litellm-1: litellm.BadRequestError: GroqException - Invalid API Key.
+           Model Group=whisper-large-v3
+api-1:     status:401 litellm upstream error on /api/transcribe
+           -> UpstreamError TRANSCRIPTION_UPSTREAM_FAILED -> 502
+```
+
+**Not a regression.** This is *progress*: the request now reaches the
+upstream provider — proof the R24 SSRF fix works end-to-end. It fails
+at the Groq API key, not at the SSRF gate.
+
+**Asymmetry to resolve.** `/api/reason` and `/api/agent/stream` succeed
+on a mocked `qwen` model; `/api/transcribe` routes to a *real* Groq
+endpoint (`whisper-large-v3`) and needs a valid `GROQ_API_KEY`. Either
+(a) the slim-core mock stack should mock the audio route too, for
+symmetry — so live verification doesn't need real provider keys; or
+(b) a real `GROQ_API_KEY` must be wired into the litellm `config_list`
+and is currently absent/placeholder.
+
+**Open question to server.** By design (mock stack, real key needed for
+live transcription) or a config bug (key should be valid here and
+isn't)? Pending peer `gowm923y` response.
+
+**Severity:** MEDIUM — corporate-minimal Cloud users have no working
+transcription until the upstream key is valid; reasoning/agent are fine.
+Client untouched either way.
