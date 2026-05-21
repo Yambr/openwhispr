@@ -103,10 +103,17 @@ export default function IntegrationsView({ isPaid, onUpgrade }: IntegrationsView
         </div>
       )}
 
-      <div>
-        <SectionLabel>{t("integrations.sections.mcp")}</SectionLabel>
-        <McpIntegrationCard isPaid={isPaid} onUpgrade={onUpgrade} />
-      </div>
+      {/* Phase 10: the MCP integration points at the public
+          mcp.openwhispr.com surface — an upstream surface cut from the
+          corporate build. The `!PROVIDER_LOCKDOWN_ENABLED` literal lets
+          Rolldown DCE the McpIntegrationCard import out of the corporate
+          bundle. */}
+      {!PROVIDER_LOCKDOWN_ENABLED && (
+        <div>
+          <SectionLabel>{t("integrations.sections.mcp")}</SectionLabel>
+          <McpIntegrationCard isPaid={isPaid} onUpgrade={onUpgrade} />
+        </div>
+      )}
 
       <div>
         <SectionLabel>{t("integrations.sections.cli")}</SectionLabel>
