@@ -1446,10 +1446,64 @@ chosen.
 
 ## R21 — `POST /api/auth/sign-up/email` issues no session; the email-verification screen is therefore permanently stuck at "Session expired"
 
-**Status:** 🔴 **OPEN — BLOCKER.** Filed 2026-05-21 from a live manual
-UI run of the real cloud sign-up journey (the Electron client driven
-through its actual onboarding screens against the slim-core stack — not
-an e2e harness, not a raw API probe).
+**Status:** ✅ **CLOSED 2026-05-21** — server commits `562d4713` +
+`92937f63` + `83d91acc` on `fix/r20-bearer-session-resolution`. Three
+stacked layers each gated the route and were peeled off in turn, every
+layer caught by *live* verification (not by green tests — see the
+test-gap notes below):
+
+  1. **Route-level `preHandler requireCookieOnly`** (`562d4713`) — the
+     verification-status route carried a cookie-only preHandler. Removed.
+  2. **Global `dualAuthHook` `onRequest`** (`92937f63`) — a global
+     `app.addHook` auth gate `401`'d every sessionless request *before*
+     the handler ran. Fixed by `config.auth = false` on the route so it
+     opts out of the global hook; identity is resolved by the new
+     `resolveVerificationIdentity` helper instead. `require-cookie-only.ts`
+     and `delete-account.ts` were left byte-identical — `delete-account`
+     stays cookie-only.
+  3. **Column mismatch on read** (`83d91acc`) — the route read
+     `users.email_verified_at` (a timestamptz only the seed path writes);
+     Better Auth's verify-email flow writes only `users.email_verified`
+     (boolean). The route now reads `email_verified`.
+
+The first two layers' tests were green only because they exercised a
+fragment of the path (a bare Fastify instance without the global hook;
+a manual `UPDATE users SET email_verified_at`). The final fix added an
+end-to-end characterization test that runs the *whole* real chain —
+real `sign-up/email` → real verify token from Mailpit → real
+`GET /api/auth/verify-email` → poll `verification-status` → assert
+`{verified:true}` — through `buildApp` with the full production surface,
+real `buildAuth`, and real SMTP→Mailpit. No manual `UPDATE`, no inject,
+no fake.
+
+**Auth model change — additive, R5/R15 NOT reverted.** The fix is
+variant 4A: the cookie path that R5/R15 verified (for the
+verified-and-signed-in caller) is **preserved unchanged**. R21 *adds* an
+`?email=` resolution path for the sign-up→verify window, where no
+session exists. The previously-decorative `?email=` param (parsed and
+discarded) becomes load-bearing; the old cookie-only contract is now a
+strict subset of the dual-path contract. R5/R15's dispositions stand.
+
+**Verified live 2026-05-21** — full real first-run journey driven
+through the OpenWhispr Electron client UI (`AuthenticationStep` →
+`EmailVerificationStep`) against the slim-core stack: sign-up → "Check
+your email" screen polled `verification-status` 4× returning
+`{verified:false}` with **zero `401`s** and **never** showing "Session
+expired"; the emailed verification link (host `localhost:4000`, R19
+facet holding) returned `302`; the next poll returned `{verified:true}`
+and the screen advanced itself past verification into the app's Setup
+step. The wire trace: `sign-up/email` 200 → `get-session` `null` →
+`verification-status` 200 `{verified:false}` ×4 → 200 `{verified:true}`.
+
+The new wire contract for `/api/auth/verification-status` (dual-path
+auth, 5 response cases, anti-enumeration, rate limit) was transcribed
+into `docs/BACKEND_SPEC.md` in the same client-side commit that records
+this closure.
+
+> _History — original finding below. Filed 2026-05-21 from a live
+> manual UI run of the real cloud sign-up journey (the Electron client
+> driven through its actual onboarding screens against the slim-core
+> stack — not an e2e harness, not a raw API probe)._
 
 **Discovered:** 2026-05-21, driving the OpenWhispr Electron client's
 `AuthenticationStep` → `EmailVerificationStep` flow against

@@ -65,7 +65,7 @@ The client only ever reads `data.error` (or, for `cloud-api-request`, `data.erro
 | Status | Client behavior | Where |
 |---|---|---|
 | `200`-`299` | Treat as success. Parse JSON; if parse fails, treat as success with empty body. | All endpoints |
-| `400` | On `/api/auth/verification-status`: stop polling, surface `auth.sessionExpired`. Otherwise: surface `error` from body. | `src/components/EmailVerificationStep.tsx:43` |
+| `400` | On `/api/auth/verification-status`: stop polling, surface `auth.sessionExpired`. Otherwise: surface `error` from body. _(Under the R21 dual-path contract the server never emits `400` for a format-valid poll — the client only ever sends a well-formed `?email=` — so this branch is unreachable in the real onboarding flow; see the endpoint card.)_ | `src/components/EmailVerificationStep.tsx:43` |
 | `401` | Treat as auth-expired. Cloud handlers return `{ success: false, error: "Session expired", code: "AUTH_EXPIRED" }`; renderer wraps via `withSessionRefresh()` (`src/lib/auth.ts:142-169`) which retries up to 6 times with exponential backoff (500 ms → ...) **only** if the failure occurred within 60 s of last sign-in (`GRACE_PERIOD_MS`); otherwise rethrows as `AUTH_EXPIRED`. The renderer also stops polling `/api/auth/verification-status` on 401. | `src/lib/auth.ts:142-169`, `src/helpers/ipcHandlers.js:5608, 5673, 5757, 5812, 5879, 5919, 5951, 5988, 6025, 6055, 6202` |
 | `403` | No special handling — surfaced as generic API error via `error` body. | — |
 | `404` | No special handling — surfaced as generic API error. | — |
@@ -110,27 +110,37 @@ The client only reads `data.exists` (`src/components/AuthenticationStep.tsx:170`
 
 ### `GET /api/auth/verification-status`
 
-**Purpose:** Polled by the email-verification onboarding step to detect when the user has clicked the verification link in their email.
+**Purpose:** Polled by the email-verification onboarding step (~every 5 s) to detect when the user has clicked the verification link in their email.
 
-| method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
+| method | URL pattern | auth | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `GET` | `${OPENWHISPR_API_URL}/api/auth/verification-status?email=<urlencoded>` | session cookie via `credentials: "include"` | `src/components/EmailVerificationStep.tsx:31, 35` | `renderer-direct` |
+| `GET` | `${OPENWHISPR_API_URL}/api/auth/verification-status?email=<urlencoded>` | dual-path — session cookie via `credentials: "include"` **or** `?email=` param | `src/components/EmailVerificationStep.tsx:31, 35` | `renderer-direct` |
+
+**Auth model (R21 — additive dual-path).** The route resolves caller identity from **either** a session cookie **or** the `?email=` query param. It opts out of the global bearer/cookie auth gate and **never returns 401/403 for a format-valid request**. This is required because the sign-up→verify window has no session of any kind — Better Auth issues no session under `requireEmailVerification` until the email is verified, so a cookie-only route would be unpollable during exactly the window the onboarding step depends on. The cookie path (used once the user is verified-and-signed-in) is preserved; the `?email=` path is the addition.
 
 **Request body**
 
-`GET` — no body. Email is passed as the `email` query parameter.
+`GET` — no body. Email is passed as the optional `email` query parameter (RFC-5321 email, ≤254 bytes).
 
-**Response body (success)**
+**Resolution priority (deterministic)**
 
-```json
-{ "verified": true }
-```
+1. Valid session cookie present → identity = session user. `?email=` is ignored (even on mismatch — no silent mixing).
+2. No session + format-valid `?email=` → identity = that email.
+3. No session + no `?email=` → no identity.
+
+**Response body**
+
+| status | body | when |
+|---|---|---|
+| `200` | `{ "verified": true }` | identity resolved AND the user's email is verified (server reads `users.email_verified`, the boolean Better Auth maintains). |
+| `200` | `{ "verified": false }` | identity resolved but not yet verified; OR email unknown (anti-enumeration — an unknown email is byte-identical to a known-unverified one: no 404, no oracle); OR no identity could be resolved (case 3). |
+| `400` | — | `?email=` present but malformed / >254 bytes (Zod schema validation). This is an **input** error, NOT a poll-path failure. |
 
 The client only reads `data.verified`. When it flips to `true`, the client clears its polling timer and advances the onboarding flow after a 1.2 s display delay.
 
-**Error deviations:** On HTTP 401 or 400 the client stops polling and surfaces `auth.sessionExpired` (`src/components/EmailVerificationStep.tsx:43-46`). Network errors are silently swallowed and retried on the next interval.
+**Never returns 401 or 403 for a format-valid request.** Rate limit: 30/min keyed on `(ip, sha256(lower(email)))`; absent `?email=` → ip-only key.
 
-**Notes:** Polled every 5000 ms via `setInterval` (`src/components/EmailVerificationStep.tsx:50`) for as long as the verification step is mounted and `verified` is false. Polling stops on success, on 4xx auth failure, and on unmount.
+**Notes:** Polled every 5000 ms via `setInterval` (`src/components/EmailVerificationStep.tsx:50`) for as long as the verification step is mounted and `verified` is false. Polling stops on success and on unmount. The client's `EmailVerificationStep.tsx:43-46` still treats a `401`/`400` as a dead session and surfaces `auth.sessionExpired` — under the R21 contract the server never emits `401` for a format-valid poll, and `400` only on a malformed `?email=` (which the client never sends), so this branch is unreachable in the real onboarding flow.
 
 ---
 
