@@ -169,6 +169,11 @@ function buildResolved() {
     resolved.OAUTH_GOOGLE_ENABLED = false;
     resolved.OAUTH_APPLE_ENABLED = false;
     resolved.OAUTH_MICROSOFT_ENABLED = false;
+    // Under lockdown realtime ASR is always served by our backend's WSS proxy,
+    // so streaming must be enabled. An explicit OPENWHISPR_STREAMING=false under
+    // lockdown is a contradiction — lockdown is the stronger corporate posture
+    // and always wins (mirrors the OAuth override above).
+    resolved.STREAMING_ENABLED = true;
   }
   // Phase 05 D-01: apply derivation only when caller did not explicitly set
   // OPENWHISPR_REALTIME_WSS_URL (resolveValue returns "" both when unset
@@ -198,10 +203,15 @@ function buildResolved() {
   );
   if (
     !userExplicitlyEnabledStreaming &&
+    !resolved.PROVIDER_LOCKDOWN_ENABLED &&
     resolved.STREAMING_ENABLED &&
     !resolved.OPENWHISPR_REALTIME_WSS_URL
   ) {
     resolved.STREAMING_ENABLED = false;
+  }
+  // Lockdown wins over the B1 auto-disable even in a misconfigured edge case.
+  if (resolved.PROVIDER_LOCKDOWN_ENABLED === true) {
+    resolved.STREAMING_ENABLED = true;
   }
   return resolved;
 }

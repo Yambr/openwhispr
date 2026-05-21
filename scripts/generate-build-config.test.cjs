@@ -134,3 +134,28 @@ test("lockdown unset -> OAUTH_* flags keep their BOOL_DEFAULTS value true", () =
     }
   );
 });
+
+test("PROVIDER_LOCKDOWN=true with backend URL -> STREAMING_ENABLED is true", () => {
+  withEnvMap(
+    {
+      OPENWHISPR_PROVIDER_LOCKDOWN: "true",
+      OPENWHISPR_BACKEND_URL: "http://localhost:4000",
+    },
+    () => {
+      assert.strictEqual(buildResolved().STREAMING_ENABLED, true);
+    }
+  );
+});
+
+test("PROVIDER_LOCKDOWN=true overrides explicit OPENWHISPR_STREAMING=false (lockdown wins)", () => {
+  withEnvMap(
+    {
+      OPENWHISPR_PROVIDER_LOCKDOWN: "true",
+      OPENWHISPR_BACKEND_URL: "http://localhost:4000",
+      OPENWHISPR_STREAMING: "false",
+    },
+    () => {
+      assert.strictEqual(buildResolved().STREAMING_ENABLED, true);
+    }
+  );
+});
