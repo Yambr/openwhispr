@@ -1621,10 +1621,52 @@ lands in `openwhispr-server`.
 
 ## R22 — after a real sign-up→verify the user lands in the app with NO session at all: no cookie, no bearer, `get-session` → `null`
 
-**Status:** 🔴 **OPEN — BLOCKER.** Filed 2026-05-21 from a live manual
-UI run: the OpenWhispr Electron client driven through the real
-onboarding (`AuthenticationStep` → `EmailVerificationStep`) against the
-slim-core stack on `main` (post R20+R21).
+**Status:** ✅ **CLOSED 2026-05-21** — server commit `55c04499` on
+`fix/r22-verify-email-session`. Fixed via Option C (deliver the session
+through the client's existing auth-bridge, not via a cookie the client
+can never see). Option A (Set-Cookie on `verification-status`) was
+considered and **rejected** during design: `verification-status` is
+`auth:false` and resolves a bare `?email=`, so minting a session there
+would let anyone who knows a verified user's email poll
+`verification-status?email=victim@…` and harvest the victim's session
+cookie — an account-takeover oracle, not mere fixation. The session
+mint must be bound to a proven fact (possession of the one-time verify
+token), which only the Better Auth `verify-email` handler can attest.
+
+Implementation: `autoSignInAfterVerification:true` so `verify-email`
+creates a session; a `sendVerificationEmail` hook rewrites the link's
+`callbackURL` to a new server route `GET /api/auth/verify-email-complete`
+(`auth:false`, rate-limited, by analogy with the existing OAuth
+`auth-callback.ts` — Better Auth 1.6.9 has no per-request
+redirect-rewrite hook). That route reads the freshly-minted Better Auth
+session cookie, extracts the raw `session.token`, and `302`s to the
+client's loopback auth-bridge `http://127.0.0.1:5199/oauth/callback?bearer_token=<token>`.
+The redirect target is a server-fixed loopback literal (not an
+attacker-controllable `callbackURL` → no open-redirect).
+`verification-status.ts` / `require-cookie-only.ts` /
+`delete-account.ts` were left byte-identical.
+
+**Verified live 2026-05-21** — full first-run journey driven through
+the real OpenWhispr Electron client UI against the slim-core stack:
+sign-up → "Check your email" → the emailed verification link followed
+through its real redirect chain —
+`verify-email` `302` → `verify-email-complete` `302` →
+`127.0.0.1:5199/oauth/callback?bearer_token=…` `200` ("OpenWhispr
+sign-in complete"). The client's auth-bridge consumed the token,
+`applySessionTokenAndRefresh` reloaded the control panel, and the
+client settled **stably signed in** — `cloudApiRequest("GET","/api/usage")`
+returned `{success:true}` on the first poll cycle, no race with
+`EmailVerificationStep`'s polling, no hang. Notes sync immediately
+worked thereafter. The bearer is a raw Better Auth session token,
+resolved by the same dual-auth path as `sign-in/email`.
+
+> _History — original finding below. Filed 2026-05-21 from a live
+> manual UI run (post R20+R21)._
+
+**Status (original):** 🔴 **OPEN — BLOCKER.** Filed 2026-05-21 from a
+live manual UI run: the OpenWhispr Electron client driven through the
+real onboarding (`AuthenticationStep` → `EmailVerificationStep`)
+against the slim-core stack on `main` (post R20+R21).
 
 **Discovered:** 2026-05-21, extending the live UI verification to the
 post-R21 state. R21 fixed the verification *polling* — the screen now
@@ -1727,3 +1769,122 @@ this file; the fix lands in `openwhispr-server`.
     `GET /api/auth/get-session` MUST return a real session (not
     `null`), and `cloudApiRequest("GET","/api/usage")` MUST return
     `{success:true}`. No manual sign-out/sign-in step may be required.
+
+---
+
+## R23 — `/api/reason` and `/api/agent/stream` reject the documented request body: every client field beyond `text` / `messages` triggers `400 Invalid request`
+
+**Status:** 🔴 **OPEN — BLOCKER.** Filed 2026-05-21 from the live UI
+full-journey run (sign-up → verify → sync → transcription → AI) against
+the slim-core stack on `main` with real upstream keys (R20+R21+R22 all
+live and green).
+
+**Discovered:** 2026-05-21. With R22 fixed, the verified user is now
+properly signed in and the journey reached the AI use-cases. Notes sync
+and transcription both passed end-to-end (real Groq transcription:
+"Hello world, this is a transcription test for OpenWhispr"). The
+reasoning and agent-stream calls then failed.
+
+**Problem — observed wire behavior.** The client's `cloud-reason` and
+`cloud-agent-stream-start` IPC handlers build their request bodies from
+fixed field lists (`src/helpers/ipcHandlers.js:5604-5628` and
+`5677-5684`). Driven through the real client these calls return
+`{success:false,error:"Invalid request"}` (reason) and a
+`cloud-agent-stream-error` with `{error:"Invalid request"}` (stream).
+
+Isolated with a direct `curl` probe against `:4000` using a real
+verified-user bearer — **the body copied verbatim from
+`docs/BACKEND_SPEC.md`**:
+
+```
+POST /api/reason
+  body = {"text","model","agentName","customDictionary","customPrompt",
+          "systemPrompt","language","locale","sessionId","clientType",
+          "appVersion","clientVersion"}   ← the documented client body
+  → HTTP 400 {"error":"Invalid request"}
+
+POST /api/reason
+  body = {"text":"helo wrld this is a tst"}    ← text only
+  → HTTP 200 {"text":"Hello World! …","model":"qwen3.6-plus",
+              "provider":"openrouter","promptMode":"default","matchType":"default"}
+
+POST /api/agent/stream
+  body = {"messages":[{role,content}],"systemPrompt","sessionId",
+          "clientType","appVersion"}    ← the documented client body
+  → HTTP 400 {"error":"Invalid request"}
+```
+
+So the route works with a bare `{text}` but **rejects the documented
+body the real client actually sends**. The server's request schema is
+evidently `.strict()` and only recognises a narrow set of keys — it
+rejects `model`, `agentName`, `customDictionary`, `customPrompt`,
+`systemPrompt`, `language`, `locale`, `sessionId`, `clientType`,
+`appVersion`, `clientVersion` (reason) and `systemPrompt`, `sessionId`,
+`clientType`, `appVersion` (stream).
+
+**Root cause.** The server is validating the request body against a
+schema that does not match the documented `/api/reason` and
+`/api/agent/stream` wire contracts. `docs/BACKEND_SPEC.md` (this repo's
+authoritative wire contract) specifies the full request shapes and
+states explicitly: *"All fields except `text` are conditional on the
+caller supplying them. The server is expected to tolerate missing
+keys."* The server does the opposite — it tolerates missing keys but
+**rejects present, documented keys**. Likely cause: the server schema
+was modelled on the *response* shape (`{text, model, provider,
+promptMode, matchType}`) rather than the documented *request* shape,
+and/or marked `.strict()`.
+
+**Why this is a server defect, not a client one.** The client is
+immutable (upstream-parity constraint) and sends exactly the body
+documented in `BACKEND_SPEC.md` — verified by reading
+`ipcHandlers.js:5604-5628` / `5677-5684` and confirmed by the
+spec-verbatim `curl` returning the same `400`. `BACKEND_SPEC.md` is the
+agreed wire contract; the server must accept the request bodies it
+documents. The client cannot drop fields — that code is upstream
+parity and the fields carry real telemetry/agent context.
+
+**Required (R23).** `/api/reason` and `/api/agent/stream` MUST accept
+the full documented request bodies:
+
+  - `/api/reason` — accept `text` (required) plus all of `model`,
+    `agentName`, `customDictionary`, `customPrompt`, `systemPrompt`,
+    `language`, `locale`, `sessionId`, `clientType`, `appVersion`,
+    `clientVersion`, `sttProvider`, `sttModel`, `sttProcessingMs`,
+    `sttWordCount`, `sttLanguage`, `audioDurationMs`, `audioSizeBytes`,
+    `audioFormat`, `clientTotalMs` as **optional** fields (see the
+    `POST /api/reason` card in `docs/BACKEND_SPEC.md`).
+  - `/api/agent/stream` — accept `messages` (required) plus `systemPrompt`,
+    `tools`, `sessionId`, `clientType`, `appVersion` as optional.
+
+The schema must be **non-strict on unknown keys** (or explicitly model
+every documented field). The server may ignore fields it does not use,
+but MUST NOT `400` on their presence. A request carrying the documented
+body must reach the LLM and return a real result, exactly as the bare
+`{text}` request already does.
+
+**Severity:** BLOCKER for the AI use-cases. With R23 open, the real
+client can never invoke reasoning or the agent — every call from the
+shipped client carries the documented fields and thus always `400`s.
+The bare-`{text}` success is misleading: the production client never
+sends a bare body.
+
+**Cross-reference:** independent of the R21/R22 auth family — this is a
+request-schema contract violation, surfaced only once R22 let the
+journey reach the AI calls.
+
+**Repo boundary.** Server-side fix only. Do NOT patch the client —
+`ipcHandlers.js`'s `cloud-reason` / `cloud-agent-stream-start` send the
+documented bodies and are upstream parity. The fix is to align the
+server request schemas with `docs/BACKEND_SPEC.md`. Findings stay in
+this file; the fix lands in `openwhispr-server`.
+
+## R23 verification protocol
+
+24. **R23 documented request body accepted** — `POST /api/reason` with
+    the full body from the `BACKEND_SPEC.md` card (all client fields
+    present) returns `200` with a real `text` result, NOT `400`.
+    `POST /api/agent/stream` with the documented body
+    (`messages` + `systemPrompt` + `sessionId` + `clientType` +
+    `appVersion`) returns a `200` NDJSON stream, NOT `400`. Confirmed
+    end-to-end through the real Electron client: `cloudReason` and the
+    agent stream return real LLM output.
