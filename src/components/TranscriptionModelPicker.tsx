@@ -308,12 +308,21 @@ export default function TranscriptionModelPicker({
   const { confirmDialog, showConfirmDialog, hideConfirmDialog } = useDialogs();
   const colorScheme: ColorScheme = variant === "settings" ? "purple" : "blue";
   const styles = useMemo(() => MODEL_PICKER_COLORS[colorScheme], [colorScheme]);
-  const cloudProviders = useMemo(
-    () => (streamingOnly ? getStreamingTranscriptionProviders() : getTranscriptionProviders()),
-    [streamingOnly]
-  );
+  const cloudProviders = useMemo(() => {
+    const base = streamingOnly
+      ? getStreamingTranscriptionProviders()
+      : getTranscriptionProviders();
+    // Under provider lockdown, Cloud mode talks only to our server: expose a
+    // single cloud provider (the one routed through our backend) and drop
+    // groq/mistral from every model dropdown.
+    return PROVIDER_LOCKDOWN_ENABLED ? base.slice(0, 1) : base;
+  }, [streamingOnly]);
   const cloudProviderTabs = useMemo(() => {
-    const visibleIds = new Set([...cloudProviders.map((p) => p.id), "custom"]);
+    const visibleIds = new Set(cloudProviders.map((p) => p.id));
+    // The "custom" transcription provider tab exists only in the default build.
+    if (!PROVIDER_LOCKDOWN_ENABLED) {
+      visibleIds.add("custom");
+    }
     return CLOUD_PROVIDER_TABS.filter((p) => visibleIds.has(p.id)).map((provider) =>
       provider.id === "custom" ? { ...provider, name: t("transcription.customProvider") } : provider
     );
