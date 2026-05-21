@@ -110,6 +110,7 @@ None yet.
 | 260521-wt4-FIX1 | Gate Pro/upgrade/limit UI behind BILLING_ENABLED — usage limits neutralized, sidebar banners + UpgradePrompt DCE'd, integration cards unlocked in corporate build | 2026-05-21 | 8f9f63f3, 5d59e421 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
 | 260521-wt4-FIX2 | cloudBackupEnabled first-run default now follows PROVIDER_LOCKDOWN_ENABLED (on in corporate build) | 2026-05-21 | 76bdb747 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
 | 260521-wt4-FIX3 | dictationAgentMode fallback resolves to openwhispr under lockdown instead of cut `providers` mode | 2026-05-21 | 76bdb747 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
+| 260521-wt4-FIX4 | Transcription picker under lockdown exposes one cloud provider (no Custom/groq/mistral); self-hosted transcription mode + SelfHostedPanel now DCE'd in SettingsPage/MeetingSettings; verify:provider-lockdown extended with TRANSCRIPTION target group | 2026-05-21 | bffd60b6, cfaf30a1 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
 
 ## Session Continuity
 
