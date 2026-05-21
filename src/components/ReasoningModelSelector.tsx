@@ -510,9 +510,11 @@ export default function ReasoningModelSelector({
         <div className="space-y-2">
           {/* Phase 10 PLD-04: under PROVIDER_LOCKDOWN_ENABLED the cloud-provider
               selector, the custom-provider BYOK panel (OpenAICompatiblePanel),
-              and the per-provider API-key inputs are all DCE-eliminated. Cloud
-              mode then talks only to our server; the model card list still
-              renders. Default build keeps the full provider choice. */}
+              the per-provider API-key inputs, AND the cloud model card list are
+              all DCE-eliminated. Cloud mode then talks only to our server, which
+              selects the model internally — there is no user-facing model
+              sub-list (mirrors Settings/InferenceConfigEditor). Default build
+              keeps the full provider choice and model list. */}
           {!PROVIDER_LOCKDOWN_ENABLED && (
             <ProviderTabs
               providers={cloudProviders}
@@ -631,16 +633,18 @@ export default function ReasoningModelSelector({
                   </div>
                 )}
 
-                <div className="pt-3 space-y-2">
-                  <h4 className="text-sm font-medium text-foreground">
-                    {t("reasoning.selectModel")}
-                  </h4>
-                  <ModelCardList
-                    models={selectedCloudModels}
-                    selectedModel={reasoningModel}
-                    onModelSelect={setReasoningModel}
-                  />
-                </div>
+                {!PROVIDER_LOCKDOWN_ENABLED && (
+                  <div className="pt-3 space-y-2">
+                    <h4 className="text-sm font-medium text-foreground">
+                      {t("reasoning.selectModel")}
+                    </h4>
+                    <ModelCardList
+                      models={selectedCloudModels}
+                      selectedModel={reasoningModel}
+                      onModelSelect={setReasoningModel}
+                    />
+                  </div>
+                )}
               </>
             )}
           </div>
