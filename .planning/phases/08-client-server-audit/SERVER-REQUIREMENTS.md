@@ -1936,3 +1936,128 @@ this file; the fix lands in `openwhispr-server`.
     `appVersion`) returns a `200` NDJSON stream, NOT `400`. Confirmed
     end-to-end through the real Electron client: `cloudReason` and the
     agent stream return real LLM output.
+
+---
+
+## R24 — Cloud AI is dead: `installGlobalSSRF()` not active in api runtime
+
+**Status:** 🔴 **OPEN** — filed 2026-05-21. BLOCKER: entire Cloud
+processing path (transcription, reasoning, agent) returns `500`.
+
+**Discovered:** 2026-05-21, live verification through the real Electron
+client against the local slim-core stack (containers all "healthy").
+
+**Symptom.** Login succeeds (`POST /api/auth/sign-in/email` → `200`,
+token issued). Every downstream Cloud-mode call fails:
+
+```
+POST /api/transcribe   → 500
+POST /api/reason       → 500
+POST /api/agent/stream → 500
+```
+
+api-1 logs, identical stack on each:
+
+```
+SsrfDispatcherNotInstalledError: LiteLLM client refused to send:
+SSRF-wrapped undici dispatcher not installed as the process-wide
+global. Call `installGlobalSSRF()` (apps/api/src/bootstrap.ts) or pass
+an explicit `request` option to buildLitellmClient before invoking any
+method.
+  code: SSRF_DISPATCHER_NOT_INSTALLED   status: 500
+  at assertSsrfInstalled (dist/index.js:2281)
+  at ssrfGate            (dist/index.js:2324)
+  at chatCompletions / audioTranscriptions
+```
+
+**Root cause (server-owned).** `ssrfGate` runs `assertSsrfInstalled()`
+before every LiteLLM call; the process-wide SSRF dispatcher was never
+installed. Either `installGlobalSSRF()` is missing from the bootstrap
+path of the *built* `dist/index.js` running in the container, or it is
+called *after* `buildLitellmClient` has already cached a client without
+the `request` option, or the shipped image is stale relative to source.
+
+**Expected.** `installGlobalSSRF()` runs during api process bootstrap,
+before any route handler can reach `ssrfGate`. After it, `/api/transcribe`,
+`/api/reason`, `/api/agent/stream` return `200`.
+
+**Suggested resolution.** Server fixes bootstrap ordering / rebuilds
+the api image so `installGlobalSSRF()` is genuinely on the startup
+path. Client must not be touched.
+
+**Severity:** CRITICAL — corporate-minimal client has only Cloud + Local;
+with Cloud dead and no BYOK, Cloud users have zero working AI.
+
+---
+
+## R25 — No readiness/liveness gating: api serves traffic while structurally unable to
+
+**Status:** 🔴 **OPEN** — filed 2026-05-21. Process/architecture defect
+surfaced by R24.
+
+**Discovered:** 2026-05-21, same session as R24.
+
+**Symptom.** The api container reports `Up 3 hours (healthy)` and
+accepts requests, yet **cannot service any LiteLLM call** because the
+SSRF dispatcher is not installed. A structural precondition for the
+core product function is missing, but:
+
+- the process did **not** crash-loop on startup;
+- the Docker `healthcheck` reports **healthy**;
+- there is no readiness probe distinguishing "process up" from
+  "process able to serve AI".
+
+So the only signal a misconfigured deploy gives is a `500` on the first
+real user request — exactly the R24 failure mode.
+
+**Expected.**
+1. **Fail-fast on missing preconditions.** If `installGlobalSSRF()` (or
+   any non-optional bootstrap step) did not run, the process should
+   refuse to start / exit non-zero → crash-loop, not serve. A required
+   dependency being absent must be a startup error, not a per-request
+   `500`.
+2. **Readiness probe** that asserts the *real* preconditions
+   (SSRF dispatcher installed, LiteLLM client constructable, upstream
+   reachable) — distinct from a shallow liveness `/health`. The current
+   healthcheck is a liveness check masquerading as readiness.
+3. The Docker/compose `healthcheck` (and any k8s manifests) should hit
+   the readiness endpoint so an unable-to-serve container is reported
+   unhealthy and not given traffic.
+
+**Suggested resolution.** Server adds a readiness endpoint that runs
+the structural assertions; bootstrap converts non-optional setup
+failures into a hard process exit; compose `healthcheck` points at
+readiness.
+
+**Severity:** HIGH — without this, every future bootstrap regression
+(R24-class) ships silently and is caught only by a user hitting a 500.
+
+---
+
+## R26 — Cloud AI path has no e2e coverage against a real running server
+
+**Status:** 🔴 **OPEN** — filed 2026-05-21. Test-coverage gap.
+
+**Discovered:** 2026-05-21. R24 (Cloud AI 500) and the earlier R19–R23
+blockers were each caught **only by live manual verification** through
+the real Electron client — never by the server's green test suite.
+
+**Root cause.** Server characterization tests model a *fragment* of the
+path: `buildApp` in-memory without the full bootstrap chain, or a mocked
+LiteLLM layer. `installGlobalSSRF()` is never exercised in test, so its
+absence is invisible. Tests are green because they assert what the
+author thought happens, not what the deployed container does.
+
+**Expected.** An e2e suite that drives the **real running api
+container** (full bootstrap, real LiteLLM/litellm container, real
+Postgres) and asserts `/api/transcribe`, `/api/reason`,
+`/api/agent/stream` return `200` with real output — following the real
+chain, not a hand-built fixture. See client memory
+`live-verification-over-green-tests`.
+
+**Suggested resolution.** Server adds container-level e2e (compose up →
+sign-in → transcribe/reason/agent → assert 200) wired into CI, so an
+R24-class regression fails a test instead of a user.
+
+**Severity:** HIGH — without it, the slim-core stack has no automated
+guard on its single most important code path.
