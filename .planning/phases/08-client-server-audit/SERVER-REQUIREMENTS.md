@@ -1144,6 +1144,27 @@ real `POST /api/auth/sign-up/email` → worker logs `email.sent` (zero
 /api/auth/sign-in/email` returns `200` with a session and
 `emailVerified:true`. The real first-run user journey now completes.
 
+**R19 follow-up facet — RE-OPENED 2026-05-21 (verification link host).**
+The delivered email's verification link points at
+`http://api.localhost/api/auth/verify-email?token=…` — the internal
+Traefik hostname. `docker-compose.yml` defaults `OPENWHISPR_API_URL` /
+`AUTH_URL` / `INGRESS_BASE_URL` to `https://api.localhost` (lines
+248-257), and the email-link builder uses that base URL. `api.localhost`
+does not resolve outside the Docker network, so a developer (or a real
+self-hoster on a non-Traefik slim deploy) clicking the link from a
+normal mail client gets a dead link — the link only works from inside
+the compose network. The R19 manual verification only completed
+because the probe rewrote the host to the published `localhost:4000`.
+
+Required: on the slim-core profile, the verification-email base URL
+must be a host reachable from where the user reads their mail. Either
+default `INGRESS_BASE_URL` (or the dedicated email-link base) to the
+published `http://localhost:4000` on the no-Traefik slim profile, or
+document that slim-core operators must set it. The link in the email
+must be clickable from a normal browser without manual rewriting.
+Severity: LOW for slim-core dev (workaround = rewrite host), but it
+WILL break a real self-hoster who doesn't front the stack with Traefik.
+
 **Discovered:** 2026-05-20, live manual probe of the cloud sign-up
 journey against the slim-core stack (not an e2e harness run — a real
 `POST /api/auth/sign-up/email` followed by `POST /api/auth/sign-in/email`).
@@ -1246,3 +1267,142 @@ session. `docker compose logs worker` shows `email.sent`, not
     email (Mailpit or test-route token), and post-verification sign-in
     returns `200`. No `ECONNREFUSED 192.168.96.2:587` in the worker
     logs.
+
+---
+
+## R20 — sync routes (`/api/notes/*`, `/api/usage`, …) reject every Better Auth bearer token; only the session cookie is accepted — the real signed-in client cannot sync
+
+**Discovered:** 2026-05-21, live manual probe of the real cloud sync
+journey against the slim-core stack, immediately after R19 unblocked
+sign-up → verify → sign-in. Not an e2e harness run — a genuine
+sign-up → email-verify → sign-in → `notes/create`, exactly as the
+shipped client does it.
+
+**Severity:** BLOCKER for the real product. The e2e suite is green
+ONLY because it authenticates via `/api/_test/seed-tenant`, whose
+bearer the custom Bearer middleware happens to accept. A genuine
+signed-in user — the actual product flow — cannot create, list, or
+sync a single note. The cloud product is non-functional for real
+users despite a 44/0/0 e2e run.
+
+**Violation:** After a real verified sign-in, NONE of the bearer tokens
+Better Auth issues are accepted by the sync routes. Only the raw
+session cookie works:
+
+```
+# Probed on GET /api/notes/list, real verified user, fresh sign-in:
+session.token (from GET /api/auth/get-session)  → 401 unauthorized
+set-auth-token response header (from sign-in)   → 401 unauthorized
+session cookie                                  → 200  ✅
+GET /api/auth/token  (Better Auth bearer plugin endpoint) → 404
+```
+
+Same result on `/api/usage` (401 bearer, 200 cookie). So the failure is
+the whole sync-route family behind the custom Bearer middleware, not a
+single route.
+
+**Why this is a server bug, not a client one** — the shipped client's
+auth-header resolver (`src/helpers/ipcHandlers.js:3395-3402`,
+`getAuthHeaderFromWindow`) is explicit:
+
+```js
+// Bearer auth is preferred. Cookie fallback covers the brief window before
+// main.js's startup migration bridge runs (or if it failed for this user).
+const token = tokenStore.get();
+if (token) return { Authorization: `Bearer ${token}` };
+// ... else Cookie
+```
+
+and `main.js:499-518` (`exchangeSignedTokenForRawBearer`) deliberately
+calls `GET /api/auth/get-session` to obtain `session.token`, stores it
+in `tokenStore`, and from then on every sync request carries
+`Authorization: Bearer <session.token>`. The client's entire design
+assumes **`session.token` is a bearer the API accepts.** The comment
+even says "the raw session.token the bearer plugin expects". The
+server does not honor it. This is a contract break on the server side.
+
+**Root-cause hypotheses (for the server team to confirm):**
+
+1. The Better Auth **bearer plugin is not mounted** — `GET
+   /api/auth/token` returns `404`, which is the plugin's own endpoint.
+   If the bearer plugin were enabled, `session.token` presented as
+   `Authorization: Bearer …` would resolve. Without it, Better Auth
+   only accepts the session cookie.
+2. OR the custom Bearer middleware in front of `/api/notes/*` etc.
+   validates against a *different* token namespace (e.g. the
+   `/api/v1/keys` API-key tokens, or the seed-tenant bearer) and was
+   never wired to resolve a Better Auth `session.token`. The
+   seed-tenant bearer works only because seed-tenant mints a token in
+   exactly the shape that middleware expects — a test artifact, not the
+   real sign-in path.
+
+**Required server behavior:** A user who completes a real
+`sign-up → verify → sign-in` MUST be able to authenticate to every
+documented sync route (`/api/notes/*`, `/api/folders/*`,
+`/api/conversations/*`, `/api/transcriptions/*`, `/api/usage`,
+`/api/v1/keys/*`, …) with the bearer the client actually holds. Pick
+one and make it true end-to-end:
+
+- **(a)** Mount the Better Auth **bearer plugin** so `session.token`
+  presented as `Authorization: Bearer <token>` resolves on every route
+  the cookie resolves on. This is the smallest change and matches the
+  client comment ("the bearer plugin expects"). `GET /api/auth/token`
+  should then stop 404ing. **Recommended.**
+- **(b)** Make the custom Bearer middleware resolve a Better Auth
+  `session.token` (look the session up by token, same as the cookie
+  resolver does). Then `get-session` → `session.token` → `Authorization:
+  Bearer` works without the plugin.
+
+Either way: the seed-tenant bearer and the real-sign-in bearer must
+resolve through the **same** code path. Today they diverge — that
+divergence is exactly why the e2e suite is green while the real product
+is broken.
+
+**Reject:**
+- "The client should use the cookie" — the client's documented,
+  shipped design prefers Bearer and only falls back to cookie for a
+  brief upgrade window. Per `client_immutable`, the client is not
+  modified to match the server. (And even the cookie fallback only
+  works because the renderer's Electron jar holds the cookie — the
+  `cloudApiRequest` path the e2e suite verified drives Bearer.)
+- "seed-tenant works, so auth is fine" — seed-tenant is a test-only
+  route. Its bearer working proves the middleware accepts *a* token
+  shape, not *the* token a real user gets. R20 is precisely the gap
+  between those two.
+- "BACKEND_SPEC doesn't pin the bearer mechanism" — BACKEND_SPEC's
+  every authenticated route says `Authorization: Bearer <session-token>`.
+  The session token IS `session.token`. The server must honor it.
+- Any client-side change — the client correctly exchanges cookie →
+  `session.token` → Bearer. The 401 is 100% server-side token
+  resolution.
+
+**Verification (must pass before R20 is closed):**
+
+```
+# Real journey, no seed-tenant, no test routes:
+1. POST /api/auth/sign-up/email      → 200
+2. (verify via emailed link)         → 302
+3. POST /api/auth/sign-in/email      → 200, capture session cookie
+4. GET  /api/auth/get-session        → 200, capture session.token
+5. GET  /api/notes/list
+     with Authorization: Bearer <session.token>  → 200  (currently 401)
+6. POST /api/notes/create
+     with Authorization: Bearer <session.token>  → 201  (currently 401)
+```
+
+All four authenticated families (`notes`, `folders`, `conversations`,
+`transcriptions`) plus `/api/usage` must accept the real-sign-in
+bearer. `GET /api/auth/token` should return 200 if option (a) is
+chosen.
+
+---
+
+## R20 verification protocol
+
+21. **R20 real-sign-in bearer on sync routes** — a bearer obtained
+    from a genuine `sign-up → verify → sign-in → get-session` round
+    trip (the `session.token`) is accepted as `Authorization: Bearer`
+    on `/api/notes/*`, `/api/folders/*`, `/api/conversations/*`,
+    `/api/transcriptions/*`, and `/api/usage`. The seed-tenant bearer
+    and the real-sign-in bearer resolve through the same middleware
+    path.
