@@ -2374,3 +2374,90 @@ streams realtime dictation through our server, never to api.openai.com.
 **Severity:** HIGH — realtime dictation is broken in the corporate
 build until the client is repointed (client-side fix in progress) and
 this server path is confirmed.
+
+---
+
+## R31 — Realtime `/v1/realtime`: upstream closes with code 1011 immediately after WS open
+
+**Status:** 🔴 **OPEN** — filed 2026-05-22.
+
+**Discovered:** 2026-05-22, MANDATORY LIVE RUN for client quick task
+`260522-wt6-realtime-streaming-lockdown` plan 03. The corporate-build
+client fix (Design B — session bearer to `/v1/realtime`) is complete
+and verified working **on the client side**: the real lockdown Electron
+app drove `dictationRealtimeWarmup` → `connectDictationStreaming` →
+`fetchRealtimeToken` → `OpenAIRealtimeStreaming.connect`, and the
+main-process debug log shows:
+
+```
+[DEBUG] OpenAI Realtime connecting { model: 'gpt-realtime' }
+[DEBUG] OpenAI Realtime WebSocket opened
+[DEBUG] OpenAI Realtime WebSocket closed { code: 1011, reason: 'unexpected response', wasActive: false }
+```
+
+So: the client connects to `ws://localhost:4000/v1/realtime?intent=transcription`
+with the Better Auth session bearer, the server **accepts the upgrade**
+(no `401` — auth gate passes, confirming R30/R20), the downstream
+WebSocket reaches `OPEN` — and then the server closes it with **code
+1011 ("unexpected response")** *before emitting any
+`transcription_session.created` event*. `wasActive: false` means the
+close happened pre-session-ready. No `api.openai.com` connection and no
+OpenAI-direct fallback occur — the client routing is correct.
+
+**Analysis.** 1011 = server-side internal error. The close fires after
+the client-facing upgrade succeeds but before the realtime session is
+established, which points at the **upstream leg** — Fastify proxy →
+LiteLLM → OpenAI Realtime. The `/v1/realtime` route opened the
+client-facing socket, then the upstream realtime connection (LiteLLM
+`mode: realtime`, or the OpenAI upstream) failed and the proxy
+propagated a 1011. The `reason: 'unexpected response'` string is the
+`ws` library's signal that the upstream returned a non-WebSocket HTTP
+response to the upgrade request.
+
+**Note on a possible contract mismatch.** R30 states `/v1/realtime` is a
+*transparent passthrough* that does NOT inject the model — "the client
+sets the model in the session payload (first realtime event after
+open)". The corporate client connects with `preconfigured: true`
+(`OpenAIRealtimeStreaming`), which means it **waits for**
+`transcription_session.created` and does NOT proactively send a
+`transcription_session.update`. If LiteLLM's realtime upstream requires
+the model to be supplied as a query param or first inbound event before
+it will establish the OpenAI upstream, a transparent passthrough that
+forwards nothing until the client speaks could deadlock — but a deadlock
+would surface as a *connection timeout* (15 s), not an immediate 1011.
+The immediate 1011 more strongly indicates the upstream WS handshake
+itself failed. Server to confirm whether `model` must be on the
+`/v1/realtime` query string for the upstream LiteLLM realtime leg to
+negotiate.
+
+**What the server must verify / fix.**
+1. Reproduce: open a WS to `/v1/realtime?intent=transcription` with a
+   valid Better Auth bearer and capture the upstream LiteLLM/OpenAI
+   realtime handshake. Identify why the upstream returns a non-WS
+   response (auth? model? `intent=transcription` query param not
+   forwarded? LiteLLM realtime route misconfigured?).
+2. Confirm `LITELLM_MASTER_KEY` substitution actually reaches a working
+   LiteLLM realtime endpoint — R30 verified the *client-facing* upgrade
+   and master-key swap, but the live run shows the *upstream* leg fails.
+3. If the upstream needs the model before negotiation, document the
+   exact contract (query param vs. first event) so the client's
+   `preconfigured` flag and connect sequence can be matched. The client
+   currently sends `model: 'gpt-realtime'` to `OpenAIRealtimeStreaming`
+   but with `preconfigured: true` does not emit a
+   `transcription_session.update`.
+
+**Expected.** A WS to `/v1/realtime` with a valid bearer reaches a
+`transcription_session.created` event and a real dictation transcribes
+end-to-end through LiteLLM — no 1011, no upstream handshake failure.
+
+**Client status.** Client-side Design B fix is COMPLETE and verified:
+correct WSS target, session bearer auth, `gpt-realtime` default, zero
+`api.openai.com` egress, no OpenAI-direct fallback. No further client
+change is warranted for R31 until the server clarifies the upstream
+contract — a `preconfigured` adjustment would be a client change to
+bridge a server gap and is explicitly out of bounds per the repo
+boundary rule.
+
+**Severity:** HIGH — realtime dictation still cannot complete a
+transcription in the corporate build; the failure is now isolated to
+the server's upstream realtime leg (was: client routing — fixed).
