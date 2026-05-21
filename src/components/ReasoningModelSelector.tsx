@@ -22,6 +22,7 @@ import { getProviderIcon, isMonochromeProvider } from "../utils/providerIcons";
 import { createExternalLinkHandler } from "../utils/externalLinks";
 import { getCachedPlatform } from "../utils/platform";
 import { useSettingsStore } from "../stores/settingsStore";
+import { PROVIDER_LOCKDOWN_ENABLED } from "../config/defaults";
 
 type CloudModelOption = {
   value: string;
@@ -507,15 +508,22 @@ export default function ReasoningModelSelector({
 
       {effectiveMode === "cloud" && (
         <div className="space-y-2">
-          <ProviderTabs
-            providers={cloudProviders}
-            selectedId={selectedCloudProvider}
-            onSelect={handleCloudProviderChange}
-            colorScheme="purple"
-          />
+          {/* Phase 10 PLD-04: under PROVIDER_LOCKDOWN_ENABLED the cloud-provider
+              selector, the custom-provider BYOK panel (OpenAICompatiblePanel),
+              and the per-provider API-key inputs are all DCE-eliminated. Cloud
+              mode then talks only to our server; the model card list still
+              renders. Default build keeps the full provider choice. */}
+          {!PROVIDER_LOCKDOWN_ENABLED && (
+            <ProviderTabs
+              providers={cloudProviders}
+              selectedId={selectedCloudProvider}
+              onSelect={handleCloudProviderChange}
+              colorScheme="purple"
+            />
+          )}
 
           <div>
-            {selectedCloudProvider === "custom" ? (
+            {!PROVIDER_LOCKDOWN_ENABLED && selectedCloudProvider === "custom" ? (
               <OpenAICompatiblePanel
                 baseUrl={cloudReasoningBaseUrl}
                 setBaseUrl={setCloudReasoningBaseUrl}
@@ -527,7 +535,7 @@ export default function ReasoningModelSelector({
               />
             ) : (
               <>
-                {selectedCloudProvider === "openai" && (
+                {!PROVIDER_LOCKDOWN_ENABLED && selectedCloudProvider === "openai" && (
                   <div className="space-y-2">
                     <div className="flex items-baseline justify-between">
                       <h4 className="font-medium text-foreground">{t("common.apiKey")}</h4>
@@ -550,7 +558,7 @@ export default function ReasoningModelSelector({
                   </div>
                 )}
 
-                {selectedCloudProvider === "anthropic" && (
+                {!PROVIDER_LOCKDOWN_ENABLED && selectedCloudProvider === "anthropic" && (
                   <div className="space-y-2">
                     <div className="flex items-baseline justify-between">
                       <h4 className="font-medium text-foreground">{t("common.apiKey")}</h4>
@@ -575,7 +583,7 @@ export default function ReasoningModelSelector({
                   </div>
                 )}
 
-                {selectedCloudProvider === "gemini" && (
+                {!PROVIDER_LOCKDOWN_ENABLED && selectedCloudProvider === "gemini" && (
                   <div className="space-y-2">
                     <div className="flex items-baseline justify-between">
                       <h4 className="font-medium text-foreground">{t("common.apiKey")}</h4>
@@ -600,7 +608,7 @@ export default function ReasoningModelSelector({
                   </div>
                 )}
 
-                {selectedCloudProvider === "groq" && (
+                {!PROVIDER_LOCKDOWN_ENABLED && selectedCloudProvider === "groq" && (
                   <div className="space-y-2">
                     <div className="flex items-baseline justify-between">
                       <h4 className="font-medium text-foreground">{t("common.apiKey")}</h4>
