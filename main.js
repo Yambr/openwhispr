@@ -743,14 +743,28 @@ async function startApp() {
   // Electron's file:// renderer sends Origin: null, which Better Auth's
   // trustedOrigins check rejects. Spoof Origin to the request's own URL so
   // calls to OpenWhispr's auth and API hosts are treated as same-origin.
-  session.defaultSession.webRequest.onBeforeSendHeaders(
-    {
-      urls: [
-        "https://auth.openwhispr.com/*",
-        "https://api.openwhispr.com/*",
+  //
+  // The filter must cover whatever hosts THIS build talks to. The two
+  // openwhispr.com patterns are the upstream-parity defaults; a corporate
+  // build (OPENWHISPR_BACKEND_URL / OPENWHISPR_AUTH_URL set, e.g.
+  // openwhispr.yambr.com) derives its own patterns in
+  // scripts/generate-build-config.js (deriveOriginPattern). Without this
+  // the rewrite never fires for a non-openwhispr.com host → Origin stays
+  // null → Better Auth MISSING_OR_NULL_ORIGIN. localhost:3000 dev entries
+  // are always kept so the web-dashboard dev server works.
+  const originRewriteUrls = [
+    ...new Set(
+      [
+        BuildConfig.OPENWHISPR_AUTH_URL_PATTERN,
+        BuildConfig.OPENWHISPR_BACKEND_URL_PATTERN,
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*",
-      ],
+      ].filter(Boolean)
+    ),
+  ];
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    {
+      urls: originRewriteUrls,
     },
     (details, callback) => {
       try {
