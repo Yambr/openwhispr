@@ -9,6 +9,15 @@ export default defineConfig({
       "scripts/**/*.test.{js,ts,mjs,cjs}",
       "src/**/*.test.{js,ts,mjs,cjs}",
     ],
+    // node:test-style files (require("node:test")) cannot run under vitest —
+    // it reports "No test suite found". They run via `npm run test:build-config`
+    // (node --test). Keep these two lists in sync.
+    exclude: [
+      "**/node_modules/**",
+      "**/*.test.cjs",
+      "test/helpers/whisperVadConfig.test.js",
+      "test/helpers/whisperServerVadArgs.test.js",
+    ],
     // Phase 07 D-02: scope coverage to ONLY phase-04/04.1/05 additions.
     coverage: {
       provider: "v8",
