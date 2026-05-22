@@ -3025,7 +3025,12 @@ model (operator-overridable).
 
 ## R34 — `/api/usage` omits `isSubscribed` → desktop cloud sync never runs, web dashboard stays empty
 
-**Status:** 🔴 **OPEN** — filed 2026-05-22.
+**Status:** 🟢 **CLOSED** — server fix, verified live 2026-05-22 in the
+final sync e2e (transcription/note/conversation all sync end-to-end).
+`/api/usage` now returns `isSubscribed:true` for the corporate
+`unlimited` plan; `canSync()` passes all three gates.
+
+**Status (original):** 🔴 OPEN — filed 2026-05-22.
 
 **Discovered:** 2026-05-22, live corporate-build run. The desktop app
 works (transcription, chat, dictation) but the web dashboard at
@@ -3096,7 +3101,13 @@ any desktop-produced content.
 
 ## R35 — sync `batch-create` endpoints reject the upstream client's request body with `Invalid request`
 
-**Status:** 🔴 **OPEN** — filed 2026-05-22.
+**Status:** 🟢 **CLOSED** — server commits `0484b161`/`20d8a03d`/
+`85728bdd`/`8b6485c3`, verified live 2026-05-22. INPUT schemas now
+accept SQLite space-form datetimes (normalized to ISO) and free-text
+`status`; RESPONSE schemas stay strict. Final sync e2e: transcriptions
+reach the server.
+
+**Status (original):** 🔴 OPEN — filed 2026-05-22.
 
 **Discovered:** 2026-05-22, live e2e sync run AFTER R34 landed. With all
 three `canSync()` gates now passing (`isSignedIn` / `cloudBackupEnabled`
@@ -3175,7 +3186,11 @@ is rejected.
 
 ## R36 — `/api/conversations/create` rejects `message.metadata: null`
 
-**Status:** 🔴 **OPEN** — filed 2026-05-22.
+**Status:** 🟢 **CLOSED** — server commit `ef5e81ea`, verified live
+2026-05-22. Conversation `message.metadata` is now `.nullish()`. Final
+sync e2e: conversations reach the server (`conv 11 → 12`).
+
+**Status (original):** 🔴 OPEN — filed 2026-05-22.
 
 **Discovered:** 2026-05-22, live sync e2e after R34+R35 closed.
 Transcription sync now works end-to-end (verified: server count
@@ -3231,7 +3246,15 @@ sync IS working after R34+R35.)
 
 ## R37 — `/api/notes/batch-create` rejects `null` on optional note fields
 
-**Status:** 🔴 **OPEN** — filed 2026-05-22.
+**Status:** 🟢 **CLOSED** — server commit `83dd9312`, verified live
+2026-05-22. Root cause was NOT the null fields (those were already
+nullable) — it was `note_type`: the client's SQLite `note_type` is
+free-text (`"note"`), the server schema was a strict enum. Fixed
+lenient-input/strict-output like R35: `NoteInputSchema.note_type` →
+free-text `.nullish()`, normalized to a canonical value at the route.
+Final sync e2e: notes reach the server (`notes 0 → 1`).
+
+**Status (original — root cause guess was wrong, see closure):** 🔴 OPEN — filed 2026-05-22.
 
 **Discovered:** 2026-05-22, full sync e2e after R34/R35/R36. Result:
 transcription sync PASS, conversation sync PASS (R36 verified live),
