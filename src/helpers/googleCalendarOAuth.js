@@ -1,7 +1,6 @@
 const http = require("http");
-const https = require("https");
 const crypto = require("crypto");
-const { shell } = require("electron");
+const { net, shell } = require("electron");
 const {
   OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL,
   OPENWHISPR_OAUTH_GOOGLE_AUTH_URL,
@@ -231,36 +230,19 @@ class GoogleCalendarOAuth {
     }
   }
 
-  _httpsPost(urlString, body) {
-    const url = new URL(urlString);
-    return new Promise((resolve, reject) => {
-      const req = https.request(
-        {
-          hostname: url.hostname,
-          port: 443,
-          path: url.pathname,
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Content-Length": Buffer.byteLength(body),
-          },
-        },
-        (res) => {
-          let data = "";
-          res.on("data", (chunk) => (data += chunk));
-          res.on("end", () => {
-            try {
-              resolve(JSON.parse(data));
-            } catch (e) {
-              reject(new Error(`Invalid JSON response: ${data.slice(0, 200)}`));
-            }
-          });
-        }
-      );
-      req.on("error", reject);
-      req.write(body);
-      req.end();
+  async _httpsPost(urlString, body) {
+    const response = await net.fetch(urlString, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      useSessionCookies: false,
     });
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error(`Invalid JSON response: ${text.slice(0, 200)}`);
+    }
   }
 }
 

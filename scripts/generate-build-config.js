@@ -300,6 +300,7 @@ function emitPreloadGcal(resolved, outPath) {
       '    gcalGetCalendars: () => ipcRenderer.invoke("gcal-get-calendars"),',
       "    gcalSetCalendarSelection: (calendarId, isSelected) =>",
       '      ipcRenderer.invoke("gcal-set-calendar-selection", calendarId, isSelected),',
+      '    gcalSetPrimaryOnly: (value) => ipcRenderer.invoke("gcal-set-primary-only", value),',
       '    gcalSyncEvents: () => ipcRenderer.invoke("gcal-sync-events"),',
       "    gcalGetUpcomingEvents: (windowMinutes) =>",
       '      ipcRenderer.invoke("gcal-get-upcoming-events", windowMinutes),',

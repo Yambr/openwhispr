@@ -546,6 +546,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   notifyLimitReached: (data) => ipcRenderer.send("limit-reached", data),
   onLimitReached: registerListener("limit-reached", (callback) => (_event, data) => callback(data)),
 
+  // Workspace invitation deep link
+  onWorkspaceInvitationToken: registerListener(
+    "workspace-invitation-token",
+    (callback) => (_event, token) => callback(token)
+  ),
+
   // Globe key listener for hotkey capture (macOS only)
   onGlobeKeyPressed: (callback) => {
     const listener = () => callback?.();
@@ -757,10 +763,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   meetingDetectionGetPreferences: () => ipcRenderer.invoke("meeting-detection-get-preferences"),
   meetingDetectionSetPreferences: (prefs) =>
     ipcRenderer.invoke("meeting-detection-set-preferences", prefs),
+  syncNotificationPreferences: (prefs) =>
+    ipcRenderer.invoke("sync-notification-preferences", prefs),
   setSpeakerDiarizationEnabled: (enabled) =>
     ipcRenderer.invoke("meeting-set-speaker-diarization-enabled", { enabled }),
   setMeetingSessionSpeakerConfig: (config) =>
     ipcRenderer.invoke("meeting-set-session-speaker-config", config),
+  getWhisperVadConfig: () => ipcRenderer.invoke("whisper-vad-get-config"),
+  setWhisperVadConfig: (config) => ipcRenderer.invoke("whisper-vad-set-config", config),
   onMeetingDetected: registerListener(
     "meeting-detected",
     (callback) => (_event, data) => callback(data)
@@ -778,9 +788,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   meetingNotificationRespond: (detectionId, action) =>
     ipcRenderer.invoke("meeting-notification-respond", detectionId, action),
   joinCalendarMeeting: (eventId) => ipcRenderer.invoke("join-calendar-meeting", eventId),
-  onNavigateToMeetingNote: registerListener(
-    "navigate-to-meeting-note",
-    (callback) => (_event, data) => callback(data)
+  getPendingMeetingNoteNavigation: () => ipcRenderer.invoke("get-pending-meeting-note-navigation"),
+  onMeetingNoteNavigationPending: registerListener(
+    "meeting-note-navigation-pending",
+    (callback) => () => callback()
   ),
   onNavigateToNote: registerListener(
     "navigate-to-note",

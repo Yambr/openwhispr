@@ -2,8 +2,6 @@ const { ipcMain, app, shell, BrowserWindow, systemPreferences, net } = require("
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const http = require("http");
-const https = require("https");
 const crypto = require("crypto");
 const debugLogger = require("./debugLogger");
 const BuildConfig = require("../config/build-config.generated.cjs");
@@ -35,6 +33,11 @@ const {
   DEFAULT_EXPECTED_SPEAKER_COUNT,
   MAX_SPEAKER_COUNT,
 } = require("../constants/speakerDetection.json");
+const {
+  DEFAULT_WHISPER_VAD_CONFIG,
+  sanitizeWhisperVadConfig,
+  resolveContextSileroEnabled,
+} = require("./whisperVadConfig");
 
 const STREAMING_CLIENT_BY_PROVIDER = {
   "openai-realtime": OpenAIRealtimeStreaming,
@@ -70,6 +73,7 @@ const AUDIO_MIME_TYPES = {
   m4a: "audio/mp4",
   webm: "audio/webm",
   ogg: "audio/ogg",
+  oga: "audio/ogg",
   flac: "audio/flac",
   aac: "audio/aac",
 };
@@ -106,37 +110,22 @@ function buildMultipartBody(fileBuffer, fileName, contentType, fields = {}) {
   return { body: Buffer.concat(bodyParts), boundary };
 }
 
-function postMultipart(url, body, boundary, headers = {}) {
-  const httpModule = url.protocol === "https:" ? https : http;
-  return new Promise((resolve, reject) => {
-    const req = httpModule.request(
-      {
-        hostname: url.hostname,
-        port: url.port || (url.protocol === "https:" ? 443 : 80),
-        path: url.pathname,
-        method: "POST",
-        headers: {
-          "Content-Type": `multipart/form-data; boundary=${boundary}`,
-          "Content-Length": body.length,
-          ...headers,
-        },
-      },
-      (res) => {
-        let responseData = "";
-        res.on("data", (chunk) => (responseData += chunk));
-        res.on("end", () => {
-          try {
-            resolve({ statusCode: res.statusCode, data: JSON.parse(responseData) });
-          } catch (e) {
-            reject(new Error(`Invalid JSON response: ${responseData.slice(0, 200)}`));
-          }
-        });
-      }
-    );
-    req.on("error", reject);
-    req.write(body);
-    req.end();
+async function postMultipart(url, body, boundary, headers = {}) {
+  const response = await net.fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      ...headers,
+    },
+    body,
+    useSessionCookies: false,
   });
+  const text = await response.text();
+  try {
+    return { statusCode: response.status, data: JSON.parse(text) };
+  } catch {
+    throw new Error(`Invalid JSON response: ${text.slice(0, 200)}`);
+  }
 }
 
 function interpretTranscribeResponse(data) {
@@ -320,6 +309,12 @@ class IPCHandlers {
     this._noteFilesEnabled = false;
     this.speakerDiarizationEnabled = true;
     this.activeMeetingSpeakerConfig = null;
+    this.whisperVadSettings = {
+      dictationSileroEnabled: true,
+      noteRecordingSileroEnabled: true,
+      meetingSileroEnabled: true,
+      ...DEFAULT_WHISPER_VAD_CONFIG,
+    };
     liveSpeakerIdentifier.setDiarizationManager(this.diarizationManager);
     this._setupTextEditMonitor();
     this._setupAudioCleanup();
@@ -331,6 +326,35 @@ class IPCHandlers {
         this.broadcastToWindows("cuda-fallback-notification", {});
       });
     }
+  }
+
+  _getWhisperVadSettings() {
+    const current = this.whisperVadSettings || {};
+    return {
+      dictationSileroEnabled: current.dictationSileroEnabled !== false,
+      noteRecordingSileroEnabled: current.noteRecordingSileroEnabled !== false,
+      meetingSileroEnabled: current.meetingSileroEnabled !== false,
+      ...sanitizeWhisperVadConfig(current),
+    };
+  }
+
+  _setWhisperVadSettings(update = {}) {
+    this.whisperVadSettings = { ...this._getWhisperVadSettings(), ...update };
+    return this._getWhisperVadSettings();
+  }
+
+  _resolveWhisperVadOptions(context) {
+    const settings = this._getWhisperVadSettings();
+    const {
+      dictationSileroEnabled,
+      noteRecordingSileroEnabled,
+      meetingSileroEnabled,
+      ...vadConfig
+    } = settings;
+    return {
+      vadEnabled: resolveContextSileroEnabled(settings, context),
+      vadConfig,
+    };
   }
 
   _asyncVectorUpsert(note) {
@@ -1383,7 +1407,10 @@ class IPCHandlers {
       const result = await dialog.showOpenDialog({
         properties: ["openFile"],
         filters: [
-          { name: "Audio Files", extensions: ["mp3", "wav", "m4a", "webm", "ogg", "flac", "aac"] },
+          {
+            name: "Audio Files",
+            extensions: ["mp3", "wav", "m4a", "webm", "ogg", "oga", "flac", "aac"],
+          },
         ],
       });
       if (result.canceled || !result.filePaths.length) {
@@ -1410,7 +1437,11 @@ class IPCHandlers {
           const result = await this.parakeetManager.transcribeLocalParakeet(audioBuffer, options);
           return result;
         }
-        const result = await this.whisperManager.transcribeLocalWhisper(audioBuffer, options);
+        const vadOptions = this._resolveWhisperVadOptions("noteRecording");
+        const result = await this.whisperManager.transcribeLocalWhisper(audioBuffer, {
+          ...options,
+          ...vadOptions,
+        });
         return result;
       } catch (error) {
         debugLogger.error("Audio file transcription error", { error: error.message });
@@ -1419,13 +1450,18 @@ class IPCHandlers {
     });
 
     ipcMain.handle("paste-text", async (event, text, options) => {
-      // If the floating dictation panel currently has focus, dismiss it so the
-      // paste keystroke lands in the user's target app instead of the overlay.
       const mainWindow = this.windowManager?.mainWindow;
-      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) {
+      const targetPid = this.textEditMonitor?.lastTargetPid || null;
+
+      // Activating the target by PID is more reliable than hide()'s implicit
+      // focus hand-off for Chromium apps like Claude desktop and Brave (#668).
+      let activated = false;
+      if (process.platform === "darwin" && this.textEditMonitor) {
+        activated = await this.textEditMonitor.activateTargetPid();
+      }
+
+      if (!activated && mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) {
         if (process.platform === "darwin") {
-          // hide() forces macOS to activate the previous app; showInactive()
-          // restores the overlay without stealing focus.
           mainWindow.hide();
           await new Promise((resolve) => setTimeout(resolve, 120));
           mainWindow.showInactive();
@@ -1438,7 +1474,6 @@ class IPCHandlers {
         ...options,
         webContents: event.sender,
       });
-      const targetPid = this.textEditMonitor?.lastTargetPid || null;
       debugLogger.debug("[AutoLearn] Paste completed", {
         autoLearnEnabled: this._autoLearnEnabled,
         hasMonitor: !!this.textEditMonitor,
@@ -1489,7 +1524,11 @@ class IPCHandlers {
       });
 
       try {
-        const result = await this.whisperManager.transcribeLocalWhisper(audioBlob, options);
+        const vadOptions = this._resolveWhisperVadOptions("dictation");
+        const result = await this.whisperManager.transcribeLocalWhisper(audioBlob, {
+          ...options,
+          ...vadOptions,
+        });
 
         debugLogger.log("Whisper result", {
           success: result.success,
@@ -2054,6 +2093,7 @@ class IPCHandlers {
       if (this._hotkeyCaptureMode === enabled) return { success: true, skipped: true };
       this._hotkeyCaptureMode = enabled;
       this.windowManager.setHotkeyListeningMode(enabled);
+      ipcMain.emit("hotkey-listening-mode-changed", null, enabled);
       const hotkeyManager = this.windowManager.hotkeyManager;
 
       // When exiting capture mode with a new hotkey, use that to avoid reading stale state
@@ -2063,10 +2103,12 @@ class IPCHandlers {
         isGlobeLikeHotkey,
         isModifierOnlyHotkey,
         isRightSideModifier,
+        isMouseButtonHotkey,
       } = require("./hotkeyManager");
       const usesNativeListener = (hotkey) =>
         !hotkey ||
         isGlobeLikeHotkey(hotkey) ||
+        isMouseButtonHotkey(hotkey) ||
         isModifierOnlyHotkey(hotkey) ||
         isRightSideModifier(hotkey);
 
@@ -3560,9 +3602,11 @@ class IPCHandlers {
               settings.parakeetModel || process.env.PARAKEET_MODEL || "parakeet-tdt-0.6b-v3";
             result = await this.parakeetManager.transcribeLocalParakeet(buffer, { model });
           } else if (this.whisperManager?.serverManager?.isAvailable?.()) {
+            const vadOptions = this._resolveWhisperVadOptions("noteRecording");
             result = await this.whisperManager.transcribeLocalWhisper(buffer, {
               model: settings.whisperModel,
               language,
+              ...vadOptions,
             });
           }
         } else if (settings?.cloudTranscriptionMode === "openwhispr") {
@@ -4728,9 +4772,11 @@ class IPCHandlers {
             model: meetingLocalModel,
           });
         } else {
+          const vadOptions = this._resolveWhisperVadOptions("meeting");
           result = await this.whisperManager.transcribeLocalWhisper(wav, {
             model: meetingLocalModel,
             language: meetingLocalLanguage,
+            ...vadOptions,
           });
         }
 
@@ -4967,9 +5013,11 @@ class IPCHandlers {
             model: dictationPreviewModel,
           });
         } else {
+          const vadOptions = this._resolveWhisperVadOptions("dictation");
           result = await this.whisperManager.transcribeLocalWhisper(wav, {
             model: dictationPreviewModel,
             language: dictationPreviewLanguage,
+            ...vadOptions,
           });
         }
 
@@ -5195,12 +5243,12 @@ class IPCHandlers {
           }
           await startMeetingAec(systemAudioMode);
           await startLiveSpeakerIdentification(win, systemAudioMode);
-          systemAudioStrategy = await startMeetingSystemAudio(
+          ({ systemAudioMode, systemAudioStrategy } = await startMeetingSystemAudio(
             event,
             systemAudioMode,
             systemAudioStrategy,
             "during warm-start reuse"
-          );
+          ));
           return {
             success: true,
             systemAudioMode,
@@ -5225,12 +5273,12 @@ class IPCHandlers {
             transcribeAllLocalBuffers();
           }, 5000);
 
-          systemAudioStrategy = await startMeetingSystemAudio(
+          ({ systemAudioMode, systemAudioStrategy } = await startMeetingSystemAudio(
             event,
             systemAudioMode,
             systemAudioStrategy,
             "in local meeting mode"
-          );
+          ));
 
           debugLogger.debug("Meeting transcription started in local mode", {
             provider: meetingLocalProvider,
@@ -5254,12 +5302,12 @@ class IPCHandlers {
         const realtimeWin = BrowserWindow.fromWebContents(event.sender);
         await startLiveSpeakerIdentification(realtimeWin, systemAudioMode);
         await startMeetingAec(systemAudioMode);
-        systemAudioStrategy = await startMeetingSystemAudio(
+        ({ systemAudioMode, systemAudioStrategy } = await startMeetingSystemAudio(
           event,
           systemAudioMode,
           systemAudioStrategy,
           "in realtime mode"
-        );
+        ));
         return {
           success: true,
           systemAudioMode,
@@ -5371,24 +5419,44 @@ class IPCHandlers {
       context
     ) => {
       if (systemAudioMode === "native") {
-        await startNativeMeetingSystemAudio(event);
-        return systemAudioStrategy;
+        try {
+          await startNativeMeetingSystemAudio(event);
+          return { systemAudioMode, systemAudioStrategy };
+        } catch (error) {
+          debugLogger.warn(
+            `Native system audio tap failed ${context}, falling back to mic-only`,
+            { error: error.message },
+            "meeting"
+          );
+          if (this._meetingSystemStreaming?.isConnected) {
+            await this._meetingSystemStreaming.disconnect().catch((disconnectError) => {
+              debugLogger.debug(
+                "System streaming disconnect during native fallback failed",
+                { error: disconnectError.message },
+                "meeting"
+              );
+            });
+          }
+          this._meetingSystemStreaming = null;
+          await stopLiveSpeakerIdentification().catch(() => {});
+          return { systemAudioMode: "unsupported", systemAudioStrategy: "unsupported" };
+        }
       }
 
       if (systemAudioStrategy !== "portal-helper") {
-        return systemAudioStrategy;
+        return { systemAudioMode, systemAudioStrategy };
       }
 
       try {
         await startLinuxMeetingSystemAudio(event);
-        return systemAudioStrategy;
+        return { systemAudioMode, systemAudioStrategy };
       } catch (error) {
         debugLogger.warn(
           `Linux portal helper failed ${context}, falling back to browser portal`,
           { error: error.message },
           "meeting"
         );
-        return "browser-portal";
+        return { systemAudioMode, systemAudioStrategy: "browser-portal" };
       }
     };
 
@@ -7127,6 +7195,15 @@ class IPCHandlers {
         }
       });
 
+      ipcMain.handle("gcal-set-primary-only", async (_event, value) => {
+        try {
+          await this.googleCalendarManager.setPrimaryOnly(value);
+          return { success: true };
+        } catch (error) {
+          return { success: false, error: error.message };
+        }
+      });
+
       ipcMain.handle("gcal-sync-events", async () => {
         try {
           await this.googleCalendarManager.syncEvents();
@@ -7196,10 +7273,50 @@ class IPCHandlers {
       }
     });
 
+    const NOTIFICATION_PREF_KEYS = new Set([
+      "notificationsEnabled",
+      "notifyMeetingDetection",
+      "notifyCalendarReminders",
+      "notifyUpdates",
+    ]);
+
+    ipcMain.handle("sync-notification-preferences", async (_event, prefs) => {
+      try {
+        if (!prefs || typeof prefs !== "object") {
+          return { success: false, error: "Invalid preferences" };
+        }
+        for (const [k, v] of Object.entries(prefs)) {
+          if (NOTIFICATION_PREF_KEYS.has(k)) {
+            this.windowManager.notificationPrefs[k] = !!v;
+          }
+        }
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
     ipcMain.handle("meeting-set-speaker-diarization-enabled", async (_event, payload) => {
       try {
         this.speakerDiarizationEnabled = payload?.enabled !== false;
         return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle("whisper-vad-get-config", async () => {
+      try {
+        return { success: true, config: this._getWhisperVadSettings() };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle("whisper-vad-set-config", async (_event, payload) => {
+      try {
+        const config = this._setWhisperVadSettings(payload || {});
+        return { success: true, config };
       } catch (error) {
         return { success: false, error: error.message };
       }
@@ -7244,6 +7361,10 @@ class IPCHandlers {
 
     ipcMain.handle("get-meeting-notification-data", async () => {
       return this.windowManager?._pendingNotificationData ?? null;
+    });
+
+    ipcMain.handle("get-pending-meeting-note-navigation", async () => {
+      return this.windowManager?.consumePendingMeetingNoteNavigation() ?? null;
     });
 
     ipcMain.handle("meeting-notification-ready", async () => {
@@ -7687,10 +7808,8 @@ class IPCHandlers {
   _resolveSpeakerExpectation({ sessionConfig, noteId, observedSpeakerIds }) {
     if (sessionConfig?.expectedCount) {
       const total = Math.min(sessionConfig.expectedCount, MAX_SPEAKER_COUNT);
-      return {
-        numSpeakers: Math.max(1, total - 1),
-        cap: null,
-      };
+      const numSpeakers = Math.max(1, total - 1);
+      return { numSpeakers, cap: numSpeakers };
     }
 
     let attendees = [];
@@ -7703,17 +7822,13 @@ class IPCHandlers {
       }
     }
     if (attendees.length >= 2) {
-      return {
-        numSpeakers: Math.min(attendees.length, MAX_SPEAKER_COUNT),
-        cap: null,
-      };
+      const numSpeakers = Math.min(attendees.length, MAX_SPEAKER_COUNT);
+      return { numSpeakers, cap: numSpeakers };
     }
 
     if (observedSpeakerIds.size >= 2) {
-      return {
-        numSpeakers: Math.min(observedSpeakerIds.size, MAX_SPEAKER_COUNT),
-        cap: null,
-      };
+      const numSpeakers = Math.min(observedSpeakerIds.size, MAX_SPEAKER_COUNT);
+      return { numSpeakers, cap: numSpeakers };
     }
 
     return { numSpeakers: -1, cap: DEFAULT_EXPECTED_SPEAKER_COUNT };

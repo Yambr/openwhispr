@@ -9,10 +9,12 @@ import {
   Keyboard,
   CreditCard,
   Shield,
+  Users,
 } from "lucide-react";
 import SidebarModal, { type SidebarItem } from "./ui/SidebarModal";
 import SettingsPage, { SettingsSectionType } from "./SettingsPage";
 import { BILLING_ENABLED } from "@/config/defaults";
+import { WORKSPACES_ENABLED } from "../lib/features";
 
 export type { SettingsSectionType };
 
@@ -71,6 +73,17 @@ export default function SettingsModal({ open, onOpenChange, initialSection }: Se
             },
           ]
         : []),
+      ...(WORKSPACES_ENABLED
+        ? [
+            {
+              id: "workspace" as const,
+              label: t("settingsModal.sections.workspace.label"),
+              icon: Users,
+              description: t("settingsModal.sections.workspace.description"),
+              group: t("settingsModal.groups.account"),
+            },
+          ]
+        : []),
       {
         id: "general",
         label: t("settingsModal.sections.general.label"),
@@ -117,8 +130,12 @@ export default function SettingsModal({ open, onOpenChange, initialSection }: Se
     [t]
   );
 
-  const resolveSection = (section: string | undefined): SettingsSectionType =>
-    section ? ((SECTION_ALIASES[section] ?? section) as SettingsSectionType) : "account";
+  const resolveSection = (section: string | undefined): SettingsSectionType => {
+    if (!section) return "account";
+    const resolved = (SECTION_ALIASES[section] ?? section) as SettingsSectionType;
+    if (resolved === "workspace" && !WORKSPACES_ENABLED) return "account";
+    return resolved;
+  };
 
   const [activeSection, setActiveSection] = React.useState<SettingsSectionType>(() =>
     resolveSection(initialSection)
