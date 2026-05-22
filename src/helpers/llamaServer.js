@@ -1,10 +1,10 @@
 const { spawn } = require("child_process");
 const fs = require("fs");
-const net = require("net");
 const path = require("path");
 const http = require("http");
 const debugLogger = require("./debugLogger");
 const { killProcess } = require("../utils/process");
+const { isPortAvailable } = require("../utils/serverUtils");
 const { getSafeTempDir } = require("./safeTempDir");
 const { app } = require("electron");
 const sidecarPidFile = require("./sidecarPidFile");
@@ -97,21 +97,9 @@ class LlamaServerManager {
 
   async findAvailablePort() {
     for (let port = PORT_RANGE_START; port <= PORT_RANGE_END; port++) {
-      if (await this.isPortAvailable(port)) return port;
+      if (await isPortAvailable(port)) return port;
     }
     throw new Error(`No available ports in range ${PORT_RANGE_START}-${PORT_RANGE_END}`);
-  }
-
-  isPortAvailable(port) {
-    return new Promise((resolve) => {
-      const server = net.createServer();
-      server.once("error", () => resolve(false));
-      server.once("listening", () => {
-        server.close();
-        resolve(true);
-      });
-      server.listen(port, "127.0.0.1");
-    });
   }
 
   async start(modelPath, options = {}) {
@@ -443,12 +431,20 @@ class LlamaServerManager {
 
     this.clearIdleTimer();
 
-    const body = JSON.stringify({
+    const requestBody = {
       messages,
       temperature: options.temperature ?? 0.7,
       max_tokens: options.max_tokens ?? 512,
       stream: false,
-    });
+    };
+
+    // Without this, Qwen chat templates leave `message.content` empty and
+    // route output into `reasoning_content`. Non-Qwen templates ignore it.
+    if (options.disableThinking !== false) {
+      requestBody.chat_template_kwargs = { enable_thinking: false };
+    }
+
+    const body = JSON.stringify(requestBody);
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
@@ -483,7 +479,8 @@ class LlamaServerManager {
 
             try {
               const response = JSON.parse(data);
-              const text = response.choices?.[0]?.message?.content || "";
+              const message = response.choices?.[0]?.message;
+              const text = message?.content || message?.reasoning_content || "";
               resolve(text.trim());
             } catch (e) {
               reject(new Error(`Failed to parse llama-server response: ${e.message}`));

@@ -32,7 +32,7 @@ function resolveReasoningRoute(text, settings, agentName) {
   if (!cleanupReachable && !agentReachable) return { kind: "skip" };
 
   const invoked = !!agentName && detectAgentName(text, agentName);
-  if (agentReachable && (!cleanupReachable || invoked)) {
+  if (agentReachable && invoked) {
     const provider = settings.dictationAgentProvider?.trim() || undefined;
     const isSelfHostedAgent =
       settings.dictationAgentMode === "self-hosted" && !!settings.dictationAgentRemoteUrl;
@@ -44,7 +44,11 @@ function resolveReasoningRoute(text, settings, agentName) {
         provider,
         lanUrl: isSelfHostedAgent ? settings.dictationAgentRemoteUrl : undefined,
         baseUrl: isCustomAgent ? settings.dictationAgentCloudBaseUrl || undefined : undefined,
-        customApiKey: isCustomAgent ? settings.dictationAgentCustomApiKey || undefined : undefined,
+        customApiKey:
+          isCustomAgent || isSelfHostedAgent
+            ? settings.dictationAgentCustomApiKey || undefined
+            : undefined,
+        disableThinking: settings.dictationAgentDisableThinking,
         systemPrompt: resolvePrompt("dictationAgent", {
           agentName,
           language: settings.preferredLanguage,
@@ -54,7 +58,13 @@ function resolveReasoningRoute(text, settings, agentName) {
       },
     };
   }
-  return { kind: "cleanup" };
+  if (cleanupReachable) {
+    return {
+      kind: "cleanup",
+      config: { disableThinking: settings.cleanupDisableThinking },
+    };
+  }
+  return { kind: "skip" };
 }
 
 const PLACEHOLDER_KEYS = {
@@ -1047,13 +1057,14 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         if (route.kind === "skip") return normalizedText;
 
         const targetModel = route.kind === "agent" ? route.model : cleanupModel;
-        const reasoningConfig = route.kind === "agent" ? route.config : undefined;
+        const reasoningConfig = route.config;
 
         logger.logReasoning("SENDING_TO_REASONING", {
           preparedTextLength: normalizedText.length,
           model: targetModel,
           provider: route.config?.provider || cleanupProvider,
           path: route.kind,
+          disableThinking: reasoningConfig?.disableThinking,
         });
 
         const result = await this.processWithReasoningModel(
@@ -1330,7 +1341,8 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
           const reasoned = await this.processWithReasoningModel(
             processedText,
             effectiveModel,
-            agentName
+            agentName,
+            route.config
           );
           if (reasoned) processedText = reasoned;
         }
@@ -1424,10 +1436,12 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         formData.append("language", language);
       }
 
-      // Add custom dictionary as prompt hint for cloud transcription
-      // Groq Whisper API limits prompt to 896 chars; OpenAI ~900 chars.
-      // Truncate at last comma boundary so we never send a partial word.
-      const MAX_PROMPT_CHARS = provider === "groq" ? 896 : 900;
+      const endpoint = this.getTranscriptionEndpoint();
+
+      // Groq rejects prompts > 896 chars (incl. when reached via "custom" provider).
+      // 890 leaves margin for UTF-16 vs codepoint counting drift.
+      const isGroqEndpoint = provider === "groq" || endpoint.includes("api.groq.com");
+      const MAX_PROMPT_CHARS = isGroqEndpoint ? 890 : 900;
       let dictionaryPrompt = this.getCustomDictionaryPrompt();
       if (dictionaryPrompt) {
         if (dictionaryPrompt.length > MAX_PROMPT_CHARS) {
@@ -1453,7 +1467,6 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         formData.append("stream", "true");
       }
 
-      const endpoint = this.getTranscriptionEndpoint();
       const isCustomEndpoint =
         provider === "custom" ||
         (!endpoint.includes("api.openai.com") &&
@@ -1745,15 +1758,18 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
     const s = getSettings();
     const currentProvider = s.cloudTranscriptionProvider || "openai";
     const currentBaseUrl = s.cloudTranscriptionBaseUrl || "";
+    const transcriptionMode = s.transcriptionMode || "";
+    const remoteUrl = (s.remoteTranscriptionUrl || "").trim();
 
-    // Only use custom URL when provider is explicitly "custom"
-    const isCustomEndpoint = currentProvider === "custom";
+    const isSelfHosted = transcriptionMode === "self-hosted" && remoteUrl.length > 0;
+    const isCustomEndpoint = isSelfHosted || currentProvider === "custom";
 
-    // Invalidate cache if provider or base URL changed
     if (
       this.cachedTranscriptionEndpoint &&
       (this.cachedEndpointProvider !== currentProvider ||
-        this.cachedEndpointBaseUrl !== currentBaseUrl)
+        this.cachedEndpointBaseUrl !== currentBaseUrl ||
+        this.cachedEndpointMode !== transcriptionMode ||
+        this.cachedEndpointRemoteUrl !== remoteUrl)
     ) {
       logger.debug(
         "STT endpoint cache invalidated",
@@ -1762,6 +1778,10 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
           newProvider: currentProvider,
           previousBaseUrl: this.cachedEndpointBaseUrl,
           newBaseUrl: currentBaseUrl,
+          previousMode: this.cachedEndpointMode,
+          newMode: transcriptionMode,
+          previousRemoteUrl: this.cachedEndpointRemoteUrl,
+          newRemoteUrl: remoteUrl,
         },
         "transcription"
       );
@@ -1773,9 +1793,10 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
     }
 
     try {
-      // Use custom URL only when provider is "custom", otherwise use provider-specific defaults
       let base;
-      if (isCustomEndpoint) {
+      if (isSelfHosted) {
+        base = remoteUrl;
+      } else if (currentProvider === "custom") {
         base = currentBaseUrl.trim() || API_ENDPOINTS.TRANSCRIPTION_BASE;
       } else if (currentProvider === "groq") {
         base = API_ENDPOINTS.GROQ_BASE;
@@ -1792,8 +1813,11 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         "STT endpoint resolution",
         {
           provider: currentProvider,
+          mode: transcriptionMode,
+          isSelfHosted,
           isCustomEndpoint,
           rawBaseUrl: currentBaseUrl,
+          remoteUrl,
           normalizedBase,
           defaultBase: API_ENDPOINTS.TRANSCRIPTION_BASE,
         },
@@ -1804,6 +1828,8 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         this.cachedTranscriptionEndpoint = endpoint;
         this.cachedEndpointProvider = currentProvider;
         this.cachedEndpointBaseUrl = currentBaseUrl;
+        this.cachedEndpointMode = transcriptionMode;
+        this.cachedEndpointRemoteUrl = remoteUrl;
 
         logger.debug(
           "STT endpoint resolved",
@@ -1861,6 +1887,8 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
       this.cachedTranscriptionEndpoint = API_ENDPOINTS.TRANSCRIPTION;
       this.cachedEndpointProvider = currentProvider;
       this.cachedEndpointBaseUrl = currentBaseUrl;
+      this.cachedEndpointMode = transcriptionMode;
+      this.cachedEndpointRemoteUrl = remoteUrl;
       return API_ENDPOINTS.TRANSCRIPTION;
     }
   }
@@ -2549,7 +2577,8 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
             const reasoned = await this.processWithReasoningModel(
               finalText,
               effectiveModel,
-              agentName
+              agentName,
+              route.config
             );
             if (reasoned) finalText = reasoned;
             logger.info(

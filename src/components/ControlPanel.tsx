@@ -40,9 +40,15 @@ import {
 } from "../stores/noteStore";
 import { fetchProviders as fetchStreamingProviders } from "../stores/streamingProvidersStore";
 import HistoryView from "./HistoryView";
+import BackgroundActionToastListener from "./notes/BackgroundActionToastListener";
 import { syncService } from "../services/SyncService.js";
 import { REFERRALS_ENABLED, BILLING_ENABLED } from "../config/defaults";
 import ReferralEntry from "./ReferralEntry";
+import AcceptInvitationModal, {
+  consumePendingInvitationToken,
+  clearPendingInvitationToken,
+} from "./AcceptInvitationModal";
+import { WORKSPACES_ENABLED } from "../lib/features";
 
 const platform = getCachedPlatform();
 
@@ -79,6 +85,7 @@ export default function ControlPanel() {
     () => localStorage.getItem("aiCTADismissed") === "true"
   );
   const [showReferrals, setShowReferrals] = useState(false);
+  const [invitationToken, setInvitationToken] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showCloudMigrationBanner, setShowCloudMigrationBanner] = useState(false);
   const [activeView, setActiveView] = useState<ControlPanelView>("home");
@@ -250,6 +257,23 @@ export default function ControlPanel() {
   }, [usage?.isPastDue, usage?.hasLoaded, toast, t]);
 
   useEffect(() => {
+    if (!WORKSPACES_ENABLED) return;
+    const unsubscribe = window.electronAPI?.onWorkspaceInvitationToken?.((token) => {
+      setInvitationToken(token);
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  useEffect(() => {
+    if (!WORKSPACES_ENABLED || !authLoaded || !isSignedIn) return;
+    const pending = consumePendingInvitationToken();
+    if (pending) {
+      setInvitationToken(pending);
+      clearPendingInvitationToken();
+    }
+  }, [authLoaded, isSignedIn]);
+
+  useEffect(() => {
     if (!authLoaded || !isSignedIn || cloudMigrationProcessed.current) return;
     const isPending = localStorage.getItem("pendingCloudMigration") === "true";
     const alreadyShown = localStorage.getItem("cloudMigrationShown") === "true";
@@ -287,7 +311,9 @@ export default function ControlPanel() {
   }, [useLocalWhisper, localTranscriptionProvider, useCleanupModel, gpuBannerDismissed]);
 
   useEffect(() => {
-    const cleanup = window.electronAPI?.onNavigateToMeetingNote?.((data) => {
+    const drain = async () => {
+      const data = await window.electronAPI?.getPendingMeetingNoteNavigation?.();
+      if (!data) return;
       setActiveFolderId(data.folderId);
       setActiveNoteId(data.noteId);
       setActiveView("personal-notes");
@@ -303,7 +329,9 @@ export default function ControlPanel() {
       ) {
         window.electronAPI?.snapToMeetingMode?.();
       }
-    });
+    };
+    drain();
+    const cleanup = window.electronAPI?.onMeetingNoteNavigationPending?.(drain);
     return () => cleanup?.();
   }, []);
 
@@ -666,6 +694,17 @@ export default function ControlPanel() {
         <ReferralEntry open={showReferrals} onOpenChange={setShowReferrals} />
       )}
 
+      {WORKSPACES_ENABLED && (
+        <AcceptInvitationModal
+          token={invitationToken}
+          onClose={() => setInvitationToken(null)}
+          isSignedIn={isSignedIn}
+          onSignIn={() => {
+            setInvitationToken(null);
+          }}
+        />
+      )}
+
       {showSearch && (
         <Suspense fallback={null}>
           <CommandSearch
@@ -910,6 +949,7 @@ export default function ControlPanel() {
           </div>
         </main>
       </div>
+      <BackgroundActionToastListener />
     </div>
   );
 }
