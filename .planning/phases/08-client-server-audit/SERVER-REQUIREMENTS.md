@@ -2587,6 +2587,64 @@ live); realtime is the sole remaining blocker.
 
 ---
 
+### R31 ROOT CAUSE #2 — `?intent=transcription` Beta param + event-vocab gap (2026-05-22, server peer `gowm923y`)
+
+The server peer found the cause in LiteLLM logs (the live acceptance
+run left the trace):
+
+```
+WebSocket /v1/realtime?intent=transcription&user=...&model=realtime-default [accepted]
+LiteLLM:ERROR realtime_streaming.py:548 — received 4000 invalid_request_error.beta_api_shape_disabled
+```
+
+**Cause.** The URL query param `?intent=transcription` is an OpenAI
+Realtime **Beta** marker. In Beta, a transcription session was
+requested via `?intent=transcription` + `transcription_session.*`
+events. **GA removed `intent`** — GA uses a single `session.*` flow
+with no `intent`. The proxy forwards `?intent=transcription` to OpenAI
+verbatim → OpenAI sees a Beta shape → `beta_api_shape_disabled` inside
+the already-open WS. This is the **second Beta marker** of
+client-origin, exactly like the `OpenAI-Beta` header in root cause #1.
+
+**`?intent=transcription` is upstream client code — confirmed.**
+`git show upstream/main:src/helpers/openaiRealtimeStreaming.js` line 54:
+`const url = "wss://api.openai.com/v1/realtime?intent=transcription";`
+The corporate build only swaps the host (`OPENWHISPR_REALTIME_WSS_URL`)
+and keeps `?intent=transcription` (line 68). The client is immutable —
+the server owns what to do with the param, same as the header.
+
+**Deeper gap — event vocab (`transcription_session.*` vs `session.*`).**
+Stripping `?intent=` is necessary but NOT sufficient. The upstream
+client, in its non-`preconfigured` path, sends a first frame
+`transcription_session.update` (`openaiRealtimeStreaming.js:156`) and
+in every path waits for / handles `transcription_session.created`.
+GA emits `session.created` / `session.updated`, never
+`transcription_session.*`. The corporate build connects with
+`preconfigured: true` → it does NOT send the update frame and **waits
+for `transcription_session.created`** — an event GA never emits → the
+client hangs to its 15 s timeout (the `connection timeout` line seen
+next to the beta error in the live log).
+
+This is the same class of drift as R32's chunk-vocab: a Beta-vs-GA
+**event vocabulary** mismatch. The server's GA leg must bridge it —
+either translate GA `session.*` events back into the Beta
+`transcription_session.*` vocab the upstream client expects, or another
+server-side reconciliation. **This is server work; the client (upstream
+code) must not be touched.** The server peer is running a `gsd-debug`
+against OpenAI GA Realtime docs + LiteLLM 1.83.14 realtime-passthrough
+internals to determine the correct GA negotiation and bridge.
+
+**Closure criteria (agreed with server peer).** R31 closes only when
+BOTH hold: (a) realtime dictation completes end-to-end live in the
+corporate Electron client, AND (b) a server **integration test** exists
+that opens a real WS on `/v1/realtime`, drives the upstream leg
+(against a GA-shape-asserting mock OpenAI), and would catch a
+Beta-vs-GA regression at the test level. The header-strip unit tests
+(`realtime.test.ts` 35/35) are NOT the closure criterion — R31 was
+declared closed twice on green units and failed live both times.
+
+---
+
 ## R32 — `/api/agent/stream` NDJSON chunk `type` values do not match the upstream client's expected contract → chat window renders empty
 
 **Status:** 🟢 **CLOSED** — server commit `11b0f858`, verified live
