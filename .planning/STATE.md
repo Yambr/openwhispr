@@ -100,7 +100,13 @@ None yet.
 
 ### Blockers/Concerns
 
-None yet.
+None. Corporate-minimal cloud journey verified live 2026-05-22 — chat,
+file upload, and realtime dictation all work end-to-end through our
+server. Server requirements R19-R32 (auth journey, Cloud plane,
+`/api/agent/stream` chunk vocab, realtime GA relay — 6 defects) all
+closed server-side with zero client changes; the client stayed pure
+upstream code throughout. See
+`.planning/phases/08-client-server-audit/SERVER-REQUIREMENTS.md`.
 
 ### Quick Tasks Completed
 
