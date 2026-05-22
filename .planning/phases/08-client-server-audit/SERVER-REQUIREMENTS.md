@@ -3091,3 +3091,82 @@ only the server `isSubscribed` half.
 **Severity:** HIGH — cloud sync of transcriptions/notes/conversations
 is entirely dead in the corporate build; the web dashboard never shows
 any desktop-produced content.
+
+---
+
+## R35 — sync `batch-create` endpoints reject the upstream client's request body with `Invalid request`
+
+**Status:** 🔴 **OPEN** — filed 2026-05-22.
+
+**Discovered:** 2026-05-22, live e2e sync run AFTER R34 landed. With all
+three `canSync()` gates now passing (`isSignedIn` / `cloudBackupEnabled`
+/ `isSubscribed` all `"true"` — verified live), `SyncService` finally
+runs — and the renderer console shows:
+
+```
+[error] Transcription batch create failed: Error: Invalid request
+[error] Conversation sync failed: Error: Invalid request
+```
+
+`POST /api/transcriptions/batch-create` (and the conversations sync
+endpoint) reject the desktop client's request body. Live: 7 local
+pending transcriptions, sync fires, server count stays `0` → `0`.
+This is the same class as R23/R28 — a server Zod schema that does not
+accept the body the upstream client sends.
+
+**Exact contract the upstream client sends** (verified in
+`src/services/TranscriptionsService.ts` + `SyncService.ts:512-521` —
+upstream OpenWhispr code):
+
+`POST /api/transcriptions/batch-create`
+Request body — an object with a `transcriptions` array:
+```json
+{ "transcriptions": [ { ...TranscriptionInput }, ... ] }
+```
+Each `TranscriptionInput`:
+| field | type | required |
+|---|---|---|
+| `client_transcription_id` | string | optional |
+| `text` | string | **required** |
+| `raw_text` | string \| **null** | optional |
+| `provider` | string \| **null** | optional |
+| `model` | string \| **null** | optional |
+| `language` | string \| **null** | optional |
+| `audio_duration_ms` | number \| **null** | optional |
+| `status` | string | optional |
+| `created_at` | string | optional |
+
+Response the client expects: `{ "created": [ CloudTranscription, ... ] }`
+where each `CloudTranscription` carries `id` AND
+`client_transcription_id` — the client matches the local row by
+`client_transcription_id` (`SyncService.ts:533` → `markTranscriptionSynced`).
+
+**Most likely cause — `null` on optional fields** (identical to R28).
+The client sends `provider: null`, `raw_text: null`, `model: null`,
+`audio_duration_ms: null` for any field it has no value for. If the
+server's Zod schema uses `.optional()` without `.nullable()`, `null`
+is rejected → `Invalid request`. Optional fields must accept `null`
+(`.nullish()` / `.optional().nullable()`).
+
+**Applies to the whole sync set** — `Conversation sync failed` shows
+the conversations endpoint has the same problem. The server must
+verify ALL sync ingest endpoints against the upstream client contract:
+- `POST /api/transcriptions/batch-create` — `{ transcriptions: [...] }`
+- `POST /api/notes/batch-create` — `{ notes: [NoteInput] }` → `{ created: [...] }`
+- `POST /api/conversations/create` — body with a `messages` array
+- `POST /api/folders/batch-create` — `{ folders: [FolderInput] }`
+- the single-item `create` variants of each
+
+**Why this is a SERVER requirement (client immutable).**
+`TranscriptionsService`, `NotesService`, `SyncService` are upstream
+OpenWhispr code. The server owns the request schemas and must accept
+the body shape the upstream client has always sent.
+
+**Verification.** A live corporate client that saves a transcription
+locally, then runs `SyncService.syncAll()` (fires on Control Panel
+mount), pushes it: `GET /api/transcriptions/list` returns the record,
+and it appears on the web dashboard at `localhost:3000`.
+
+**Severity:** HIGH — even with R34 fixed, cloud sync still fails
+entirely; the web dashboard stays empty because every `batch-create`
+is rejected.
