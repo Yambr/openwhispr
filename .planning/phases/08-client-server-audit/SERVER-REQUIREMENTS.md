@@ -2699,6 +2699,57 @@ fixed; data plane is the remaining blocker. Chat + upload remain green.
 
 ---
 
+### R31 ROOT CAUSE #3 — `preconfigured` client never sends `session.update`; Design B relay must inject it (live run 2026-05-22)
+
+**Status:** 🔴 **STILL OPEN** — server commit `c069f369` (data-path
+DEFECT 4+5) did not fix the live client path. Root cause found.
+
+Server `c069f369` claimed the data path fixed (DEFECT 4: flat↔nested
+`session.update` restructure; DEFECT 5: force `?intent=transcription`).
+The server peer verified it **with a direct WS client** — transcript
+returned. A live run through the **real Electron client**
+(`tests/ui/_acceptance-realtime.mjs`) still shows `segments: 0`,
+`commit timeout`, empty transcript — unchanged from before `c069f369`.
+
+**Why the divergence — what the client actually sends.** The client
+log says `session created (PRECONFIGURED)`. `ipcHandlers.js:5090` sets
+`preconfigured: isCloud` — under lockdown always `true`. In the
+`preconfigured` path the upstream client **deliberately does NOT send
+a `session.update` frame at all** (`openaiRealtimeStreaming.js:135`:
+*"Server-side ephemeral token already configured the session; sending
+an update would strip language and noise-reduction."*).
+
+So DEFECT 4's flat↔nested `session.update` restructuring **never
+fires** for the cloud client — the client sends no such frame, the
+relay has nothing to restructure, transcription is never configured →
+`segments: 0`.
+
+This is a **Design A vs Design B** assumption gap. The upstream client
+assumes **Design A**: a server-minted *ephemeral token* whose minting
+call already configured the realtime session. The corporate build is
+**Design B** (reverse-proxy WSS, session bearer — not an ephemeral
+token). In Design B nothing configures the session: the client stays
+silent (`preconfigured`), and the relay translates frames but does not
+itself initiate the transcription config.
+
+**What the server must do (client immutable).** The Design B relay,
+on session open, must **inject the `session.update`** with the GA
+transcription config (`audio.input.{format pcm16@24k, transcription
+model, turn_detection server_vad}`) — exactly what the Design A
+ephemeral-mint did. The relay is the Design B equivalent of the
+ephemeral-mint configuration step. The client (upstream code) sends
+nothing here and must not be changed.
+
+**Integration-test correction.** The server peer's test passed because
+its direct-WS client sent `session.update` itself (a non-`preconfigured`
+client). The integration test must run in **`preconfigured` mode** —
+client sends NO `session.update`, relay injects it — to match the real
+corporate client.
+
+**Severity:** HIGH — realtime dictation still produces no text.
+
+---
+
 ## R32 — `/api/agent/stream` NDJSON chunk `type` values do not match the upstream client's expected contract → chat window renders empty
 
 **Status:** 🟢 **CLOSED** — server commit `11b0f858`, verified live
