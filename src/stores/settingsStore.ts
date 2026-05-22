@@ -233,6 +233,21 @@ function migrateAgentMode() {
 
 migrateAgentMode();
 
+// Corporate build (PROVIDER_LOCKDOWN_ENABLED): SyncService.canSync()
+// (upstream code) reads localStorage.cloudBackupEnabled raw. The
+// lockdown default only seeds the in-memory store, so seed localStorage
+// too — but only when the key is absent, so a user's explicit toggle
+// (which createBooleanSetter persists) always wins.
+function seedLockdownCloudBackupDefault() {
+  if (!isBrowser) return;
+  if (!PROVIDER_LOCKDOWN_ENABLED) return;
+  if (localStorage.getItem("cloudBackupEnabled") === null) {
+    localStorage.setItem("cloudBackupEnabled", "true");
+  }
+}
+
+seedLockdownCloudBackupDefault();
+
 function migrateCustomPrompts() {
   if (!isBrowser) return;
   if (localStorage.getItem("_promptsMigrated") === "1") return;
