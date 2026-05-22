@@ -2466,7 +2466,16 @@ the server's upstream realtime leg (was: client routing — fixed).
 
 ### R31 ROOT CAUSE — confirmed 2026-05-22 (server peer `gowm923y`)
 
-**Status:** 🟡 **IN PROGRESS** — root cause confirmed both sides, server fix in flight.
+**Status:** 🟢 **CLOSED ON SERVER** — server commit `f41d29e2`,
+2026-05-22. `buildRewriteRequestHeaders` now strips both `openai-beta`
+and `OpenAI-Beta` on the upstream leg next to `authorization`;
+`realtime.test.ts` 35/35 green (+3 new: both-case strip + benign-header
+guard); api container rebuilt and healthy; client-facing upgrade with
+`OpenAI-Beta: realtime=v1` verified to reach `101 Switching Protocols`
+with the Beta header removed upstream. D1 `?model=` override now also
+active (image rebuilt past the D1 merge). **Awaiting one live
+end-to-end realtime-dictation run from the client** (needs a real
+`OPENAI_API_KEY` with GA Realtime access) to fully close.
 
 The 1011 cause is **double**, both confirmed:
 
@@ -2583,20 +2592,39 @@ client expects.
 > consumes a different, server-owned wire contract and the upstream
 > client has always expected `content`/`tool_call`/`done` there.
 
-**Expected contract — `/api/agent/stream` must emit, one JSON object
-per NDJSON line:**
+**Expected contract — `/api/agent/stream` must emit EXACTLY these three
+chunk types, one JSON object per NDJSON line:**
 
 | Server must emit | Fields | Meaning |
 |---|---|---|
-| `{"type":"content","text":"..."}` | `text` | a text delta |
-| `{"type":"tool_call","id":"...","name":"...","arguments":"<json-string>"}` | `id`, `name`, `arguments` | a tool call |
+| `{"type":"content","text":"..."}` | `text` (string) | a text delta |
+| `{"type":"tool_call","id":"...","name":"...","arguments":"<json-string>"}` | `id`, `name`, `arguments` (JSON **string**, not object) | a tool call the client must execute locally |
 | `{"type":"done","finishReason":"stop"}` | `finishReason` | terminal marker |
 
 i.e. rename the stream-part `type` values: `text-delta` → `content`,
 `tool-call` → `tool_call` (note: underscore, not hyphen), `finish` →
-`done`. Keep the `text` field name (already correct). For `tool-call`,
-the client expects `arguments` as a JSON **string** (`electron.ts:1352`)
-and `id` + `name` (not `toolCallId` / `toolName`).
+`done`. Keep the `text` field name (already correct). For `tool_call`,
+the client expects `arguments` as a JSON **string** and `id` + `name`
+(NOT `toolCallId` / `toolName` / `input`).
+
+**`tool_result` MUST NOT be sent over the wire.** Verified against the
+client *source* (`ReasoningService.ts` `streamFromIPC` lines 741-744
+read only `content` / `tool_call` from the IPC stream). The
+`AgentStreamChunk` `tool_result` variant (`callId` / `toolName` /
+`displayText`, declared lines 23-28) is an **internal** chunk that
+`processTextStreamingCloud` produces *itself* (lines 768-774) AFTER the
+client has executed the tool locally via `config.executeToolCall`.
+Tools execute **on the client** (`search_notes`, etc.) — the server
+emits the model's `tool_call`, the client runs it, synthesizes its own
+`tool_result` for the UI, and sends the tool output back on the next
+request. The server never sends `tool_result`. (An earlier draft of
+this entry wrongly listed `tool_result` as a wire chunk — corrected.)
+
+**Open sub-question for the server.** Does the server currently
+*execute* tools itself, or does it forward the model's `tool_call` to
+the client? The upstream client model is local execution — server
+emits `tool_call`, client executes. If the server executes tools
+server-side, that is a separate contract divergence to file.
 
 **Verification.** A live corporate-build client chat turn renders the
 assistant's streamed reply token-by-token in the chat window, and a
