@@ -3020,3 +3020,74 @@ LiteLLM param). If thinking leaks through, cleanup becomes slow and the
 model starts reasoning about text it should just clean — that violates
 the R33 non-thinking criterion. Set `REASONING_CLEANUP_MODEL` to this
 model (operator-overridable).
+
+---
+
+## R34 — `/api/usage` omits `isSubscribed` → desktop cloud sync never runs, web dashboard stays empty
+
+**Status:** 🔴 **OPEN** — filed 2026-05-22.
+
+**Discovered:** 2026-05-22, live corporate-build run. The desktop app
+works (transcription, chat, dictation) but the web dashboard at
+`localhost:3000/app/transcriptions` (and Notes, Conversations) is
+**completely empty** — nothing the desktop produces appears there.
+
+**Root cause — `/api/usage` response is missing `isSubscribed`.**
+The desktop client gates ALL cloud sync on `SyncService.canSync()`
+(`src/services/SyncService.ts:21-26`, upstream OpenWhispr code):
+
+```js
+canSync() {
+  return localStorage.getItem("isSignedIn") === "true"
+      && localStorage.getItem("cloudBackupEnabled") === "true"
+      && localStorage.getItem("isSubscribed") === "true";
+}
+```
+
+`localStorage.isSubscribed` is written **only** from the `/api/usage`
+response (`useUsage.ts:108`):
+`localStorage.setItem("isSubscribed", String(result.isSubscribed ?? false))`.
+
+A live call to the corporate `/api/usage` (real session token) returns:
+```json
+{"success":true,"wordsUsed":40142,"wordsRemaining":999999999,"plan":"unlimited","limitReached":false}
+```
+There is **no `isSubscribed` field**. So the client writes
+`isSubscribed = "false"`, `canSync()` returns false, and
+`debouncedPush()` / `syncAll()` silently return without ever POSTing
+anything. Live confirmation: `GET /api/transcriptions/list` and
+`/api/notes/list` both return `200` with empty arrays — the server is
+healthy and reads fine; the desktop simply never creates the records.
+
+**Why this is a SERVER requirement (client immutable).** `SyncService`
+and `useUsage` are upstream OpenWhispr code — the client expects
+`/api/usage` to return an `isSubscribed` boolean (it is in the
+client's `UsageData` interface, `useUsage.ts:22`). The corporate
+server returns `plan: "unlimited"` (everything unlocked) but never
+sets `isSubscribed`. The server owns the `/api/usage` response shape
+and must return the contract the upstream client consumes.
+
+**Expected.** `/api/usage` must return the full `UsageData` shape the
+client expects, in particular **`isSubscribed: true`** whenever the
+plan is not a free/none tier. For the corporate build `plan:
+"unlimited"` → `isSubscribed: true`. The client's `UsageData`
+interface also reads `isTrial`, `trialDaysLeft`, `status`,
+`currentPeriodEnd`, `billingInterval`, `limit`, `resetAt` — return
+sensible values (`isTrial:false`, `status:"active"`, `limit` matching
+the plan, etc.) so no field is silently `undefined`.
+
+**Verification.** After the fix, a live corporate client whose user is
+signed in shows `localStorage.isSubscribed === "true"`, `canSync()`
+true, and a dictation/note then appears in the web dashboard at
+`localhost:3000/app/transcriptions`.
+
+**Note — there is also a paired CLIENT-side lockdown bug** (being
+fixed separately, NOT a server concern): `cloudBackupEnabled`'s
+lockdown default lives only in the settings-store memory and is never
+written to `localStorage`, which `SyncService` reads raw — so that
+gate also fails `null`. Both must be fixed for sync to run; R34 covers
+only the server `isSubscribed` half.
+
+**Severity:** HIGH — cloud sync of transcriptions/notes/conversations
+is entirely dead in the corporate build; the web dashboard never shows
+any desktop-produced content.
