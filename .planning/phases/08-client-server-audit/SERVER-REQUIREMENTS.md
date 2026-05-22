@@ -2988,3 +2988,19 @@ is only that cleanup must NOT share the agent-chat reasoning model.
 
 Sources: wisprflow.ai, github.com/bensblueprints/whisper-talk,
 research.aimultiple.com/llm-latency-benchmark
+
+**Owner-specified cleanup model (2026-05-22): `Qwen3.6-35B-A3B`,
+thinking OFF.** It is already deployed on the owner's corporate infra
+(zero new dependency/provider). It is a MoE — 35B total but only ~3B
+active per token (A3B) — so inference latency is small-model-class
+while quality is large-model-class: ideal for the cleanup latency
+budget. Quality is more than sufficient for a non-reasoning grammar/
+punctuation/filler pass.
+
+**Critical:** Qwen3.6 is hybrid-reasoning — non-thinking is a separate
+mode. The server MUST explicitly disable thinking when wiring this into
+LiteLLM (`enable_thinking: false` in the chat template / the equivalent
+LiteLLM param). If thinking leaks through, cleanup becomes slow and the
+model starts reasoning about text it should just clean — that violates
+the R33 non-thinking criterion. Set `REASONING_CLEANUP_MODEL` to this
+model (operator-overridable).
