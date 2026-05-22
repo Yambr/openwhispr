@@ -2461,3 +2461,147 @@ boundary rule.
 **Severity:** HIGH — realtime dictation still cannot complete a
 transcription in the corporate build; the failure is now isolated to
 the server's upstream realtime leg (was: client routing — fixed).
+
+---
+
+### R31 ROOT CAUSE — confirmed 2026-05-22 (server peer `gowm923y`)
+
+**Status:** 🟡 **IN PROGRESS** — root cause confirmed both sides, server fix in flight.
+
+The 1011 cause is **double**, both confirmed:
+
+1. **Header passthrough (server bug — server-owned fix).**
+   `buildRewriteRequestHeaders` in `apps/api/src/routes/realtime.ts`
+   stripped only `authorization` and forwarded every other client
+   header verbatim (`...headers`). The **upstream OpenWhispr client**
+   (`src/helpers/openaiRealtimeStreaming.js:84`) sends
+   `OpenAI-Beta: realtime=v1` on the WS upgrade — this is **upstream
+   client code** (commit `5ec0d480`, author Gabriel Stein, present
+   verbatim in `upstream/main`), NOT a Yambr-fork addition. The proxy
+   forwarded that Beta header through to OpenAI, OpenAI rejected it
+   (`beta_api_shape_disabled` — "The Realtime Beta API is no longer
+   supported. Please use /v1/realtime for the GA API."), and the
+   handshake failed → 1011.
+
+   **The client is upstream code and is NOT to be modified** (repo
+   `client_immutable` + `upstream_parity` rules — the file is verified
+   upstream, not fork drift). The server reverse-engineers and
+   accommodates the client. Resolution: server strips the `openai-beta`
+   / `OpenAI-Beta` header in `buildRewriteRequestHeaders` next to
+   `authorization`. Server peer is applying this fix (RED→GREEN,
+   atomic, `gsd-quick`), then rebuilding the api container.
+
+2. **Model selection (already handled server-side — no client change).**
+   The upstream client defaults `this.model = "gpt-4o-mini-transcribe"`
+   (a Beta-era model) and sends `transcription: { model }` /
+   `input_audio_transcription: { model }` inside its first
+   `transcription_session.update` frame. The server's D1 fix forces
+   `?model=realtime-default` on the upstream URL **server-side**,
+   overriding whatever the client sends; LiteLLM routes `/v1/realtime`
+   by the `?model=` query param, not by the in-band frame, and
+   `realtime-default` maps to `openai/gpt-realtime` (the GA model) in
+   `litellm_config.yaml`. So the client's model value is already
+   ignored. **No client change required.**
+
+**GA contract of `/v1/realtime` (server-confirmed, for the record):**
+- `OpenAI-Beta` header — server strips it (defence: client still sends
+  it as upstream code; server MUST tolerate and strip).
+- Model — client value ignored; server injects `realtime-default`
+  (env `LITELLM_REALTIME_MODEL`) → `openai/gpt-realtime`. Operator
+  config, zero client change.
+- URL — `ws://<host>:4000/v1/realtime` (+ optional
+  `?intent=transcription`); server overwrites `?model=`/`?user=`.
+- Auth — `Authorization: Bearer <Better Auth session.token>` on WS
+  upgrade; no subprotocol required.
+- `session.update` first frame — proxy is payload-opaque (T-03-07
+  passthrough); does not parse or rewrite the frame.
+- LiteLLM `1.83.14-stable` supports GA realtime — no upgrade needed.
+
+**Outcome:** R31 needs **zero client changes**. Both legs are
+server-owned: the header strip (fix in flight) and the model injection
+(already shipped via D1). Awaiting server api rebuild, then a live
+client realtime-dictation run will verify end-to-end.
+
+---
+
+## R32 — `/api/agent/stream` NDJSON chunk `type` values do not match the upstream client's expected contract → chat window renders empty
+
+**Status:** 🔴 **OPEN** — filed 2026-05-22.
+
+**Discovered:** 2026-05-22, live corporate-build client run. The user
+sent a chat message; the server responded (HTTP 200, NDJSON streamed
+back) but the chat window stayed **completely empty** — "чат ответил,
+но в чате ничего не показалось".
+
+**Root cause — server/client contract drift on the chunk `type` enum.**
+The `/api/agent/stream` framing is correct: `Content-Type:
+application/x-ndjson`, one JSON object per line, no `data:` prefix, no
+`[DONE]`. The client's NDJSON parser (`ipcHandlers.js` ~5743-5774:
+`buffer.split("\n")` + `JSON.parse` per line) handles the framing
+correctly. The mismatch is the **`type` field values**.
+
+Server emits (live capture, server peer `gowm923y`):
+```
+{"type":"text-delta","text":"Hi!"}
+{"type":"text-delta","text":" 👋 How can I help"}
+{"type":"finish","finishReason":"stop","usage":{...}}
+```
+
+The **upstream OpenWhispr client** expects (declared in
+`src/types/electron.ts:1349` `onAgentStreamChunk` and consumed in
+`src/services/ReasoningService.ts:741-752` `processTextStreamingCloud`):
+```
+{ type: "content",   text: "..." }      // a text delta
+{ type: "tool_call", id, name, arguments }
+{ type: "done",      finishReason }     // terminal
+```
+
+`ReasoningService.processTextStreamingCloud` filters cloud IPC chunks
+strictly on `ev.type === "content"` / `"tool_call"`; anything else is
+dropped. The server's `text-delta` / `finish` / `tool-call` values
+(the raw **Vercel AI SDK v5** stream-part names) match **none** of the
+client's expected enum → every chunk is silently discarded → the chat
+window renders nothing.
+
+**Why this is a SERVER requirement, not a client fix.** The chat IPC
+contract — `onAgentStreamChunk` with `type: "content" | "tool_call" |
+"done"` — is **upstream OpenWhispr client code**, not Yambr-fork drift
+(`electron.ts` type decl + `ReasoningService.ts` cloud path both
+upstream). Per the repo `client_immutable` / `upstream_parity` rules,
+the client is reverse-engineered and the server is omologated to it.
+The server adopted the AI SDK v5 stream-part names (`text-delta`,
+`tool-call`, `finish`) verbatim instead of translating to the wire
+contract the desktop client has always consumed. The server owns the
+`/api/agent/stream` response shape and must emit the contract the
+client expects.
+
+> NOTE — do not be misled by `ReasoningService.ts:610-634`, which
+> *does* map `text-delta`→`content` / `finish`→`done`. That is the
+> **local AI-SDK path** (the client runs the AI SDK in-process for
+> local models — AI SDK part names are native there). The **cloud
+> path** through `/api/agent/stream` → IPC → `processTextStreamingCloud`
+> consumes a different, server-owned wire contract and the upstream
+> client has always expected `content`/`tool_call`/`done` there.
+
+**Expected contract — `/api/agent/stream` must emit, one JSON object
+per NDJSON line:**
+
+| Server must emit | Fields | Meaning |
+|---|---|---|
+| `{"type":"content","text":"..."}` | `text` | a text delta |
+| `{"type":"tool_call","id":"...","name":"...","arguments":"<json-string>"}` | `id`, `name`, `arguments` | a tool call |
+| `{"type":"done","finishReason":"stop"}` | `finishReason` | terminal marker |
+
+i.e. rename the stream-part `type` values: `text-delta` → `content`,
+`tool-call` → `tool_call` (note: underscore, not hyphen), `finish` →
+`done`. Keep the `text` field name (already correct). For `tool-call`,
+the client expects `arguments` as a JSON **string** (`electron.ts:1352`)
+and `id` + `name` (not `toolCallId` / `toolName`).
+
+**Verification.** A live corporate-build client chat turn renders the
+assistant's streamed reply token-by-token in the chat window, and a
+tool-calling turn shows the tool invocation — no empty window.
+
+**Severity:** HIGH — cloud chat / voice-agent is completely unusable in
+the corporate build; the user sees a permanently blank chat window on
+every message despite the server returning a correct 200 NDJSON stream.
