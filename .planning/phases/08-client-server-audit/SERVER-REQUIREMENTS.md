@@ -3170,3 +3170,59 @@ and it appears on the web dashboard at `localhost:3000`.
 **Severity:** HIGH — even with R34 fixed, cloud sync still fails
 entirely; the web dashboard stays empty because every `batch-create`
 is rejected.
+
+---
+
+## R36 — `/api/conversations/create` rejects `message.metadata: null`
+
+**Status:** 🔴 **OPEN** — filed 2026-05-22.
+
+**Discovered:** 2026-05-22, live sync e2e after R34+R35 closed.
+Transcription sync now works end-to-end (verified: server count
+`10 → 11`, the marker reached the server). But the renderer console
+still shows `Conversation sync failed: Error: Invalid request` —
+**conversations do not sync**.
+
+**Root cause — narrowed by live probe.** `POST /api/conversations/create`
+accepts everything *except* a message with `metadata: null`:
+
+| probe payload | result |
+|---|---|
+| minimal (no `messages`) | ✅ 200 |
+| ISO `created_at`/`updated_at` | ✅ 200 |
+| SQLite-form dates | ✅ 200 (R35 fix covers it) |
+| `messages: []` | ✅ 200 |
+| `messages: [{role,content}]` (no metadata) | ✅ 200 |
+| `messages: [{role,content,metadata:{}}]` | ✅ 200 |
+| **`messages: [{role,content,metadata:null}]`** | ❌ **400 Invalid request** |
+
+The server's Zod schema for a conversation message's `metadata` field
+is `.optional()` **without `.nullable()`** — it accepts an absent field
+or an object, but rejects an explicit `null`. This is the same class
+as R28.
+
+**The upstream client always sends `metadata: null`.** `SyncService.ts`
+`pushConversation` (line ~155-162) maps every message with:
+```js
+metadata: m.metadata
+  ? (typeof m.metadata === "string" ? JSON.parse(m.metadata) : m.metadata)
+  : null
+```
+A message with no metadata yields `metadata: null` explicitly — so
+**every** conversation that has at least one metadata-less message
+(i.e. essentially all of them) fails to sync.
+
+**Why this is a SERVER requirement (client immutable).**
+`ConversationsService` / `SyncService` are upstream OpenWhispr code.
+The server owns the `/api/conversations/create` request schema and must
+accept `metadata: null` for a message — `.nullish()` /
+`.optional().nullable()` on the message `metadata` field.
+
+**Verification.** A live corporate client that creates an agent
+conversation, then runs `SyncService.syncAll()`, pushes it with no
+`Conversation sync failed` error, and the conversation appears on the
+web dashboard at `localhost:3000`.
+
+**Severity:** HIGH — conversation sync is entirely broken; the
+conversations tab of the web dashboard never populates. (Transcription
+sync IS working after R34+R35.)
