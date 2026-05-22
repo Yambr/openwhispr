@@ -111,9 +111,9 @@ localStorage seed). Upstream OpenWhispr 1.7.2 merged into the fork
 (all build-time gating verified intact). See
 `.planning/phases/08-client-server-audit/SERVER-REQUIREMENTS.md`.
 
-Follow-ups (non-blocking): one lockdown UI test (Notes onboarding)
-needs updating for the merged upstream Notes structure; 3 new upstream
-`node:test` vad files don't run under the vitest runner.
+Post-merge test follow-ups closed (quick 260522-smj): node:test files
+separated from the vitest runner, lockdown Notes onboarding UI test
+updated. vitest 48/48, test:build-config 15/15, test:lockdown-ui 6/6.
 
 ### Quick Tasks Completed
 
@@ -127,6 +127,7 @@ needs updating for the merged upstream Notes structure; 3 new upstream
 | 260522-wt5 | Provider-lockdown leaks: gated cloud reasoning model list (GPT-* names) in ReasoningModelSelector, gated MCP integration card in IntegrationsView, sourced MCP URL from OPENWHISPR_MCP_URL build-time var, extended verify:provider-lockdown with SURFACE target group | 2026-05-22 | fcccaff9, b112a66b, 3b9ddb28, f0b50f7b | [260522-wt5-lockdown-leaks-notes-mcp](./quick/260522-wt5-lockdown-leaks-notes-mcp/) |
 | 260522-wt6 | Realtime streaming lockdown (Design B): repointed corporate realtime WSS to our /v1/realtime proxy with the Better Auth session bearer (no OpenAI-direct, no ephemeral client_secret), lockdown implies STREAMING_ENABLED, single-entry lockdown streaming catalog (deepgram/assemblyai DCE'd), gpt-realtime default model, new realtime-lockdown Electron-UI spec, verify:provider-lockdown REALTIME group, BACKEND_SPEC Design B card. Live run confirmed client routing correct; server upstream 1011 filed as R31. | 2026-05-22 | 5d6d8a3a, 74c8c996, 3e1c92f0, 6bff47ac, 8dba0ae7, 0ba50651, 4bb2cf08 | [260522-wt6-realtime-streaming-lockdown](./quick/260522-wt6-realtime-streaming-lockdown/) |
 | 260522-qab | Fix corporate-lockdown cloud-sync gate: cloudBackupEnabled lockdown default was seeded only into the in-memory store; SyncService.canSync() (upstream) reads localStorage raw, saw null, disabled all cloud sync. seedLockdownCloudBackupDefault() mirrors the lockdown default into localStorage on store init (key-absent guard — user toggle still wins). Verified live: localStorage.cloudBackupEnabled === "true". Paired isSubscribed gate is server-side (R34). | 2026-05-22 | 37b09d2b | [260522-qab-lockdown-cloud-sync-gate](./quick/260522-qab-lockdown-cloud-sync-gate/) |
+| 260522-smj | Post-merge test follow-ups: separated node:test files (generate-build-config.test.cjs + 2 upstream VAD specs) from the vitest runner via vitest.config exclude + test:build-config extension; fixed corporate-lockdown.spec.ts Notes onboarding test for the merged NotesOnboarding structure (LLM picker gated behind !isProUser, corporate Pro build never mounts it — assert absence). vitest 48/48, test:build-config 15/15, test:lockdown-ui 6/6. | 2026-05-22 | 629e1956, 38436f33 | [260522-smj-post-merge-test-fixes](./quick/260522-smj-post-merge-test-fixes/) |
 
 ## Session Continuity
 
