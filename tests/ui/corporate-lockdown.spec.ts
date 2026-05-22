@@ -115,6 +115,48 @@ test.beforeAll(async () => {
   if (!main) throw new Error("control-panel window (panel=true) never appeared");
   await main.waitForLoadState("domcontentloaded");
   await main.waitForTimeout(4000);
+
+  // SELF-CONTAINED PRECONDITION
+  // ---------------------------
+  // src/AppRouter.jsx gates the Control Panel on localStorage: it renders the
+  // onboarding flow unless `onboardingCompleted === "true"`, and a re-auth
+  // screen when onboarding is done but the user is signed-out and auth was
+  // not skipped (`skipAuth` / `authenticationSkipped`). A clean Electron
+  // userData therefore lands on the "Welcome to OpenWhispr" screen, where the
+  // nav items these tests click (Settings / Notes / Integrations) do not
+  // exist. The spec used to pass only because a stale logged-in session
+  // happened to sit in userData — real fragility, not a product bug.
+  //
+  // Make the spec set up its own precondition: write the bypass keys into the
+  // panel window's localStorage, then reload so AppRouter re-evaluates with
+  // them present. localStorage in a file:// renderer persists to userData, so
+  // set-then-reload is the reliable sequence (an addInitScript is too late —
+  // the window is already open by the time we hold `main`). We assert NO
+  // client value here, only navigate past onboarding; every leak assertion in
+  // the tests below is unchanged.
+  await main.evaluate(() => {
+    localStorage.setItem("onboardingCompleted", "true");
+    localStorage.setItem("skipAuth", "true");
+    localStorage.setItem("authenticationSkipped", "true");
+  });
+  await main.reload();
+  await main.waitForLoadState("domcontentloaded");
+  await main.waitForTimeout(4000);
+
+  // Confirm onboarding was actually bypassed — the Control Panel chrome must
+  // be present before any test runs. Fail loud here rather than as a vague
+  // "could not open Settings" inside a test.
+  const settingsVisible = await main
+    .locator('text="Settings"')
+    .first()
+    .isVisible()
+    .catch(() => false);
+  if (!settingsVisible) {
+    const body = await main.evaluate(() => document.body.innerText).catch(() => "");
+    throw new Error(
+      `Control Panel did not render after onboarding bypass — still on:\n${body.slice(0, 300)}`,
+    );
+  }
 });
 
 test.afterAll(async () => {
