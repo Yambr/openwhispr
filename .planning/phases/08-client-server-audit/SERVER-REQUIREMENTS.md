@@ -2645,6 +2645,60 @@ declared closed twice on green units and failed live both times.
 
 ---
 
+### R31 RE-OPENED AGAIN — control plane fixed, data plane silent (live run 2026-05-22)
+
+**Status:** 🔴 **RE-OPENED** — server commit `fcea86f9` (dual-backend
+frame-aware GA relay) fixed the **control plane** but the **data
+plane** produces no transcript.
+
+Server `fcea86f9` rebuilt `/v1/realtime` from a transparent passthrough
+into a frame-aware GA relay (`REALTIME_BACKEND=direct|litellm`,
+Beta↔GA frame translation, `?intent=` stripped, OpenAI-Beta handled).
+A live realtime-dictation run (`tests/ui/_acceptance-realtime.mjs` —
+real lockdown Electron client, owner session, a real PCM16/24k speech
+buffer streamed in chunks) shows the control plane is FIXED:
+
+```
+[DEBUG] OpenAI Realtime WebSocket opened
+[DEBUG] OpenAI Realtime session created (preconfigured)
+[DEBUG] OpenAI Realtime disconnect { audioBytesSent: 134144, segments: 0, textLength: 0, readyState: 1 }
+[DEBUG] OpenAI Realtime commit timeout, using accumulated text
+```
+
+**Fixed:** `session created` now fires — the relay translates GA
+`session.created` → Beta `transcription_session.created`, the event the
+`preconfigured` client waits for. No `beta_api_shape_disabled`, no
+`1011`. Both Beta markers (header + `?intent=`) resolved.
+
+**Still broken — the audio/transcription data path.**
+`audioBytesSent: 134144` — all 134 KB of audio left the client.
+`segments: 0`, `textLength: 0`, `partialCount: 0` — **not one
+transcript segment came back**, and the client hit `commit timeout`.
+Session opens, audio is accepted, but no transcription happens or no
+results are translated back. Candidates on the relay's data path:
+1. `input_audio_buffer.append` audio frames not delivered to OpenAI GA
+   / not format-translated by the relay.
+2. `input_audio_buffer.commit` (client sends Beta form) not translated
+   to its GA equivalent → OpenAI never commits the buffer → never
+   transcribes.
+3. GA transcription events (`conversation.item.input_audio_transcription
+   .delta` / `.completed`) not translated back into the Beta vocab the
+   client consumes.
+
+**Integration-test gap.** `r31-realtime-ga-shape.test.ts` (4/4 green)
+asserts bidirectional translation — but evidently only the **control**
+frames (`session.*`). It must also cover the **data path**:
+append-audio → commit → transcription-delta/completed back.
+
+**Client side:** verified clean — WS opens, `preconfigured`, streams
+audio, waits for `transcription_session.*` events. All upstream
+behavior; client immutable.
+
+**Severity:** HIGH — realtime dictation produces no text. Control plane
+fixed; data plane is the remaining blocker. Chat + upload remain green.
+
+---
+
 ## R32 — `/api/agent/stream` NDJSON chunk `type` values do not match the upstream client's expected contract → chat window renders empty
 
 **Status:** 🟢 **CLOSED** — server commit `11b0f858`, verified live
