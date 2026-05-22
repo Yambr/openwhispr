@@ -2379,7 +2379,26 @@ this server path is confirmed.
 
 ## R31 — Realtime `/v1/realtime`: upstream closes with code 1011 immediately after WS open
 
-**Status:** 🔴 **OPEN** — filed 2026-05-22.
+**Status:** 🟢 **CLOSED** — verified live 2026-05-22. Final server
+commit `f2be05d8` (DEFECT 6). A live realtime-dictation run through the
+real lockdown Electron client (`preconfigured` cloud path — the exact
+path that failed every prior round) streamed a real PCM16/24k speech
+buffer and got the transcript back verbatim:
+`"The quick brown fox jumps over the lazy dog. Testing real-time
+transcription."` — `turn completed`, no `beta_api_shape_disabled`, no
+`1011`. Took 6 server defects across 6 live runs (header passthrough →
+`?intent=` → event-vocab → data-path flat/nested → `?intent=` is
+actually required → `preconfigured` client sends no `session.update`
+so the Design B relay must inject it). Each round was found by driving
+the real client, not by green unit tests. **Zero client changes** —
+every defect was server-side; the client is upstream code throughout.
+Operator note: default realtime transcription model is
+`gpt-4o-transcribe` (retires ~June 2026 — operators pin
+`REALTIME_TRANSCRIPTION_MODEL` after).
+
+Full diagnostic history below retained for the record.
+
+**Status (original):** 🔴 OPEN — filed 2026-05-22.
 
 **Discovered:** 2026-05-22, MANDATORY LIVE RUN for client quick task
 `260522-wt6-realtime-streaming-lockdown` plan 03. The corporate-build
