@@ -3226,3 +3226,72 @@ web dashboard at `localhost:3000`.
 **Severity:** HIGH — conversation sync is entirely broken; the
 conversations tab of the web dashboard never populates. (Transcription
 sync IS working after R34+R35.)
+
+---
+
+## R37 — `/api/notes/batch-create` rejects `null` on optional note fields
+
+**Status:** 🔴 **OPEN** — filed 2026-05-22.
+
+**Discovered:** 2026-05-22, full sync e2e after R34/R35/R36. Result:
+transcription sync PASS, conversation sync PASS (R36 verified live),
+**note sync FAIL** — `0 → 0`, no record reaches the server.
+
+**Root cause — `null` on optional note fields** (same class as R28/R36).
+A live probe sent the *exact* payload `SyncService.pushPendingNotes`
+builds (`SyncService.ts:296-311`) and `POST /api/notes/batch-create`
+returned `400 Invalid request`. The raw pending note from the local DB:
+
+```json
+{
+  "client_note_id": "...", "title": "...", "content": "...",
+  "note_type": "note",
+  "source_file": null,
+  "audio_duration_seconds": null,
+  "enhanced_content": null,
+  "enhancement_prompt": null,
+  "enhanced_at_content_hash": null,
+  "transcript": null,
+  "created_at": "2026-05-22 17:20:40",
+  "updated_at": "2026-05-22 17:20:40"
+}
+```
+
+A freshly-created note has **six fields that are `null`** —
+`source_file`, `audio_duration_seconds`, `enhanced_content`,
+`enhancement_prompt`, `enhanced_at_content_hash`, `transcript`. The
+server's `NoteInputSchema` uses `.optional()` (accepts absent or typed)
+without `.nullable()` on these, so an explicit `null` is rejected.
+
+> NOTE — the server peer earlier reviewed the notes schema and judged
+> there was no R28 risk because "the client sends `string | undefined`,
+> not `null`". That judgement was wrong: the TypeScript `NoteInput`
+> interface types these fields loosely, but `pushPendingNotes` forwards
+> the raw SQLite row fields verbatim, and SQLite stores unset columns
+> as **`NULL`** → they arrive as JSON `null`. Verified by live probe.
+
+`created_at` is also in SQLite space-separated form (`2026-05-22
+17:20:40`) — R35 made the transcription/note datetime validator
+lenient; confirm the note `batch-create` path actually uses that
+lenient `INPUT_DATETIME` validator (the probe failed before isolating
+datetime vs null, but the null fields are definitely rejected).
+
+**Why this is a SERVER requirement (client immutable).** `NotesService`
+/ `SyncService` are upstream OpenWhispr code. The server owns the
+`/api/notes/batch-create` schema and must accept the body the upstream
+client sends — `null` on every optional note field.
+
+**Expected.** `NoteInputSchema` optional fields — `source_file`,
+`audio_duration_seconds`, `enhanced_content`, `enhancement_prompt`,
+`enhanced_at_content_hash`, `transcript`, `folder_id` — must accept
+`null` (`.nullish()` / `.optional().nullable()`). Re-audit ALL of them,
+not just the ones named here. `created_at`/`updated_at` must use the
+lenient SQLite-tolerant datetime validator from R35.
+
+**Verification.** A live corporate client that saves a note locally,
+then runs `SyncService.syncAll()`, pushes it with no `Invalid request`,
+and the note appears on the web dashboard `localhost:3000`.
+
+**Severity:** HIGH — note sync is entirely broken; the Notes tab of the
+web dashboard never populates. (Transcription + conversation sync work
+after R34/R35/R36.)
