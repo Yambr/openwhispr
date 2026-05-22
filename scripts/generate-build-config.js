@@ -18,7 +18,14 @@ const path = require("path");
 const DEFAULTS = Object.freeze({
   OPENWHISPR_AUTH_URL: "https://auth.openwhispr.com",
   OPENWHISPR_BACKEND_URL: "",
+  // webRequest Origin-rewrite filter patterns. Parity defaults match the
+  // openwhispr.com hosts. When OPENWHISPR_BACKEND_URL / OPENWHISPR_AUTH_URL
+  // are set and the pattern is not explicitly overridden, buildResolved()
+  // derives `<scheme>//<host>/*` from them (deriveOriginPattern) so a
+  // corporate build's filter tracks its real backend (e.g.
+  // openwhispr.yambr.com). Consumed by main.js's onBeforeSendHeaders.
   OPENWHISPR_BACKEND_URL_PATTERN: "https://api.openwhispr.com/*",
+  OPENWHISPR_AUTH_URL_PATTERN: "https://auth.openwhispr.com/*",
   OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL: "https://openwhispr.com/auth/desktop-callback",
   OPENWHISPR_MCP_URL: "https://mcp.openwhispr.com/mcp",
   OPENWHISPR_OAUTH_GOOGLE_AUTH_URL: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -149,6 +156,24 @@ function deriveRealtimeWssUrl(backendUrl) {
   }
 }
 
+// Derive an Electron webRequest URL-filter pattern (`<scheme>//<host>/*`)
+// from a backend/auth URL. Consumed by main.js's
+// webRequest.onBeforeSendHeaders Origin-rewrite filter — the filter must
+// cover whatever host the build actually talks to (a corporate build on
+// openwhispr.yambr.com, not the openwhispr.com defaults). Host includes
+// any non-default port. Path/query/fragment are intentionally dropped:
+// the filter matches by origin, not path. Malformed/non-http(s) URL → "".
+function deriveOriginPattern(url) {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return "";
+    return `${u.protocol}//${u.host}/*`;
+  } catch {
+    return "";
+  }
+}
+
 function buildResolved() {
   const resolved = {};
   for (const key of KEYS) {
@@ -187,6 +212,25 @@ function buildResolved() {
     resolved.OPENWHISPR_REALTIME_WSS_URL = deriveRealtimeWssUrl(
       resolved.OPENWHISPR_BACKEND_URL
     );
+  }
+  // Derive the webRequest Origin-rewrite filter patterns from the build's
+  // real backend/auth URLs when the caller did not explicitly override the
+  // pattern. resolveValue returns the DEFAULT literal both when unset and
+  // when explicitly set to the default — to distinguish a real override we
+  // check process.env directly (same intent as the WSS guard above).
+  if (
+    !Object.prototype.hasOwnProperty.call(process.env, "OPENWHISPR_BACKEND_URL_PATTERN") &&
+    resolved.OPENWHISPR_BACKEND_URL
+  ) {
+    const p = deriveOriginPattern(resolved.OPENWHISPR_BACKEND_URL);
+    if (p) resolved.OPENWHISPR_BACKEND_URL_PATTERN = p;
+  }
+  if (
+    !Object.prototype.hasOwnProperty.call(process.env, "OPENWHISPR_AUTH_URL_PATTERN") &&
+    resolved.OPENWHISPR_AUTH_URL
+  ) {
+    const p = deriveOriginPattern(resolved.OPENWHISPR_AUTH_URL);
+    if (p) resolved.OPENWHISPR_AUTH_URL_PATTERN = p;
   }
   // Phase 05 B1 auto-disable: a default `npm run build` with no env vars
   // would otherwise produce a binary where STREAMING_ENABLED=true AND

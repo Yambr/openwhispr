@@ -38,6 +38,8 @@ export default defineConfig(({ mode }) => {
       env.OPENWHISPR_BACKEND_URL ?? env.VITE_OPENWHISPR_API_URL ?? "",
     VITE_OPENWHISPR_BACKEND_URL_PATTERN:
       env.OPENWHISPR_BACKEND_URL_PATTERN || "https://api.openwhispr.com/*",
+    VITE_OPENWHISPR_AUTH_URL_PATTERN:
+      env.OPENWHISPR_AUTH_URL_PATTERN || "https://auth.openwhispr.com/*",
     VITE_OPENWHISPR_AUTH_URL:
       env.OPENWHISPR_AUTH_URL || env.VITE_AUTH_URL || "https://auth.openwhispr.com",
     VITE_OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL:

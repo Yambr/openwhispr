@@ -16,6 +16,7 @@ interface ImportMetaEnv {
   readonly VITE_OPENWHISPR_AUTH_URL?: string;
   readonly VITE_OPENWHISPR_BACKEND_URL?: string;
   readonly VITE_OPENWHISPR_BACKEND_URL_PATTERN?: string;
+  readonly VITE_OPENWHISPR_AUTH_URL_PATTERN?: string;
   readonly VITE_OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL?: string;
   readonly VITE_OPENWHISPR_MCP_URL?: string;
   readonly VITE_OPENWHISPR_OAUTH_RESET_PASSWORD_URL?: string;
