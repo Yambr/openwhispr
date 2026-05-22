@@ -103,6 +103,39 @@ trustedOrigins config or about the client's actual production behavior
 (which already handles Origin in `main.js` via `webRequest`). Document
 it in `SERVER-REQUIREMENTS.md`. Don't paper over it in the e2e fetch.
 
+### Before editing ANY client file — MANDATORY blame check
+
+The server is reverse-engineered and omologated to the client. The
+client is NOT adjusted to match the server. Before proposing or making
+**any** change to `main.js`, `preload.js`, `src/`, or a renderer entry
+point to "fix" a client↔server mismatch, you MUST first run:
+
+```bash
+git log -1 -L<line>,<line>:<file>          # who introduced this line
+git show upstream/main:<file> | grep -n …  # is it in upstream verbatim?
+```
+
+Decision rule — apply it every time, no exceptions:
+
+- **The code is upstream OpenWhispr** (present in `upstream/main`, or
+  authored by an upstream committer, not a Yambr-fork commit) → it is
+  **immutable**. The wire contract it expects (header, JSON field,
+  chunk `type` enum, model name, response shape) is the contract the
+  **server must satisfy**. File a `SERVER-REQUIREMENTS.md` entry. Do
+  NOT touch the client — not even a one-line rename. Upstream-merge
+  cost is the hard constraint.
+- **The code is Yambr-fork drift** (a fork-only commit) AND the change
+  is build-time env gating per Phase 3/4 → editing it is in bounds.
+- **Anything else** → stop and ask the user.
+
+A client↔server mismatch is a SERVER finding by default. "It's just a
+field rename in the client" is the exact rationalization this rule
+exists to block: a rename in upstream code is still upstream drift and
+still multiplies every future merge conflict. Two options only, per the
+`client_immutable` rule: (1) the server adapts, or (2) the feature is
+cut from the client via a build-time gate. There is no third option
+where the client migrates to match the server.
+
 ### Internationalization — MANDATORY
 
 All user-facing strings must use react-i18next. Never hardcode UI text.
