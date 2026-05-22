@@ -2533,9 +2533,71 @@ client realtime-dictation run will verify end-to-end.
 
 ---
 
+### R31 RE-OPENED — header strip insufficient (live run 2026-05-22)
+
+**Status:** 🔴 **RE-OPENED** — server commit `f41d29e2` (header strip)
+fixed the `1011` but NOT the underlying Beta-shape rejection.
+
+A live acceptance run drove the real lockdown Electron client against
+the rebuilt server (`tests/ui/_acceptance-live.mjs` — chat + reason +
+upload + realtime, on the owner's real session). Chat (R32), reason,
+and cloud upload all **PASS**. Realtime still **FAILS**:
+
+```
+[DEBUG] OpenAI Realtime connecting { model: 'gpt-realtime' }
+[DEBUG] OpenAI Realtime WebSocket opened
+[ERROR] OpenAI Realtime error event {
+  "code": "beta_api_shape_disabled",
+  "message": "The Realtime Beta API is no longer supported. Please use /v1/realtime for the GA API."
+}
+[DEBUG] OpenAI Realtime WebSocket closed { code: 1005 }
+```
+
+**Progress vs. before:** the `1011` close is GONE — the client-facing
+WS now reaches `opened` (the header strip let the upgrade through). But
+`beta_api_shape_disabled` now arrives **as a realtime error event
+inside the already-open WS**, not as a handshake failure. This means
+the Beta semantics reach OpenAI **not via the `OpenAI-Beta` header**
+(that is stripped) — they are in the **URL / route / negotiation
+shape** of the server's upstream LiteLLM → OpenAI Realtime leg.
+
+`transcription_session.created` never arrives — the realtime session is
+never established.
+
+**What the server must investigate (second pass).**
+1. LiteLLM `1.83.14` realtime call — does it invoke OpenAI's **GA**
+   `/v1/realtime` route or a Beta-era route/shape? The error string
+   "Please use /v1/realtime for the GA API" comes from OpenAI itself.
+2. Negotiation shape — Beta used `transcription_session.*` events; GA
+   may expect `session.*`. The proxy is payload-opaque, so whatever
+   the client sends is forwarded — but the **upstream** establishment
+   (before the client's first frame) is server/LiteLLM-owned.
+3. Confirm `realtime-default` → `openai/gpt-realtime` actually
+   negotiates a GA session, not a Beta one.
+
+**Client side:** verified clean in the same live run — WS opens,
+`model: gpt-realtime`, zero `api.openai.com` direct egress, no
+OpenAI-Beta header originating a failure (the client is upstream code
+that emits the header; the server strips it — confirmed working). No
+client change is warranted.
+
+**Severity:** HIGH — realtime dictation still cannot complete in the
+corporate build. Chat and upload ARE usable (R32 + transcribe verified
+live); realtime is the sole remaining blocker.
+
+---
+
 ## R32 — `/api/agent/stream` NDJSON chunk `type` values do not match the upstream client's expected contract → chat window renders empty
 
-**Status:** 🔴 **OPEN** — filed 2026-05-22.
+**Status:** 🟢 **CLOSED** — server commit `11b0f858`, verified live
+2026-05-22. The server renamed the NDJSON chunk vocab in
+`sse-parser.ts` + `tool-call-accumulator.ts` (`text-delta`→`content`,
+`tool-call`→`tool_call`, `finish`→`done`; `tool-result` not emitted).
+A live acceptance run (`tests/ui/_acceptance-live.mjs`, real lockdown
+Electron client, owner session) drove `cloud-agent-stream-start` and
+received `chunkTypes: ["content","done"]`, `assembledText: "Hi!"` — the
+chat window is no longer empty. `/api/reason` also verified live
+(`"Hello! How can I help you today?"`, model `qwen3.6-plus`).
 
 **Discovered:** 2026-05-22, live corporate-build client run. The user
 sent a chat message; the server responded (HTTP 200, NDJSON streamed
