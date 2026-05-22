@@ -183,17 +183,32 @@ test("Notes onboarding → Configure an AI model shows no provider tabs", async 
   expect(await clickText("Notes"), "could not open Notes").toBe(true);
   await main.waitForTimeout(2000);
 
-  // Onboarding (collapsed) must already be clean.
-  assertNoLeaks("Notes onboarding (collapsed)", await bodyText());
+  // Onboarding must be clean. The "Configure an AI model" collapsible
+  // (NotesOnboarding.tsx) is the only place a provider tab / model picker
+  // could leak in this screen.
+  const onboardingText = await bodyText();
+  assertNoLeaks("Notes onboarding", onboardingText);
 
-  // Expand the section that hosts the model picker — this is where provider
-  // tabs would live if lockdown leaked.
-  expect(
-    await clickText("Configure an AI model"),
-    "could not expand 'Configure an AI model'",
-  ).toBe(true);
-  await main.waitForTimeout(2000);
-  assertNoLeaks("Notes onboarding → Configure an AI model", await bodyText());
+  // Post-upstream-merge, NotesOnboarding renders the LLM/model-picker section
+  // ONLY for non-Pro users (`!isProLoading && !isProUser`). The corporate
+  // lockdown build authenticates as a Pro user (isSubscribed:true), so the
+  // entire "Configure an AI model" collapsible — and the ReasoningModelSelector
+  // it hosts — is never mounted. A non-rendered model picker cannot leak
+  // provider tabs, which satisfies the lockdown intent.
+  //
+  // If the picker IS present (non-Pro path, or a future regression), expand it
+  // and re-assert no leaks. Either branch keeps the leak assertion as the test.
+  if (await clickText("Configure an AI model", 3000)) {
+    await main.waitForTimeout(2000);
+    assertNoLeaks("Notes onboarding → Configure an AI model (expanded)", await bodyText());
+  } else {
+    // Picker absent for the Pro corporate user — assert the section is truly
+    // gone, then the screen is leak-free by construction.
+    expect(
+      onboardingText,
+      "model-picker section should not render for a Pro corporate user",
+    ).not.toContain("Configure an AI model");
+  }
 });
 
 test("Integrations shows no MCP card and no API-key management", async () => {
