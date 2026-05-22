@@ -2882,7 +2882,23 @@ every message despite the server returning a correct 200 NDJSON stream.
 
 ## R33 — `/api/reason` with no `systemPrompt` treats dictation as a chat turn — the cleanup persona is never applied
 
-**Status:** 🔴 **OPEN** — filed 2026-05-22.
+**Status:** 🟢 **CLOSED** — verified live 2026-05-22. Server commits
+`dca4f24d`/`b9f34fc7`/`b4f27348`/`00795cba`/`fb90c19c`. Server now does
+prompt selection by request **shape** (`isCleanupRequest` = no
+`agentName` + no `systemPrompt` + empty `model`) — zero content
+heuristic. Three-tier precedence: non-empty `customPrompt` → verbatim
+(Prompt Studio override); else server-side localized cleanup persona
+(`prompts.cleanupPrompt`, en/ru i18n resource). Cleanup class routes to
+`qwen3.6-cleanup` (alias → Qwen3.6-35B-A3B), thinking disabled via
+`extra_body.chat_template_kwargs.enable_thinking:false`; agent class
+stays on the full model. Verified live through the real lockdown
+Electron client (`cloud-reason` IPC): `"эм раз два три"` →
+`"Раз, два, три."`; `"um what time is it"` → `"What time is it?"`
+(cleaned, NOT answered — inverse of the bug); `customPrompt` override
+applied verbatim. Operator: `REASONING_CLEANUP_API_BASE` points the
+cleanup alias at the internal Qwen endpoint.
+
+**Status (original):** 🔴 OPEN — filed 2026-05-22.
 
 **Discovered:** 2026-05-22, live corporate-build dictation. The user
 dictates speech expecting **cleanup** (filler-word removal, punctuation,
