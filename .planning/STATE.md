@@ -101,12 +101,19 @@ None yet.
 ### Blockers/Concerns
 
 None. Corporate-minimal cloud journey verified live 2026-05-22 — chat,
-file upload, and realtime dictation all work end-to-end through our
-server. Server requirements R19-R32 (auth journey, Cloud plane,
-`/api/agent/stream` chunk vocab, realtime GA relay — 6 defects) all
-closed server-side with zero client changes; the client stayed pure
-upstream code throughout. See
+file upload, realtime dictation, dictation cleanup, and full cloud sync
+(transcriptions/notes/conversations) all work end-to-end through our
+server. Server requirements R19-R37 all closed (auth journey, Cloud
+plane, agent-stream chunk vocab, realtime GA relay, cleanup persona,
+cloud-sync schema chain) — server-side with zero client changes except
+one lockdown regression fix (quick 260522-qab, cloudBackupEnabled
+localStorage seed). Upstream OpenWhispr 1.7.2 merged into the fork
+(all build-time gating verified intact). See
 `.planning/phases/08-client-server-audit/SERVER-REQUIREMENTS.md`.
+
+Follow-ups (non-blocking): one lockdown UI test (Notes onboarding)
+needs updating for the merged upstream Notes structure; 3 new upstream
+`node:test` vad files don't run under the vitest runner.
 
 ### Quick Tasks Completed
 
