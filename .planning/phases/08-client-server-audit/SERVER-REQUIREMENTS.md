@@ -2953,3 +2953,38 @@ casing fixed), NOT a conversational reply. Dictating a question
 **Severity:** HIGH — dictation cleanup is the core product function;
 right now every dictation that resembles a question or command gets a
 chatbot reply instead of the user's cleaned-up text.
+
+### R33 follow-up — cleanup must route to a fast NON-thinking model
+
+Beyond the persona fix, the cleanup request class should also route to
+a different **model** than the agent-chat class.
+
+The live log shows cleanup currently runs on `qwen3.6-plus`
+(`promptMode: 'default'`) — a hybrid-reasoning model. Reasoning /
+thinking modes inflate time-to-first-token 5-30x; a cleanup pass (fix
+grammar + punctuation, strip fillers) needs near-instant latency and
+does not benefit from reasoning — a reasoning model over-processes a
+simple grammar fix.
+
+Industry reference: Wispr Flow ("WhisperFlow") runs cloud cleanup on
+Groq for ultra-low latency; the OSS analog WhisperTalk documents its
+stack as Groq Whisper-Large-V3 for STT + Llama 3.3 70B on Groq for the
+grammar/filler cleanup pass.
+
+**Requested server routing.** `/api/reason` already distinguishes two
+request classes by shape (the same shape used for the persona fix
+above):
+- **(A) cleanup** — no `agentName`, no `systemPrompt`, empty `model`
+  -> route to a fast, small, NON-thinking model (e.g. Llama 3.3 70B on
+  Groq, or Qwen3-8B with thinking explicitly disabled, or gpt-4o-mini),
+  reasoning/thinking explicitly OFF.
+- **(B) agent** — `agentName` set or `systemPrompt` provided -> the
+  full reasoning model (`qwen3.6-plus`) is fine.
+
+The cleanup model should be operator-configurable via env
+(e.g. `REASONING_CLEANUP_MODEL`), not hardcoded. The exact default is
+the server team's call (they own the LiteLLM config) — the requirement
+is only that cleanup must NOT share the agent-chat reasoning model.
+
+Sources: wisprflow.ai, github.com/bensblueprints/whisper-talk,
+research.aimultiple.com/llm-latency-benchmark
