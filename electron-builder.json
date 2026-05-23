@@ -14,10 +14,7 @@
   "files": [
     "main.js",
     "preload.js",
-    "preload-gcal.generated.cjs",
-    "preload-billing.generated.cjs",
-    "preload-referrals.generated.cjs",
-    "preload-streaming.generated.cjs",
+    "preload-*.generated.cjs",
     "package.json",
     "node_modules/**/*",
     "src/dist/**/*",
