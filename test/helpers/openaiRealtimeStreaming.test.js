@@ -148,3 +148,153 @@ describe("openaiRealtimeStreaming — empty-URL guard (Phase 05-02)", () => {
     else delete require.cache[wsResolved];
   });
 });
+
+describe("openaiRealtimeStreaming — language query-param suffix (260526-ix4)", () => {
+  // Build a URL by invoking connect() with the given language option against a
+  // FakeWebSocket that captures the URL synchronously. Reuses the same
+  // require.cache injection pattern as the CR-01 test above (proven reliable
+  // against CJS require() inside the SUT).
+  function buildUrlWith(language) {
+    let capturedUrl = null;
+    function FakeWebSocket(url) {
+      capturedUrl = url;
+      this.readyState = 0;
+      this.on = () => {};
+      this.once = () => {};
+      this.close = () => {};
+      this.send = () => {};
+    }
+    FakeWebSocket.OPEN = 1;
+    FakeWebSocket.CONNECTING = 0;
+    FakeWebSocket.CLOSING = 2;
+    FakeWebSocket.CLOSED = 3;
+
+    resetCaches();
+
+    const wsResolved = require.resolve("ws");
+    const realWsCacheEntry = require.cache[wsResolved];
+    require.cache[wsResolved] = {
+      id: wsResolved,
+      filename: wsResolved,
+      loaded: true,
+      exports: FakeWebSocket,
+      children: [],
+      paths: [],
+    };
+
+    // Use a URL with NO pre-existing query string — `sep` resolves to '?' so
+    // we can write tight regexes anchored on `?intent=transcription`.
+    require.cache[CONFIG_PATH] = {
+      id: CONFIG_PATH,
+      filename: CONFIG_PATH,
+      loaded: true,
+      exports: {
+        OPENWHISPR_REALTIME_WSS_URL: "wss://test.example.com/v1/realtime",
+      },
+      children: [],
+      paths: [],
+    };
+
+    // eslint-disable-next-line global-require
+    const Streaming = require(STREAMING_PATH);
+    const inst = new Streaming();
+
+    // Build the options object the way the IPC layer does: only pass
+    // `language` when the caller actually wants to test that key. When the
+    // test asks for `undefined` we still pass the key explicitly so we cover
+    // the "key present, value undefined" shape that connect() destructures.
+    inst.connect({ apiKey: "sk-test-key", language }).catch(() => {});
+
+    try { inst.cleanup(); } catch {}
+    if (realWsCacheEntry) require.cache[wsResolved] = realWsCacheEntry;
+    else delete require.cache[wsResolved];
+
+    return capturedUrl;
+  }
+
+  test("language='ru' appends &language=ru to URL", () => {
+    const url = buildUrlWith("ru");
+    expect(url).toBeTruthy();
+    expect(url).toMatch(/&language=ru(?:$|&)/);
+  });
+
+  test("language='en' appends &language=en to URL", () => {
+    const url = buildUrlWith("en");
+    expect(url).toBeTruthy();
+    expect(url).toMatch(/&language=en(?:$|&)/);
+  });
+
+  test("language omitted (no key in options) produces URL with no language= substring", () => {
+    // Same FakeWebSocket pattern but exercise the "no language key at all"
+    // branch — connect() destructure must yield undefined → no suffix.
+    let capturedUrl = null;
+    function FakeWebSocket(url) {
+      capturedUrl = url;
+      this.readyState = 0;
+      this.on = () => {};
+      this.once = () => {};
+      this.close = () => {};
+      this.send = () => {};
+    }
+    FakeWebSocket.OPEN = 1;
+    FakeWebSocket.CONNECTING = 0;
+    FakeWebSocket.CLOSING = 2;
+    FakeWebSocket.CLOSED = 3;
+
+    resetCaches();
+    const wsResolved = require.resolve("ws");
+    const realWsCacheEntry = require.cache[wsResolved];
+    require.cache[wsResolved] = {
+      id: wsResolved,
+      filename: wsResolved,
+      loaded: true,
+      exports: FakeWebSocket,
+      children: [],
+      paths: [],
+    };
+    require.cache[CONFIG_PATH] = {
+      id: CONFIG_PATH,
+      filename: CONFIG_PATH,
+      loaded: true,
+      exports: { OPENWHISPR_REALTIME_WSS_URL: "wss://test.example.com/v1/realtime" },
+      children: [],
+      paths: [],
+    };
+    // eslint-disable-next-line global-require
+    const Streaming = require(STREAMING_PATH);
+    const inst = new Streaming();
+    inst.connect({ apiKey: "sk-test-key" }).catch(() => {});
+    try { inst.cleanup(); } catch {}
+    if (realWsCacheEntry) require.cache[wsResolved] = realWsCacheEntry;
+    else delete require.cache[wsResolved];
+
+    expect(capturedUrl).toBeTruthy();
+    expect(capturedUrl).not.toMatch(/language=/);
+  });
+
+  test("language=null produces URL with no language= substring", () => {
+    const url = buildUrlWith(null);
+    expect(url).toBeTruthy();
+    expect(url).not.toMatch(/language=/);
+  });
+
+  test("language='' produces URL with no language= substring", () => {
+    const url = buildUrlWith("");
+    expect(url).toBeTruthy();
+    expect(url).not.toMatch(/language=/);
+  });
+
+  test("language=undefined produces URL with no language= substring", () => {
+    const url = buildUrlWith(undefined);
+    expect(url).toBeTruthy();
+    expect(url).not.toMatch(/language=/);
+  });
+
+  test("language='ru' preserves intent=transcription before language suffix", () => {
+    const url = buildUrlWith("ru");
+    expect(url).toBeTruthy();
+    // intent=transcription must come first (single '?' separator before it),
+    // then the language suffix joined by '&'.
+    expect(url).toMatch(/\?intent=transcription&language=ru/);
+  });
+});
