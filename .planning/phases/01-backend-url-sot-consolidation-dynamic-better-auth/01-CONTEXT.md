@@ -13,7 +13,9 @@ This document locks the HOW decisions that downstream agents (planner, executor,
 
 **Decision:** JavaScript `Proxy()` wrapping a memoized inner `createAuthClient()` instance keyed by resolved `baseURL`. The proxy's `get` trap returns properties bound to the current inner instance; instance is re-created lazily on the next access after a URL-change signal flips an internal `dirty` flag.
 
-**Why this over a lazy factory:** `src/lib/auth.ts:12` is upstream-origin (commit `56f4efb8`, Gabriel Stein). The exported symbol name `authClient` is consumed across the renderer (`useSession()`, `signIn.email(...)`, `signOut(...)`, etc.) AND inside upstream code paths we cannot modify. Replacing the export with a `getAuthClient()` factory would cascade rename across upstream-origin call sites → multiplies merge cost forever. Proxy keeps the symbol name and API surface byte-identical to upstream.
+**Why this over a lazy factory:** `src/lib/auth.ts:12` is upstream-origin (commit `56f4efb8`, Gabriel Stein, "switch desktop to Better Auth + add Microsoft sign-in"). The exported symbol name `authClient` is consumed across the renderer (`useSession()`, `signIn.email(...)`, `signOut(...)`, etc.) AND inside upstream code paths we cannot modify. Replacing the export with a `getAuthClient()` factory would cascade rename across upstream-origin call sites → multiplies merge cost forever. Proxy keeps the symbol name and API surface byte-identical to upstream.
+
+**Important nuance (discovered during execute prep):** `AUTH_URL = import.meta.env.VITE_AUTH_URL || "..."` on line 11 was NOT upstream-origin — it was reverted from Phase 03-02's `AUTH_URL = OPENWHISPR_AUTH_URL` by the upstream merge. Phase 1 Plan 01-05 should restore the defaults.ts read AND add the Proxy wrapper. The wrapper is the upstream-parity-sensitive part (it preserves the `authClient` symbol); the `AUTH_URL` const expression itself can re-read defaults.ts safely because it's already been changed once in Yambr-fork drift (in ba1c1917) and will be again.
 
 **Mechanics:**
 
@@ -154,10 +156,23 @@ Implementation uses the existing `playwright.config.ts` + `bddgen` + `electron-l
 
 ## D-07: HOST-03 sweep details (resolves HOST-03)
 
-**Verified during scout:**
+**⚠ Pre-existing regression discovered during execute prep (2026-05-26):**
 
-- `src/config/defaults.ts:39-42` already exports `OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL` (via `pick("VITE_OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL", Generated.OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL)`). Already in `build-config.generated.{ts,cjs}`. `auth.ts:177` just needs the import + replacement.
-- `src/config/defaults.ts:49-52` already exports `OPENWHISPR_OAUTH_RESET_PASSWORD_URL` (same pattern). `auth.ts:232` just needs the import + replacement.
+Phase 03-02 (commit `ba1c1917`, "feat(03-02): refactor src/lib/auth.ts to read auth URLs from defaults.ts", authored by Nikolai Iambroskin 2026-05-08) **already did exactly this HOST-03 work**. It wired:
+- `auth.ts:11` `AUTH_URL` → `OPENWHISPR_AUTH_URL` from defaults
+- `auth.ts:177` `DESKTOP_OAUTH_CALLBACK_URL` → `OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL` from defaults
+- `auth.ts:232` `redirectTo` → `OPENWHISPR_OAUTH_RESET_PASSWORD_URL` from defaults
+
+**Upstream merge in Phase 6 (commit `7b91e76e` / `56f4efb8` Better Auth migration) REGRESSED all three back to hardcoded literals.** Current `auth.ts` HEAD has all three literals — exactly as the integration check INT-03/04 reported.
+
+This means HOST-03 in Phase 1 is **re-doing** Phase 03-02's work, not new work. CFG-02 was technically "validated in Phase 3" per PROJECT.md but the validation didn't survive the upstream merge — the v1.7.2 audit missed this because it checked PROJECT.md markers, not live grep.
+
+**Carry-forward implication for Phase 6 (recurring upstream-merge phase):** add a post-merge gate that runs `npm run verify:backend-url-sot` (the script being authored in Plan 01-01) so any future merge regression is caught immediately. File as a finding in Phase 1 SUMMARY for the next upstream merge to address.
+
+**Verified during scout (post-regression state):**
+
+- `src/config/defaults.ts:39-42` already exports `OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL` (via `pick("VITE_OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL", Generated.OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL)`). Already in `build-config.generated.{ts,cjs}`. `auth.ts:177` needs the import + replacement (re-applying ba1c1917).
+- `src/config/defaults.ts:49-52` already exports `OPENWHISPR_OAUTH_RESET_PASSWORD_URL` (same pattern). `auth.ts:232` needs the import + replacement (re-applying ba1c1917).
 - `src/components/notes/ShareNoteDialog.tsx:26` `SHARE_VIEWER_BASE_URL = "https://notes.openwhispr.com"` — NO matching constant. Add `OPENWHISPR_SHARE_VIEWER_URL` to:
   - `scripts/generate-build-config.js` STRING_DEFAULTS (default `"https://notes.openwhispr.com"`, override env var `OPENWHISPR_SHARE_VIEWER_URL`)
   - `src/config/defaults.ts` (via `pick(...)`)
