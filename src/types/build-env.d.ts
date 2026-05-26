@@ -10,7 +10,8 @@ interface ImportMetaEnv {
   // Existing pre-Phase-3 keys — preserved for backward compatibility until call
   // sites migrate in waves 2-5.
   readonly VITE_AUTH_URL?: string;
-  readonly VITE_OPENWHISPR_API_URL?: string;
+  // VITE_OPENWHISPR_API_URL retired in Phase 1 (v1.8.0) HOST-01 — superseded
+  // by VITE_OPENWHISPR_BACKEND_URL.
 
   // Phase 3 renderer-exposed build-time keys.
   readonly VITE_OPENWHISPR_AUTH_URL?: string;

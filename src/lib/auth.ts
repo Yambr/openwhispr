@@ -1,11 +1,11 @@
 import { createAuthClient } from "better-auth/react";
-import { OPENWHISPR_API_URL } from "../config/constants";
 import {
   OAUTH_GOOGLE_ENABLED,
   OAUTH_APPLE_ENABLED,
   OAUTH_MICROSOFT_ENABLED,
   PROVIDER_LOCKDOWN_ENABLED,
   OPENWHISPR_AUTH_URL,
+  OPENWHISPR_BACKEND_URL,
   OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL,
   OPENWHISPR_OAUTH_RESET_PASSWORD_URL,
 } from "../config/defaults";
@@ -118,12 +118,12 @@ export function isWithinGracePeriod(): boolean {
 }
 
 export async function deleteAccount(): Promise<{ error?: Error }> {
-  if (!OPENWHISPR_API_URL) {
+  if (!OPENWHISPR_BACKEND_URL) {
     return { error: new Error("API not configured") };
   }
 
   try {
-    const res = await fetch(`${OPENWHISPR_API_URL}/api/auth/delete-account`, {
+    const res = await fetch(`${OPENWHISPR_BACKEND_URL}/api/auth/delete-account`, {
       method: "DELETE",
       credentials: "include",
     });

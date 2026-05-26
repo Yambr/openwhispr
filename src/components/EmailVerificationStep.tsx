@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { OPENWHISPR_API_URL } from "../config/constants";
+import { OPENWHISPR_BACKEND_URL } from "../config/defaults";
 import { authClient } from "../lib/auth";
 import { Button } from "./ui/button";
 import { Mail, Loader2, Check, RefreshCw } from "lucide-react";
@@ -26,9 +26,9 @@ export default function EmailVerificationStep({ email, onVerified }: EmailVerifi
   }, [resendCooldown]);
 
   useEffect(() => {
-    if (!OPENWHISPR_API_URL || verified) return;
+    if (!OPENWHISPR_BACKEND_URL || verified) return;
 
-    const url = `${OPENWHISPR_API_URL}/api/auth/verification-status?email=${encodeURIComponent(email)}`;
+    const url = `${OPENWHISPR_BACKEND_URL}/api/auth/verification-status?email=${encodeURIComponent(email)}`;
 
     pollRef.current = setInterval(async () => {
       try {

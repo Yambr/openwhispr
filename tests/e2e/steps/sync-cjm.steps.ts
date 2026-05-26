@@ -8,7 +8,7 @@
  *     → src/services/cloudApi.ts (cloudGet/Post/Patch/Delete)
  *       → window.electronAPI.cloudApiRequest({ method, path, body? })
  *         → ipcMain.handle("cloud-api-request") in src/helpers/ipcHandlers.js
- *           → HTTPS to ${OPENWHISPR_API_URL}${path} with Bearer auth
+ *           → HTTPS to ${OPENWHISPR_BACKEND_URL}${path} with Bearer auth
  *
  * Tests reach this path via `page.evaluate(...)` calling the same
  * `window.electronAPI.cloudApiRequest` exposed by `preload.js` to the

@@ -34,8 +34,7 @@ export default defineConfig(({ mode }) => {
   // process.env / .env at build time. Defaults match docs/CONFIG_INVENTORY.md.
   // These values are inlined into the JS bundle as literals via Vite `define`.
   const buildTimeDefaults = {
-    VITE_OPENWHISPR_BACKEND_URL:
-      env.OPENWHISPR_BACKEND_URL ?? env.VITE_OPENWHISPR_API_URL ?? "",
+    VITE_OPENWHISPR_BACKEND_URL: env.OPENWHISPR_BACKEND_URL ?? "",
     VITE_OPENWHISPR_BACKEND_URL_PATTERN:
       env.OPENWHISPR_BACKEND_URL_PATTERN || "https://api.openwhispr.com/*",
     VITE_OPENWHISPR_AUTH_URL_PATTERN:
@@ -70,7 +69,8 @@ export default defineConfig(({ mode }) => {
         name: "write-runtime-env",
         writeBundle() {
           const runtimeEnv = {
-            VITE_OPENWHISPR_API_URL: env.VITE_OPENWHISPR_API_URL || "",
+            // Phase 1 HOST-01 (v1.8.0): VITE_OPENWHISPR_API_URL retired —
+            // see src/config/defaults.ts OPENWHISPR_BACKEND_URL.
             VITE_AUTH_URL: env.VITE_AUTH_URL || "",
             ...buildTimeDefaults,
           };

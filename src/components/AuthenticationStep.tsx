@@ -8,7 +8,7 @@ import {
   updateLastSignInTime,
   type SocialProvider,
 } from "../lib/auth";
-import { OPENWHISPR_API_URL } from "../config/constants";
+import { OPENWHISPR_BACKEND_URL } from "../config/defaults";
 import {
   OAUTH_GOOGLE_ENABLED,
   OAUTH_APPLE_ENABLED,
@@ -156,12 +156,12 @@ export default function AuthenticationStep({
     setError(null);
 
     try {
-      if (!OPENWHISPR_API_URL) {
+      if (!OPENWHISPR_BACKEND_URL) {
         setAuthMode("sign-up");
         return;
       }
 
-      const response = await fetch(`${OPENWHISPR_API_URL}/api/check-user`, {
+      const response = await fetch(`${OPENWHISPR_BACKEND_URL}/api/check-user`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),

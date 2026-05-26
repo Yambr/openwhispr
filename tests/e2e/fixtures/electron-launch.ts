@@ -43,14 +43,12 @@ export async function launchClient(opts: LaunchOptions = {}): Promise<LaunchResu
     ...baseEnv,
     NODE_ENV: "test",
     OPENWHISPR_E2E_BACKEND_URL: backendUrl,
-    // Main-process API URL: src/helpers/ipcHandlers.js getApiUrl() reads
-    // OPENWHISPR_API_URL first, falling back to VITE_OPENWHISPR_API_URL and
-    // the runtime-env.json. Set both forms so cloud-api-request resolves
-    // the backend correctly under test.
-    OPENWHISPR_API_URL: backendUrl,
-    VITE_OPENWHISPR_API_URL: backendUrl,
-    // Vite define mirror so the renderer also sees the override:
+    // Phase 1 HOST-01 (v1.8.0): single SoT — OPENWHISPR_BACKEND_URL feeds the
+    // build-config generator (consumed by main via build-config.generated.cjs)
+    // AND becomes the renderer's value via Vite define
+    // (VITE_OPENWHISPR_BACKEND_URL substitution).
     OPENWHISPR_BACKEND_URL: backendUrl,
+    VITE_OPENWHISPR_BACKEND_URL: backendUrl,
     // Disable GPU/hardware accel — keeps the test runner happy in CI:
     ELECTRON_DISABLE_GPU: "1",
     ...opts.env,

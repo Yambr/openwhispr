@@ -112,8 +112,8 @@ export const CACHE_CONFIG = {
   PASTE_DELAY_MS: 50, // Delay before paste simulation to allow clipboard to settle
 } as const;
 
-// OpenWhispr Cloud API
-export const OPENWHISPR_API_URL = (env.VITE_OPENWHISPR_API_URL as string) || "";
+// Phase 1 HOST-01 (v1.8.0): OPENWHISPR_API_URL retired. Renderer reads
+// OPENWHISPR_BACKEND_URL from ../config/defaults (single SoT).
 
 // Retry Configuration
 export const RETRY_CONFIG = {
