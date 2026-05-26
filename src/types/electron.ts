@@ -466,6 +466,9 @@ export interface ReferralItem {
 declare global {
   interface Window {
     electronAPI: {
+      // Phase 1 HOST-02 (v1.8.0): runtime backend URL override.
+      notifyServerUrlChanged?: (url: string | null) => void;
+
       // Basic window operations
       pasteText: (
         text: string,

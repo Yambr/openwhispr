@@ -3372,29 +3372,16 @@ class IPCHandlers {
       }
     });
 
-    // In production, VITE_* env vars aren't available in the main process because
-    // Vite only inlines them into the renderer bundle at build time. Load the
-    // runtime-env.json that the Vite build writes to src/dist/ as a fallback.
-    const runtimeEnv = (() => {
-      const fs = require("fs");
-      const envPath = path.join(__dirname, "..", "dist", "runtime-env.json");
-      try {
-        if (fs.existsSync(envPath)) return JSON.parse(fs.readFileSync(envPath, "utf8"));
-      } catch {}
-      return {};
-    })();
-
-    const getApiUrl = () =>
-      process.env.OPENWHISPR_API_URL ||
-      process.env.VITE_OPENWHISPR_API_URL ||
-      runtimeEnv.VITE_OPENWHISPR_API_URL ||
-      "";
-
-    const getAuthUrl = () =>
-      process.env.AUTH_URL ||
-      process.env.VITE_AUTH_URL ||
-      runtimeEnv.VITE_AUTH_URL ||
-      "https://auth.openwhispr.com";
+    // Phase 1 HOST-01 + HOST-02 (v1.8.0): single SoT via backendUrlState.
+    // getBackendUrl/getAuthUrl honor a runtime override pushed by the
+    // renderer via "settings:server-url-changed" IPC; fall back to
+    // BuildConfig.generated.cjs (built from OPENWHISPR_BACKEND_URL /
+    // OPENWHISPR_AUTH_URL env vars at build time). The 3-source env fallback
+    // (process.env.OPENWHISPR_API_URL / VITE_OPENWHISPR_API_URL /
+    // runtimeEnv.VITE_OPENWHISPR_API_URL) is retired.
+    const backendUrlState = require("./backendUrlState");
+    const getApiUrl = () => backendUrlState.getBackendUrl();
+    const getAuthUrl = () => backendUrlState.getAuthUrl();
 
     const getSessionCookiesFromWindow = async (win) => {
       const scopedUrls = [getAuthUrl(), getApiUrl()].filter(Boolean);

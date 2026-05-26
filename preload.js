@@ -805,4 +805,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getUpdateNotificationData: () => ipcRenderer.invoke("get-update-notification-data"),
   updateNotificationReady: () => ipcRenderer.invoke("update-notification-ready"),
   updateNotificationRespond: (action) => ipcRenderer.invoke("update-notification-respond", action),
+
+  // Phase 1 HOST-02 (v1.8.0): renderer pushes a runtime backend-URL override
+  // to main (consumed by backendUrlState.js / getApiUrl / getAuthUrl). Pass
+  // null/empty to clear the override (revert to build-time default).
+  notifyServerUrlChanged: (url) => ipcRenderer.send("settings:server-url-changed", url || null),
 });

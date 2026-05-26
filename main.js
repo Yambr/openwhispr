@@ -257,6 +257,7 @@ const TextEditMonitor = require("./src/helpers/textEditMonitor");
 const WhisperCudaManager = require("./src/helpers/whisperCudaManager");
 const GoogleCalendarManager = require("./src/helpers/googleCalendarManager");
 const BuildConfig = require("./src/config/build-config.generated.cjs");
+const backendUrlState = require("./src/helpers/backendUrlState");
 const MeetingProcessDetector = require("./src/helpers/meetingProcessDetector");
 const AudioActivityDetector = require("./src/helpers/audioActivityDetector");
 const AudioTapManager = require("./src/helpers/audioTapManager");
@@ -731,6 +732,12 @@ async function startApp() {
   await environmentManager.init();
   registerSidecars();
   startAuthBridgeServer();
+
+  // Phase 1 HOST-02 (v1.8.0): listen for runtime backend-URL changes pushed
+  // from renderer (Phase 4 onboarding UI). backendUrlState.getBackendUrl()
+  // / getAuthUrl() are the SoT for all main-process /api/* and Better Auth
+  // host resolution after this point.
+  backendUrlState.registerIpc(ipcMain);
 
   cliBridge = new CliBridge(ipcHandlers);
   cliBridge.start().catch((err) => {

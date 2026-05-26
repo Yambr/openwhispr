@@ -21,10 +21,23 @@ const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
 
+// The gate-script itself is allowed to mention the banned tokens (it defines
+// them). Comment lines mentioning the tokens for documentation/migration notes
+// are filtered out in shouldSkipBannedMatch().
+const BANNED_TOKEN_ALLOW = ["scripts/verify-backend-url-sot.js"];
+
 const BANNED_TOKENS_SOURCE = [
-  { token: "OPENWHISPR_API_URL", scope: ["src", "scripts", ".github/workflows", "tests"], allow: [] },
-  { token: "VITE_OPENWHISPR_API_URL", scope: ["src", "scripts", ".github/workflows", "tests"], allow: [] },
+  { token: "OPENWHISPR_API_URL", scope: ["src", "scripts", ".github/workflows", "tests"], allow: BANNED_TOKEN_ALLOW },
+  { token: "VITE_OPENWHISPR_API_URL", scope: ["src", "scripts", ".github/workflows", "tests"], allow: BANNED_TOKEN_ALLOW },
 ];
+
+// Skip comment lines — they may legitimately mention retired tokens for
+// migration notes. Matches `//`-leading lines (TS/JS) and `#`-leading lines
+// (YAML/shell).
+function isComment(content) {
+  const trimmed = content.trim();
+  return trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("*");
+}
 
 // vite.config.mjs is allowed because it sets parity defaults for define() —
 // it's a build-time fallback chain (env → vite define → SoT), not a hardcoded
@@ -75,7 +88,7 @@ function isAllowed(filePath, allowList) {
 for (const { token, scope, allow } of BANNED_TOKENS_SOURCE) {
   checked++;
   const matches = grepSource(token, scope);
-  const forbidden = matches.filter((m) => !isAllowed(m.file, allow));
+  const forbidden = matches.filter((m) => !isAllowed(m.file, allow) && !isComment(m.content));
   if (forbidden.length > 0) {
     violations.push({
       check: `BANNED-TOKEN: ${token}`,
