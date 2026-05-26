@@ -11,6 +11,14 @@ const { Given, When, Then } = createBdd(test);
 
 const DEFAULT_AUTH_URL = "https://auth.openwhispr.com";
 
+// Background step — opens the Electron app via the existing test fixture.
+// The fixture's `electronApp` Playwright project value handles the actual
+// launch; this step is the BDD entry point.
+Given("the Electron app is launched", async ({ electronApp }) => {
+  // Sanity check: the fixture must have given us a running ElectronApp.
+  if (!electronApp) throw new Error("electronApp fixture not initialized");
+});
+
 // Local mock backend used for the override scenario. Only listens long enough
 // to record one Better Auth request, then closes.
 type MockBackend = {
