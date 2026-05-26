@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.7.2
-milestone_name: shipped
-status: Awaiting next milestone
-stopped_at: Milestone v1.7.2 archived
-last_updated: "2026-05-26T15:00:00.000Z"
-last_activity: 2026-05-26 — Milestone v1.7.2 completed and archived (tag v1.7.9)
+milestone: v1.8.0
+milestone_name: Custom Server URL Onboarding
+status: planning
+last_updated: "2026-05-26T15:30:00.000Z"
+last_activity: 2026-05-26
 progress:
-  total_phases: 11
-  completed_phases: 11
-  total_plans: 41
-  completed_plans: 41
-  percent: 100
+  total_phases: 5
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,18 +20,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** A maintainer or end-user can produce a corporate-minimal OpenWhispr binary that talks to their own backend with only the OAuth providers they want — at build time today, and at runtime via onboarding starting in v1.8.0.
-**Current focus:** Awaiting `/gsd-new-milestone v1.8.0 --reset-phase-numbers` for Custom Server URL Onboarding.
+**Current focus:** v1.8.0 Phase 1 — Backend URL SoT Consolidation + Dynamic Better Auth.
 
 ## Current Position
 
-Phase: Milestone v1.7.2 complete
-Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-05-26 — Milestone v1.7.2 completed and archived
+Phase: 1 of 5 (Backend URL SoT Consolidation + Dynamic Better Auth)
+Plan: — (not yet planned)
+Status: Not started — roadmap created, ready to plan Phase 1
+Last activity: 2026-05-26 — v1.8.0 roadmap created (5 phases, 12 requirements mapped)
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Deferred Items
 
-Items acknowledged and deferred at milestone close on 2026-05-26:
+Items acknowledged and deferred at v1.7.2 milestone close on 2026-05-26:
 
 | Category | Item | Status | Notes |
 |----------|------|--------|-------|
@@ -55,23 +56,29 @@ See `.planning/milestones/v1.7.2-MILESTONE-AUDIT.md` and `.planning/v1.7.2-INTEG
 
 Decisions are logged in PROJECT.md Key Decisions table.
 
+Recent decisions affecting current work:
+
+- 2026-05-26 (v1.8.0 milestone): Backend host selection moves to runtime via onboarding screen, gated by build-time `OPENWHISPR_ALLOW_CUSTOM_HOST`. All other configurability stays build-time. Threat model + mitigations to be formalized in v1.8.0 Phase 2 ADR.
+
 ### Pending Todos
 
 None yet.
 
 ### Blockers/Concerns
 
-None for v1.7.2. For v1.8.0 there is one carry-forward concern that becomes Phase 1:
+None blocking. Phase 1 carries forward two v1.7.2 integration-check findings as scope-included work (not blockers):
 
-**v1.8.0 prereq (per integration-check INT-01/INT-02):** Two parallel backend-URL env-vars (`OPENWHISPR_BACKEND_URL` vs `OPENWHISPR_API_URL` via `VITE_OPENWHISPR_API_URL`) carry the same semantic. Renderer reads the latter; Phase 3 declared the former as SoT. CI papers over by setting both. Plus `src/lib/auth.ts:12` is a frozen module-singleton — runtime URL reconfiguration impossible without refactor. v1.8.0 MUST address these before any onboarding UI work.
+- **INT-01** (HIGH): `src/lib/auth.ts:12` `authClient` is a frozen module-singleton — runtime URL reconfig requires refactor → HOST-02.
+- **INT-02** (MED): Two parallel env-var systems for backend host (`OPENWHISPR_BACKEND_URL` vs `OPENWHISPR_API_URL`) need collapsing → HOST-01.
+- **INT-03/04/05** (MED): 3 hardcoded URLs in `src/lib/auth.ts:177`, `auth.ts:227`, `ShareNoteDialog.tsx:26` → HOST-03.
 
 ## Session Continuity
 
 Last session: 2026-05-26
-Stopped at: Milestone v1.7.2 archived
+Stopped at: v1.8.0 roadmap created (5 phases, 12 requirements mapped to 4 phases; Phase 2 is unmapped policy work)
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with `/gsd-new-milestone v1.8.0 --reset-phase-numbers`
-- Carry forward to v1.8.0 Phase 1: backend-URL SoT consolidation + dynamic Better Auth refactor
+- Plan Phase 1 with `/gsd-plan-phase 1`
+- Phase 1 MUST land before Phase 3 (build-time gate) and Phase 4 (UI) — see INT-01/INT-02 in v1.7.2-INTEGRATION-CHECK.md

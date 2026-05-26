@@ -68,19 +68,21 @@ Tracked here for traceability; not built in this milestone.
 
 ## Traceability
 
-Filled by roadmapper. Each requirement maps to exactly one phase.
+Each requirement maps to exactly one phase. Phase 2 (Policy ADR) has no mapped requirement — it is pure policy/docs work that produces no acceptance artifact; the policy is enacted by BG-01/BG-02 in Phase 3.
 
 | REQ-ID  | Phase   |
 |---------|---------|
-| HOST-01 | TBD     |
-| HOST-02 | TBD     |
-| HOST-03 | TBD     |
-| BG-01   | TBD     |
-| BG-02   | TBD     |
-| UI-01   | TBD     |
-| UI-02   | TBD     |
-| UI-03   | TBD     |
-| UI-04   | TBD     |
-| VER-01  | TBD     |
-| VER-02  | TBD     |
-| VER-03  | TBD     |
+| HOST-01 | Phase 1 |
+| HOST-02 | Phase 1 |
+| HOST-03 | Phase 1 |
+| BG-01   | Phase 3 |
+| BG-02   | Phase 3 |
+| UI-01   | Phase 4 |
+| UI-02   | Phase 4 |
+| UI-03   | Phase 4 |
+| UI-04   | Phase 4 |
+| VER-01  | Phase 5 |
+| VER-02  | Phase 5 |
+| VER-03  | Phase 5 |
+
+**Coverage:** 12/12 v1.8.0 requirements mapped. No orphans, no duplicates. Phase 2 is unmapped policy work (intentional — see note above).
