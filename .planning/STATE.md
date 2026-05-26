@@ -1,98 +1,59 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.7.2
-milestone_name: milestone
-status: executing
-stopped_at: Completed 07-06-PLAN.md
-last_updated: "2026-05-21T19:29:15.917Z"
-last_activity: 2026-05-21
+milestone_name: shipped
+status: Awaiting next milestone
+stopped_at: Milestone v1.7.2 archived
+last_updated: "2026-05-26T15:00:00.000Z"
+last_activity: 2026-05-26 — Milestone v1.7.2 completed and archived (tag v1.7.9)
 progress:
   total_phases: 11
-  completed_phases: 6
-  total_plans: 39
-  completed_plans: 36
-  percent: 55
+  completed_phases: 11
+  total_plans: 41
+  completed_plans: 41
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-08)
+See: .planning/PROJECT.md (updated 2026-05-26)
 
-**Core value:** A maintainer can run `npm run build` with a set of env vars and get a fully-working OpenWhispr binary that talks to their own backend and shows only the OAuth providers they want — without touching source code. Default build (no env vars) must be behaviorally identical to the current Yambr fork.
-**Current focus:** Phase 01 — wire-contract-documentation
+**Core value:** A maintainer or end-user can produce a corporate-minimal OpenWhispr binary that talks to their own backend with only the OAuth providers they want — at build time today, and at runtime via onboarding starting in v1.8.0.
+**Current focus:** Awaiting `/gsd-new-milestone v1.8.0 --reset-phase-numbers` for Custom Server URL Onboarding.
 
 ## Current Position
 
-Phase: 10 — COMPLETE
-Plan: 06 of 06 complete
-Status: Phase verified — goal ACHIEVED
-Last activity: 2026-05-21 -- Phase 10 complete: corporate-minimal provider lockdown, 6/6 plans, live UAT passed (welcome email/password-only; Settings → Language Models shows only OpenWhispr Cloud + Local)
+Phase: Milestone v1.7.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-05-26 — Milestone v1.7.2 completed and archived
 
-Progress: [██████████] 100%
+## Deferred Items
 
-## Performance Metrics
+Items acknowledged and deferred at milestone close on 2026-05-26:
 
-**Velocity:**
+| Category | Item | Status | Notes |
+|----------|------|--------|-------|
+| uat | phase-03 03-HUMAN-UAT.md | partial | 2 pending scenarios (default-build smoke walk, custom-protocol Google Calendar smoke) |
+| uat | phase-04 04-HUMAN-UAT.md | unsigned | SC #4 signed-build sign-off blank; de-facto verified by shipped v1.7.6/7/8 releases |
+| verification | phase-04 04-VERIFICATION.md | gaps_found | CFG-03 partial (IntegrationsView.tsx Google Calendar card not gated standalone — superseded in default by Phase 10 PROVIDER_LOCKDOWN_ENABLED) |
+| quick_task | 260521-wt4-corporate-minimal-ui-fixes | done | sentinel present, audit-open false-positive |
+| quick_task | 260522-wt5-lockdown-leaks-notes-mcp | done | findings committed (39fe0576); SUMMARY pending bookkeeping |
+| quick_task | 260522-wt6-realtime-streaming-lockdown | done | sentinel + live-run.mjs present |
+| quick_task | 260523-byok-preload-hotfix | done | work shipped in commit 16543048; REVIEW.md filed, SUMMARY pending bookkeeping |
+| quick_task | 260526-ix4-client-realtime-wss-pass-settings-prefer | done | SUMMARY present |
+| quick_task | 260526-lang-realtime-preferred-language | done | work shipped in commits 081493a2, 146868cc, 6909d5fc (under ix4 follow-up) |
 
-- Total plans completed: 3
-- Average duration: —
-- Total execution time: 0 hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01 | 3 | - | - |
-
-**Recent Trend:**
-
-- Last 5 plans: —
-- Trend: —
-
-*Updated after each plan completion*
-| Phase 01 P01 | 6min | 1 tasks | 1 files |
-| Phase 01 P02 | 5min | 1 tasks | 1 files |
-| Phase 01 P03 | 4min | 1 tasks | 1 files |
-| Phase 04.1 P05 | 6m | 3 tasks | 11 files |
-| Phase 04.1 P06 | 5m | 2 tasks | 2 files |
-| Phase 07 P01 | 2m | 2 tasks | 7 files |
-| Phase 07 P02 | 1m | 2 tasks | 2 files |
-| Phase 07 P03 | 2m | 2 tasks | 1 files |
-| Phase 07 P05 | 5min | 2 tasks | 1 files |
-| Phase 07 P06 | 5m | 2 tasks | 3 files |
-| Phase 10 P02 | ~5m | 2 tasks | 2 files |
-| Phase 10 P03 | 12m | 2 tasks | 1 files |
-| Phase 10 P05 | 35min | 2 tasks | 7 files |
+All 9 items are documented as known tech debt in MILESTONES.md and accepted at close.
+See `.planning/milestones/v1.7.2-MILESTONE-AUDIT.md` and `.planning/v1.7.2-INTEGRATION-CHECK.md` for the full audit.
 
 ## Accumulated Context
-
-### Roadmap Evolution
-
-- Phase 04.1 inserted after Phase 04: Tree-shaking fix for OAUTH_*_ENABLED gating + ensure prepack regenerates build-config (URGENT)
-  - Discovered during Phase 04 smoke test: `npm run pack` skips `generate-build-config.js` (only `prebuild` runs it, `prepack` doesn't), and `gcalStartOAuth` symbol still appears in the bundle when `OAUTH_GOOGLE_ENABLED=false` — gating is not actually tree-shaking the disabled code paths.
-- Phase 10 added: Corporate-minimal provider lockdown — build-time gate cutting all OAuth buttons, all alternative transcription/reasoning/agent providers, and all BYOK surfaces; client offers strictly Cloud (our server) or Local.
-  - Discovered during live UI verification against the slim-core openwhispr-server: the client's welcome screen shows Apple/Google/Microsoft OAuth buttons the server supports none of (server does google/github/oidc only, none configured on slim → 404), and the Transcription/Reasoning pickers expose OpenAI/Groq/Mistral/Custom + BYOK API-key input — upstream provider choices the corporate-minimal product must not surface (server routes all Cloud-mode calls internally via LiteLLM).
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- Init: v1 = docs + build-time config only; v2 = own backend separately (avoids coupling client refactor to backend invention)
-- Init: Build-time configuration via Vite `define` + electron-builder env (not runtime config files) — smaller attack surface
-- Init: Default build behavior unchanged when no env vars set — zero risk to existing Yambr fork users
-- [Phase 01]: BACKEND_SPEC.md uses endpoint-card template (method/URL/auth/fetch-site/IPC-site + JSON request + JSON response + error deviations) — pattern for OAUTH_SPEC.md to mirror
-- [Phase 01]: Source-only reverse engineering with file:line drift detection — no live HTTP traces, source is the contract
-- [Phase 01]: OAUTH_SPEC.md uses provider-card template (Authorization/Token/Refresh/Revoke/Scopes/Redirect/ClientID/Secret/Storage/RefreshTrigger/IPC/SourceFiles) — same shape per provider, mechanical Phase 4 CFG-03 gating
-- [Phase 01]: Apple/Microsoft sign-in buttons are NOT independent OAuth flows in the desktop client — they tunnel through the OpenWhispr cloud-sign-in shim; CFG-03 only needs flags for cloud-sign-in + Google Calendar
-- [Phase 01]: SELF_HOSTING.md uses two-tier endpoint pattern (3 must-implement inline + 16 operational cross-linked to BACKEND_SPEC) for readability + single-source-of-truth
-- [Phase 04.1]: Used two-stub Vite-alias gating for STREAMING_ENABLED: streamingProviders.stub.js + useChatStreaming.stub.ts, since literals span two always-imported leaf modules
-- [Phase 04.1]: Phase 04.1 closed: 6 build flags documented + tree-shake mechanism canonicalized in BUILD_CONFIG.md; SELF_HOSTING.md reflects corporate-minimal default posture per 2026-05-08 pivot
-- [Phase 07]: Drop require("vitest") in CJS tests; rely on globals: true (vitest 3.x rejects CJS require)
-- [Phase 07]: Use require.main === module guard to make generate-build-config.js dual-purpose CLI+library without breaking 30+ npm scripts that spawn it
-- [Phase 07]: Plan 07-05: chose Path C (smoke-grep) over Path A (extract pure helper) for audioManager.shouldUseStreaming — verify:feature-gating already covers end-to-end; extraction filed as follow-up
 
 ### Pending Todos
 
@@ -100,39 +61,17 @@ None yet.
 
 ### Blockers/Concerns
 
-None. Corporate-minimal cloud journey verified live 2026-05-22 — chat,
-file upload, realtime dictation, dictation cleanup, and full cloud sync
-(transcriptions/notes/conversations) all work end-to-end through our
-server. Server requirements R19-R37 all closed (auth journey, Cloud
-plane, agent-stream chunk vocab, realtime GA relay, cleanup persona,
-cloud-sync schema chain) — server-side with zero client changes except
-one lockdown regression fix (quick 260522-qab, cloudBackupEnabled
-localStorage seed). Upstream OpenWhispr 1.7.2 merged into the fork
-(all build-time gating verified intact). See
-`.planning/phases/08-client-server-audit/SERVER-REQUIREMENTS.md`.
+None for v1.7.2. For v1.8.0 there is one carry-forward concern that becomes Phase 1:
 
-Post-merge test follow-ups closed (quick 260522-smj): node:test files
-separated from the vitest runner, lockdown Notes onboarding UI test
-updated. vitest 48/48, test:build-config 15/15, test:lockdown-ui 6/6.
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260509-x1a | Restore release.yml with macOS signing+notarization, merge corporate-build features, delete corporate-build.yml + build-and-notarize.yml | 2026-05-09 | 4adb576e | [260509-x1a-restore-release-yml-with-macos-signing-n](./quick/260509-x1a-restore-release-yml-with-macos-signing-n/) |
-| 260521-wt4-FIX1 | Gate Pro/upgrade/limit UI behind BILLING_ENABLED — usage limits neutralized, sidebar banners + UpgradePrompt DCE'd, integration cards unlocked in corporate build | 2026-05-21 | 8f9f63f3, 5d59e421 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
-| 260521-wt4-FIX2 | cloudBackupEnabled first-run default now follows PROVIDER_LOCKDOWN_ENABLED (on in corporate build) | 2026-05-21 | 76bdb747 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
-| 260521-wt4-FIX3 | dictationAgentMode fallback resolves to openwhispr under lockdown instead of cut `providers` mode | 2026-05-21 | 76bdb747 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
-| 260521-wt4-FIX4 | Transcription picker under lockdown exposes one cloud provider (no Custom/groq/mistral); self-hosted transcription mode + SelfHostedPanel now DCE'd in SettingsPage/MeetingSettings; verify:provider-lockdown extended with TRANSCRIPTION target group | 2026-05-21 | bffd60b6, cfaf30a1 | [260521-wt4-corporate-minimal-ui-fixes](./quick/260521-wt4-corporate-minimal-ui-fixes/) |
-| 260522-wt5 | Provider-lockdown leaks: gated cloud reasoning model list (GPT-* names) in ReasoningModelSelector, gated MCP integration card in IntegrationsView, sourced MCP URL from OPENWHISPR_MCP_URL build-time var, extended verify:provider-lockdown with SURFACE target group | 2026-05-22 | fcccaff9, b112a66b, 3b9ddb28, f0b50f7b | [260522-wt5-lockdown-leaks-notes-mcp](./quick/260522-wt5-lockdown-leaks-notes-mcp/) |
-| 260522-wt6 | Realtime streaming lockdown (Design B): repointed corporate realtime WSS to our /v1/realtime proxy with the Better Auth session bearer (no OpenAI-direct, no ephemeral client_secret), lockdown implies STREAMING_ENABLED, single-entry lockdown streaming catalog (deepgram/assemblyai DCE'd), gpt-realtime default model, new realtime-lockdown Electron-UI spec, verify:provider-lockdown REALTIME group, BACKEND_SPEC Design B card. Live run confirmed client routing correct; server upstream 1011 filed as R31. | 2026-05-22 | 5d6d8a3a, 74c8c996, 3e1c92f0, 6bff47ac, 8dba0ae7, 0ba50651, 4bb2cf08 | [260522-wt6-realtime-streaming-lockdown](./quick/260522-wt6-realtime-streaming-lockdown/) |
-| 260522-qab | Fix corporate-lockdown cloud-sync gate: cloudBackupEnabled lockdown default was seeded only into the in-memory store; SyncService.canSync() (upstream) reads localStorage raw, saw null, disabled all cloud sync. seedLockdownCloudBackupDefault() mirrors the lockdown default into localStorage on store init (key-absent guard — user toggle still wins). Verified live: localStorage.cloudBackupEnabled === "true". Paired isSubscribed gate is server-side (R34). | 2026-05-22 | 37b09d2b | [260522-qab-lockdown-cloud-sync-gate](./quick/260522-qab-lockdown-cloud-sync-gate/) |
-| 260522-smj | Post-merge test follow-ups: separated node:test files (generate-build-config.test.cjs + 2 upstream VAD specs) from the vitest runner via vitest.config exclude + test:build-config extension; fixed corporate-lockdown.spec.ts Notes onboarding test for the merged NotesOnboarding structure (LLM picker gated behind !isProUser, corporate Pro build never mounts it — assert absence). vitest 48/48, test:build-config 15/15, test:lockdown-ui 6/6. | 2026-05-22 | 629e1956, 38436f33 | [260522-smj-post-merge-test-fixes](./quick/260522-smj-post-merge-test-fixes/) |
-| 260523-1om | webRequest Origin-allowlist follows build-time backend/auth URLs (FIXES-CLIENT F6): main.js's onBeforeSendHeaders urls array was a literal *.openwhispr.com — a corporate build on openwhispr.yambr.com fell outside it, so the Origin:null→own-origin rewrite never fired and Better Auth returned MISSING_OR_NULL_ORIGIN (auth broken in any non-openwhispr.com build). Generator now derives OPENWHISPR_BACKEND_URL_PATTERN + new OPENWHISPR_AUTH_URL_PATTERN from the backend/auth URLs (deriveOriginPattern, mirroring REALTIME_WSS_URL); main.js sources the urls array from BuildConfig, deduped, localhost dev entries preserved. Handler callback body byte-identical to upstream — zero merge cost. test:build-config 15/15. | 2026-05-23 | d9969bea, 520867fd, 69d11afa | [260523-1om-webrequest-origin-allowlist](./quick/260523-1om-webrequest-origin-allowlist/) |
-| 260523-21n | corporate-lockdown.spec self-contained: 4/6 lockdown-UI tests failed "could not open <X>" because a clean Electron userData lands the app on the onboarding/Welcome screen (AppRouter.jsx gates Control Panel on localStorage onboardingCompleted/skipAuth). Pre-existing fragility — reproduced identically on 82774205, the spec only passed before via a stale session. beforeAll now writes the onboarding-bypass localStorage keys into the panel window and reloads, asserting the Control Panel rendered. No client code, no mocks, leak assertions intact. test:lockdown-ui 6/6. | 2026-05-23 | (see SUMMARY) | [260523-21n-lockdown-ui-self-contained](./quick/260523-21n-lockdown-ui-self-contained/) |
+**v1.8.0 prereq (per integration-check INT-01/INT-02):** Two parallel backend-URL env-vars (`OPENWHISPR_BACKEND_URL` vs `OPENWHISPR_API_URL` via `VITE_OPENWHISPR_API_URL`) carry the same semantic. Renderer reads the latter; Phase 3 declared the former as SoT. CI papers over by setting both. Plus `src/lib/auth.ts:12` is a frozen module-singleton — runtime URL reconfiguration impossible without refactor. v1.8.0 MUST address these before any onboarding UI work.
 
 ## Session Continuity
 
-Last session: 2026-05-21T19:29:15.913Z
-Stopped at: Completed 07-06-PLAN.md
+Last session: 2026-05-26
+Stopped at: Milestone v1.7.2 archived
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with `/gsd-new-milestone v1.8.0 --reset-phase-numbers`
+- Carry forward to v1.8.0 Phase 1: backend-URL SoT consolidation + dynamic Better Auth refactor
