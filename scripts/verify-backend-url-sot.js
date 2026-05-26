@@ -39,6 +39,17 @@ function isComment(content) {
   return trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("*");
 }
 
+// GitHub Actions repo-var reference on the RIGHT-hand side of `${{ vars.* }}`
+// is the legacy GH variable name. Phase 1 Plan 01-06 deletes all env-var
+// ASSIGNMENTS of the retired tokens, but the GH var name itself is renamed
+// by the maintainer in a follow-up step (see MAINTAINER-ACTION.md). Until
+// then, allow ${{ vars.VITE_OPENWHISPR_API_URL }} references on the
+// right-hand side of an env-var line — they're legacy GH-var-name plumbing,
+// not source-of-truth violations.
+function isLegacyGhVarRef(content) {
+  return /\$\{\{\s*vars\.VITE_OPENWHISPR_API_URL\s*\}\}/.test(content);
+}
+
 // vite.config.mjs is allowed because it sets parity defaults for define() —
 // it's a build-time fallback chain (env → vite define → SoT), not a hardcoded
 // runtime literal. Same pattern as OPENWHISPR_MCP_URL/OAUTH_* fallbacks already
@@ -88,7 +99,9 @@ function isAllowed(filePath, allowList) {
 for (const { token, scope, allow } of BANNED_TOKENS_SOURCE) {
   checked++;
   const matches = grepSource(token, scope);
-  const forbidden = matches.filter((m) => !isAllowed(m.file, allow) && !isComment(m.content));
+  const forbidden = matches.filter(
+    (m) => !isAllowed(m.file, allow) && !isComment(m.content) && !isLegacyGhVarRef(m.content)
+  );
   if (forbidden.length > 0) {
     violations.push({
       check: `BANNED-TOKEN: ${token}`,

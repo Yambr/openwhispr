@@ -114,7 +114,6 @@ jobs:
           OPENWHISPR_BACKEND_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           OPENWHISPR_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
-          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
 
       - name: Build Application
@@ -128,7 +127,6 @@ jobs:
           OPENWHISPR_BACKEND_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           OPENWHISPR_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
-          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
 
       - name: Upload Linux artifacts
@@ -253,7 +251,6 @@ jobs:
           OPENWHISPR_BACKEND_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           OPENWHISPR_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
-          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
 
       - name: Build and Sign Application
@@ -267,7 +264,6 @@ jobs:
           OPENWHISPR_BACKEND_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           OPENWHISPR_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
-          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
 
       - name: Upload Windows artifacts
@@ -409,7 +405,6 @@ jobs:
           OPENWHISPR_BACKEND_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           OPENWHISPR_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
-          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
 
       - name: Build Application (${{ matrix.arch }})
@@ -424,7 +419,6 @@ jobs:
           OPENWHISPR_BACKEND_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           OPENWHISPR_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
           VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
-          VITE_OPENWHISPR_API_URL: ${{ vars.VITE_OPENWHISPR_API_URL }}
           VITE_OPENWHISPR_OAUTH_CALLBACK_URL: ${{ vars.VITE_OPENWHISPR_OAUTH_CALLBACK_URL }}
           CSC_IDENTITY_AUTO_DISCOVERY: true
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
