@@ -34,7 +34,7 @@ class OpenAIRealtimeStreaming {
   }
 
   async connect(options = {}) {
-    const { apiKey, model, preconfigured } = options;
+    const { apiKey, model, preconfigured, language } = options;
     if (!apiKey) throw new Error("OpenAI API key is required");
 
     if (this.isConnected || this.isConnecting) {
@@ -65,8 +65,12 @@ class OpenAIRealtimeStreaming {
       );
     }
     const sep = OPENWHISPR_REALTIME_WSS_URL.includes("?") ? "&" : "?";
-    const url = `${OPENWHISPR_REALTIME_WSS_URL}${sep}intent=transcription`;
-    debugLogger.debug("OpenAI Realtime connecting", { model: this.model });
+    const langSuffix = language ? `&language=${encodeURIComponent(language)}` : "";
+    const url = `${OPENWHISPR_REALTIME_WSS_URL}${sep}intent=transcription${langSuffix}`;
+    debugLogger.debug("OpenAI Realtime connecting", {
+      model: this.model,
+      language: language || undefined,
+    });
 
     return new Promise((resolve, reject) => {
       this.pendingResolve = resolve;
