@@ -9,26 +9,96 @@ import {
   OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL,
   OPENWHISPR_OAUTH_RESET_PASSWORD_URL,
 } from "../config/defaults";
+import { useSettingsStore } from "../stores/settingsStore";
 import { openExternalLink } from "../utils/externalLinks";
 
 // Phase 1 HOST-03 (v1.8.0): re-apply Phase 03-02's defaults.ts wiring that
 // was reverted by the Phase 6 upstream merge (commit 56f4efb8). AUTH_URL
 // reads OPENWHISPR_AUTH_URL build-time SoT instead of the hardcoded literal.
 export const AUTH_URL = OPENWHISPR_AUTH_URL;
-export const authClient = createAuthClient({
-  baseURL: AUTH_URL,
-  fetchOptions: {
-    auth: {
-      type: "Bearer",
-      token: async () => (await window.electronAPI?.authGetToken?.()) ?? "",
+
+// Phase 1 HOST-02 (v1.8.0): mutable Proxy preserves the `authClient` export
+// symbol byte-identical to upstream while letting baseURL change at runtime
+// from useSettingsStore.serverUrl. The inner createAuthClient is re-created
+// when serverUrl changes; the Proxy delegates property access to whichever
+// instance is current. Consumer call sites
+// (authClient.signIn.email(...), authClient.useSession(), etc.) work
+// unchanged. See .planning/phases/01-*/01-CONTEXT.md D-01.
+
+type AuthClientInstance = ReturnType<typeof createAuthClient>;
+
+let cachedInner: AuthClientInstance | null = null;
+let cachedBaseURL: string | null = null;
+
+function resolveBaseURL(): string {
+  // Optional chaining — useSettingsStore is set up at app init; in unit
+  // tests we mock the module so getState() is always available.
+  const persisted = useSettingsStore.getState().serverUrl;
+  return persisted || AUTH_URL;
+}
+
+function buildInner(): AuthClientInstance {
+  const baseURL = resolveBaseURL();
+  if (cachedInner !== null && cachedBaseURL === baseURL) return cachedInner;
+  cachedInner = createAuthClient({
+    baseURL,
+    fetchOptions: {
+      auth: {
+        type: "Bearer",
+        token: async () => (await window.electronAPI?.authGetToken?.()) ?? "",
+      },
+      headers: { "x-openwhispr-source": "desktop" },
+      onSuccess: async (ctx: { response: Response }) => {
+        const newToken = ctx.response.headers.get("set-auth-token");
+        if (newToken) await window.electronAPI?.authSetToken?.(newToken);
+      },
     },
-    headers: { "x-openwhispr-source": "desktop" },
-    onSuccess: async (ctx: { response: Response }) => {
-      const newToken = ctx.response.headers.get("set-auth-token");
-      if (newToken) await window.electronAPI?.authSetToken?.(newToken);
-    },
+  });
+  cachedBaseURL = baseURL;
+  return cachedInner;
+}
+
+// Subscribe once at module load: invalidate cache so next access rebuilds,
+// and push the change to the main process so getApiUrl/getAuthUrl pick it up.
+if (typeof useSettingsStore.subscribe === "function") {
+  useSettingsStore.subscribe((state, prev) => {
+    if (state.serverUrl !== prev.serverUrl) {
+      cachedInner = null;
+      cachedBaseURL = null;
+      window.electronAPI?.notifyServerUrlChanged?.(state.serverUrl || null);
+    }
+  });
+}
+
+export const authClient = new Proxy({} as AuthClientInstance, {
+  get(_target, prop, receiver) {
+    const inner = buildInner();
+    const value = Reflect.get(inner as object, prop, receiver);
+    return typeof value === "function" ? value.bind(inner) : value;
+  },
+  has(_target, prop) {
+    return Reflect.has(buildInner() as object, prop);
   },
 });
+
+// Phase 1 HOST-02 test hook: exposes the resolved baseURL to e2e step
+// definitions (tests/e2e/steps/host-runtime-override.steps.ts). Production
+// renderer code MUST NOT consume this — use authClient methods directly.
+if (typeof window !== "undefined") {
+  (window as unknown as { authClientBaseUrlForTest?: () => string }).authClientBaseUrlForTest =
+    () => {
+      // Force the inner to build so cachedBaseURL is populated, then read it.
+      buildInner();
+      return cachedBaseURL ?? AUTH_URL;
+    };
+  (window as unknown as { __authClientForTest?: AuthClientInstance }).__authClientForTest =
+    authClient;
+  (
+    window as unknown as { __zustand_setServerUrl?: (url: string | null) => void }
+  ).__zustand_setServerUrl = (url) => {
+    useSettingsStore.getState().setServerUrl?.(url);
+  };
+}
 
 export type SocialProvider = "google" | "microsoft" | "apple";
 

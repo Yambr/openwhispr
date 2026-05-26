@@ -368,6 +368,13 @@ export interface SettingsState
     PrivacySettings,
     ThemeSettings,
     ChatAgentSettings {
+  // Phase 1 HOST-02 (v1.8.0): user-entered backend Server URL. null = use
+  // build-time default (OPENWHISPR_BACKEND_URL). Read by src/lib/auth.ts
+  // mutable-proxy and pushed to main process via
+  // window.electronAPI.notifyServerUrlChanged on every change.
+  serverUrl: string | null;
+  setServerUrl: (url: string | null) => void;
+
   isSignedIn: boolean;
   audioCuesEnabled: boolean;
   pauseMediaOnDictation: boolean;
@@ -702,6 +709,21 @@ function invalidateApiKeyCaches(
 }
 
 export const useSettingsStore = create<SettingsState>()((set, get) => ({
+  // Phase 1 HOST-02: persisted serverUrl. Read from localStorage so it survives
+  // app restart. Empty string is treated the same as null (no override).
+  serverUrl: (() => {
+    const stored = isBrowser ? localStorage.getItem("serverUrl") : null;
+    return stored && stored.length > 0 ? stored : null;
+  })(),
+  setServerUrl: (url: string | null) => {
+    const v = url && url.length > 0 ? url : null;
+    if (isBrowser) {
+      if (v === null) localStorage.removeItem("serverUrl");
+      else localStorage.setItem("serverUrl", v);
+    }
+    set({ serverUrl: v });
+  },
+
   uiLanguage: normalizeUiLanguage(isBrowser ? localStorage.getItem("uiLanguage") : null),
   useLocalWhisper: readBoolean("useLocalWhisper", false),
   whisperModel: readString("whisperModel", "base"),
