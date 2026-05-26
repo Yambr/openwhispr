@@ -22,8 +22,10 @@ import type {
   ShareSettings,
   ShareVisibility,
 } from "../../types/electron";
+import { OPENWHISPR_SHARE_VIEWER_URL } from "../../config/defaults";
 
-const SHARE_VIEWER_BASE_URL = "https://notes.openwhispr.com";
+// Phase 1 HOST-03 (v1.8.0): was hardcoded; reads build-time SoT.
+const SHARE_VIEWER_BASE_URL = OPENWHISPR_SHARE_VIEWER_URL;
 const LAST_VISIBILITY_KEY = "openwhispr.shareDefaultVisibility";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

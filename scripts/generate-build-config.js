@@ -33,6 +33,11 @@ const DEFAULTS = Object.freeze({
   OPENWHISPR_OAUTH_GOOGLE_REVOKE_URL: "https://oauth2.googleapis.com/revoke",
   OPENWHISPR_OAUTH_GOOGLE_CALENDAR_API_URL: "https://www.googleapis.com/calendar/v3",
   OPENWHISPR_OAUTH_RESET_PASSWORD_URL: "https://openwhispr.com/reset-password",
+  // Phase 1 HOST-03 (v1.8.0): notes-share viewer base URL — used by
+  // ShareNoteDialog.tsx for "Copy share link" UX. Default matches the
+  // upstream openwhispr.com viewer; corporate self-hosters override to
+  // their own notes.* host via OPENWHISPR_SHARE_VIEWER_URL env var.
+  OPENWHISPR_SHARE_VIEWER_URL: "https://notes.openwhispr.com",
   OPENWHISPR_OAUTH_PROTOCOL_SCHEME: "openwhispr",
   OPENWHISPR_OPENAI_BASE_URL: "https://api.openai.com/v1",
   OPENWHISPR_ANTHROPIC_URL: "https://api.anthropic.com/v1/messages",

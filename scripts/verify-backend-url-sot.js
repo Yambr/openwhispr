@@ -26,19 +26,21 @@ const BANNED_TOKENS_SOURCE = [
   { token: "VITE_OPENWHISPR_API_URL", scope: ["src", "scripts", ".github/workflows", "tests"], allow: [] },
 ];
 
+// vite.config.mjs is allowed because it sets parity defaults for define() —
+// it's a build-time fallback chain (env → vite define → SoT), not a hardcoded
+// runtime literal. Same pattern as OPENWHISPR_MCP_URL/OAUTH_* fallbacks already
+// present in vite.config.mjs.
+const HOST_03_GENERATED_ALLOW = [
+  "src/config/defaults.ts",
+  "src/config/build-config.generated.ts",
+  "src/config/build-config.generated.cjs",
+  "src/vite.config.mjs",
+];
+
 const HOST_03_LITERALS = [
-  {
-    literal: "https://openwhispr.com/auth/desktop-callback",
-    allow: ["src/config/defaults.ts", "src/config/build-config.generated.ts", "src/config/build-config.generated.cjs"],
-  },
-  {
-    literal: "https://openwhispr.com/reset-password",
-    allow: ["src/config/defaults.ts", "src/config/build-config.generated.ts", "src/config/build-config.generated.cjs"],
-  },
-  {
-    literal: "https://notes.openwhispr.com",
-    allow: ["src/config/defaults.ts", "src/config/build-config.generated.ts", "src/config/build-config.generated.cjs"],
-  },
+  { literal: "https://openwhispr.com/auth/desktop-callback", allow: HOST_03_GENERATED_ALLOW },
+  { literal: "https://openwhispr.com/reset-password", allow: HOST_03_GENERATED_ALLOW },
+  { literal: "https://notes.openwhispr.com", allow: HOST_03_GENERATED_ALLOW },
 ];
 
 const violations = [];
