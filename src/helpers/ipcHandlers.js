@@ -5136,6 +5136,7 @@ class IPCHandlers {
             options.model ||
             (BuildConfig.PROVIDER_LOCKDOWN_ENABLED ? "gpt-realtime" : "gpt-4o-mini-transcribe"),
           preconfigured: isCloud,
+          language: options.language,
         });
         this._dictationStreaming = streaming;
       };

@@ -2062,7 +2062,7 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
           } = getSettings();
           const res = await provider.warmup({
             sampleRate: 16000,
-            language: warmupLang && warmupLang !== "auto" ? warmupLang : undefined,
+            language: getBaseLanguageCode(warmupLang),
             keyterms: this.getKeyterms(),
             model: cloudTranscriptionModel,
             mode:
@@ -2287,7 +2287,7 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         } = getSettings();
         const res = await provider.start({
           sampleRate: 16000,
-          language: preferredLang && preferredLang !== "auto" ? preferredLang : undefined,
+          language: getBaseLanguageCode(preferredLang),
           keyterms: this.getKeyterms(),
           model: cloudTranscriptionModel,
           mode:
