@@ -132,6 +132,18 @@ describe("authClient mutable Proxy (HOST-02)", () => {
     expect(notifyServerUrlChanged).toHaveBeenCalledWith("http://localhost:4004/auth");
   });
 
+  it("a stale captured method ref dispatches to the CURRENT inner after URL swap (HIGH-02)", async () => {
+    const { authClient } = await loadAuthModule();
+    // Capture the method ref while inner-A is current.
+    const captured = authClient.signIn.email;
+    expect(typeof captured).toBe("function");
+    // Swap URL — inner-A should now be invalidated; next dispatch uses inner-B.
+    useSettingsStoreMock.__setServerUrl("http://swap-target:5000/auth");
+    const result = await captured({ email: "x@y.z", password: "p" });
+    // Without the rebinding dispatch, viaUrl would be DEFAULT_AUTH_URL (inner-A).
+    expect(result.viaUrl).toBe("http://swap-target:5000/auth");
+  });
+
   it("preserves the authClient export symbol (upstream-parity, D-01)", async () => {
     const mod = await loadAuthModule();
     expect(mod.authClient).toBeDefined();

@@ -60,21 +60,80 @@ function buildInner(): AuthClientInstance {
 
 // Subscribe once at module load: invalidate cache so next access rebuilds,
 // and push the change to the main process so getApiUrl/getAuthUrl pick it up.
+// Then force a full renderer reload — better-auth/react's useSession() hook
+// and any consumer that captured a method reference (`const fn = authClient.x`)
+// stay bound to the old inner instance. A reload remounts the entire React
+// tree against the fresh URL, dropping all stale bindings. See v1.8.0
+// REVIEW.md HIGH-02 (silently hitting old backend with valid token = data leak).
 if (typeof useSettingsStore.subscribe === "function") {
   useSettingsStore.subscribe((state, prev) => {
     if (state.serverUrl !== prev.serverUrl) {
       cachedInner = null;
       cachedBaseURL = null;
       window.electronAPI?.notifyServerUrlChanged?.(state.serverUrl || null);
+      // Skip reload in unit/test contexts (no real Location object) and during
+      // initial hydration (prev.serverUrl === undefined means store just woke).
+      const isTestEnv =
+        typeof process !== "undefined" &&
+        (process as { env?: Record<string, string> }).env?.NODE_ENV === "test";
+      const isInitialHydration = prev.serverUrl === undefined;
+      if (
+        !isTestEnv &&
+        !isInitialHydration &&
+        typeof window !== "undefined" &&
+        typeof window.location?.reload === "function"
+      ) {
+        // Defer slightly so the IPC notify completes and React can flush any
+        // pending state writes before the reload tears everything down.
+        setTimeout(() => window.location.reload(), 150);
+      }
     }
   });
 }
 
+// HIGH-02 mitigation: walks down a property path (e.g. ["signIn", "email"])
+// against the CURRENT inner on every access — so a captured ref like
+// `const fn = authClient.signIn.email` re-resolves through the live inner
+// after a URL swap instead of dispatching to the stale instance (which would
+// leak the bearer token to the old backend host).
+function makePathProxy(path: PropertyKey[]): unknown {
+  return new Proxy(function () {} as unknown as object, {
+    get(_t, prop) {
+      // Skip internal symbols / Promise-like checks that React + vitest probe.
+      if (prop === "then" || prop === Symbol.toPrimitive) return undefined;
+      return makePathProxy([...path, prop]);
+    },
+    has(_t, prop) {
+      const inner = buildInner();
+      let cur: unknown = inner;
+      for (const step of path) cur = (cur as Record<PropertyKey, unknown>)?.[step];
+      return cur != null && Reflect.has(cur as object, prop);
+    },
+    apply(_t, _thisArg, args) {
+      const currentInner = buildInner();
+      let cur: unknown = currentInner;
+      let parent: unknown = currentInner;
+      for (const step of path) {
+        parent = cur;
+        cur = (cur as Record<PropertyKey, unknown>)?.[step];
+      }
+      if (typeof cur !== "function") {
+        throw new TypeError(`authClient.${path.map(String).join(".")} is not a function`);
+      }
+      return (cur as (...a: unknown[]) => unknown).apply(parent, args);
+    },
+  });
+}
+
 export const authClient = new Proxy({} as AuthClientInstance, {
-  get(_target, prop, receiver) {
-    const inner = buildInner();
-    const value = Reflect.get(inner as object, prop, receiver);
-    return typeof value === "function" ? value.bind(inner) : value;
+  get(_target, prop, _receiver) {
+    if (prop === "then" || prop === Symbol.toPrimitive) return undefined;
+    // Trigger a build to refresh `cachedInner` if serverUrl has changed —
+    // existing call sites (and tests) rely on first-access materialising
+    // the inner instance. The path proxy below also calls buildInner on
+    // every dispatch; this just ensures eager invalidation on touch.
+    buildInner();
+    return makePathProxy([prop]);
   },
   has(_target, prop) {
     return Reflect.has(buildInner() as object, prop);
