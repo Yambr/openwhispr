@@ -32,11 +32,11 @@ Archived: `.planning/milestones/v1.7.2-ROADMAP.md` · `.planning/milestones/v1.7
 
 Phase numbering RESET to 1 (per `--reset-phase-numbers`). v1.7.2 phases archived.
 
-- [ ] **Phase 1: Backend URL SoT Consolidation + Dynamic Better Auth** — Collapse dual `OPENWHISPR_API_URL`/`OPENWHISPR_BACKEND_URL` to single SoT; refactor frozen module-singleton `authClient` to runtime-mutable; sweep 3 hardcoded URLs into `defaults.ts`.
-- [ ] **Phase 2: Policy ADR — Runtime Host Configurability Relaxation** — Codify in `PROJECT.md` the conscious relaxation of "build-time only configurability" for backend host only, with phishing threat model and enumerated mitigations.
-- [ ] **Phase 3: Build-time Gate Plumbing for `OPENWHISPR_ALLOW_CUSTOM_HOST`** — Add flag to `BOOL_DEFAULTS`; verify Rolldown DCE removes Server URL field literals from default-build bundle.
-- [ ] **Phase 4: Onboarding UI — Server URL Field** — Add empty Server URL field on onboarding screen with syntax + reachability validation, persist to settings, i18n in 9 locales.
-- [ ] **Phase 5: Verification — E2E + Signed-Build Smoke** — Playwright scenario for corporate-minimal path, default-build smoke verifying field hidden, signed/notarized build still works.
+- [x] **Phase 1: Backend URL SoT Consolidation + Dynamic Better Auth** — Collapse dual `OPENWHISPR_API_URL`/`OPENWHISPR_BACKEND_URL` to single SoT; refactor frozen module-singleton `authClient` to runtime-mutable; sweep 3 hardcoded URLs into `defaults.ts`.
+- [x] **Phase 2: Policy ADR — Runtime Host Configurability Relaxation** — Codify in `PROJECT.md` the conscious relaxation of "build-time only configurability" for backend host only, with phishing threat model and enumerated mitigations.
+- [x] **Phase 3: Build-time Gate Plumbing for `OPENWHISPR_ALLOW_CUSTOM_HOST`** — Add flag to `BOOL_DEFAULTS`; verify Rolldown DCE removes Server URL field literals from default-build bundle.
+- [x] **Phase 4: Onboarding UI — Server URL Field** — Add empty Server URL field on onboarding screen with syntax + reachability validation, persist to settings, i18n in 9 locales.
+- [x] **Phase 5: Verification — E2E + Signed-Build Smoke** — Playwright scenario for corporate-minimal path, default-build smoke verifying field hidden, signed/notarized build still works.
 
 ## Phase Details
 

@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.8.0
 milestone_name: Custom Server URL Onboarding
-status: executing
-last_updated: "2026-05-26T23:35:00.000Z"
-last_activity: 2026-05-26 — Phase 1 COMPLETE (HOST-01/02/03 verified, live CDP drive PASS)
+status: ready-to-ship
+last_updated: "2026-05-27T10:40:00.000Z"
+last_activity: 2026-05-27 — v1.8.0 milestone COMPLETE (5/5 phases, all live-verified). Next - code review + release tag.
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 7
-  completed_plans: 7
-  percent: 20
+  completed_phases: 5
+  total_plans: 10
+  completed_plans: 10
+  percent: 100
 ---
 
 # Project State
