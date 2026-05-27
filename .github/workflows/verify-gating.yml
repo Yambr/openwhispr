@@ -40,6 +40,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Ensure Electron binary downloaded
+        # electron's postinstall (`node install.js`) downloads the binary from
+        # GitHub; if that flakes, `node_modules/electron/dist` is empty and
+        # `require("electron")` throws "Electron failed to install correctly"
+        # from src/helpers/debugLogger.js during vitest collection. That broke
+        # v1.7.11 and v1.7.13 release CI runs (v1.7.12 happened to win the
+        # network coin flip). Re-run the install script with 2 retries when
+        # the binary is missing, so a single transient download failure
+        # doesn't block the release.
+        run: |
+          for attempt in 1 2 3; do
+            if [ -d node_modules/electron/dist ] && [ "$(ls -A node_modules/electron/dist 2>/dev/null)" ]; then
+              echo "Electron binary present (attempt $attempt)."
+              break
+            fi
+            echo "Electron binary missing on attempt $attempt; re-running install.js."
+            node node_modules/electron/install.js || true
+          done
+          if [ ! -d node_modules/electron/dist ] || [ -z "$(ls -A node_modules/electron/dist 2>/dev/null)" ]; then
+            echo "::error::Electron binary still missing after 3 attempts."
+            exit 1
+          fi
+
       - name: Install platform-specific native binaries
         run: npm install @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu --no-save
 
