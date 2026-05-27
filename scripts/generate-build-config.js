@@ -107,12 +107,13 @@ const BOOL_DEFAULTS = Object.freeze({
   PROVIDER_LOCKDOWN_ENABLED: false,
   // Phase 3 BG-01 (v1.8.0): when true, the onboarding screen renders a
   // Server URL field that lets the user enter a custom backend host at
-  // runtime (Phase 4 UI-01..04). When false (default), the field is
-  // tree-shaken from the bundle and the binary uses the build-time
-  // OPENWHISPR_BACKEND_URL default exactly as v1.7.x did. Env var:
-  // OPENWHISPR_ALLOW_CUSTOM_HOST (any value other than "false" enables it;
-  // unset = false). Threat model + mitigations: see docs/adr/ADR-001.
-  ALLOW_CUSTOM_HOST_ENABLED: false,
+  // runtime (Phase 4 UI-01..04). v1.7.11: default changed to true — custom
+  // host is an orthogonal axis from provider-lockdown, and Yambr's official
+  // release ships it on so self-hosters can point the binary at their own
+  // openwhispr-server. Explicit opt-out: OPENWHISPR_ALLOW_CUSTOM_HOST=false
+  // tree-shakes the field from the bundle. Threat model + mitigations: see
+  // docs/adr/ADR-001.
+  ALLOW_CUSTOM_HOST_ENABLED: true,
 });
 
 const BOOL_KEYS = Object.keys(BOOL_DEFAULTS);
@@ -212,11 +213,16 @@ function buildResolved() {
     // lockdown is a contradiction — lockdown is the stronger corporate posture
     // and always wins (mirrors the OAuth override above).
     resolved.STREAMING_ENABLED = true;
-    // v1.8.0 review WARN-03: corporate lockdown means the backend host is
-    // fixed at build time. A runtime Server URL field under lockdown lets a
-    // user point a locked-down binary at any third-party host, defeating
-    // the entire corporate posture. Lockdown wins.
-    resolved.ALLOW_CUSTOM_HOST_ENABLED = false;
+    // v1.7.10 review WARN-03 originally cascaded ALLOW_CUSTOM_HOST=false here,
+    // reasoning that lockdown should pin the backend host at build time. The
+    // v1.7.11 hotfix reverts that: lockdown and custom-host are orthogonal
+    // axes. Lockdown is about *which providers* are surfaced (no BYOK / no
+    // OAuth), not about *which host* serves them. A self-host corporate
+    // deployment needs both lockdown=true AND custom-host=true so the user
+    // can point the Yambr release binary at their own openwhispr-server.
+    // Threat (phishing host capturing the Bearer token) is mitigated by the
+    // SSRF guard + HTTPS-only validation in ServerUrlField; the host swap
+    // is gated behind explicit user action on the onboarding screen.
   }
   // Phase 05 D-01: apply derivation only when caller did not explicitly set
   // OPENWHISPR_REALTIME_WSS_URL (resolveValue returns "" both when unset
