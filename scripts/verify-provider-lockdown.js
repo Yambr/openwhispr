@@ -167,6 +167,17 @@ const REALTIME_TARGETS = [
   "/api/openai-realtime-token",
 ];
 
+// v1.7.11 WR-02 (REVIEW.md): the ServerUrlField onboarding surface (Phase 4
+// UI-01..04) is orthogonal to provider lockdown — both axes coexist. Lock
+// that contract here so a future regression cannot tree-shake the field
+// under lockdown again (v1.7.10's release-breaking shape). Default build
+// also keeps the field, since v1.7.11 flipped ALLOW_CUSTOM_HOST_ENABLED
+// default to true.
+const CUSTOM_HOST_TARGETS = [
+  "onboarding.serverUrl.label", // i18n key (Phase 4 UI-04)
+  "server-url-field", // data-testid (Phase 4 UI-01)
+];
+
 const GROUPS = {
   OAUTH: OAUTH_TARGETS,
   ALT_CLOUD: ALT_CLOUD_TARGETS,
@@ -175,6 +186,7 @@ const GROUPS = {
   TRANSCRIPTION: TRANSCRIPTION_TARGETS,
   SURFACE: SURFACE_TARGETS,
   REALTIME: REALTIME_TARGETS,
+  CUSTOM_HOST: CUSTOM_HOST_TARGETS,
 };
 
 // Groups whose absence is asserted ONLY against the renderer dist bundle
@@ -191,6 +203,13 @@ const ALL_GROUPS = Object.keys(GROUPS);
 // excluded from the default scenario's expectPresent positive control.
 const DEFAULT_PRESENT_GROUPS = ALL_GROUPS.filter((g) => g !== "REALTIME");
 
+// v1.7.11 WR-02: CUSTOM_HOST must be PRESENT under BOTH default AND lockdown.
+// Lockdown is about provider-list scope, not host scope — they're orthogonal.
+// Pinning this in the bundle-grep gate prevents the v1.7.10 WARN-03 cascade
+// (which tree-shook ServerUrlField under lockdown) from being re-introduced.
+const LOCKDOWN_ABSENT_GROUPS = ALL_GROUPS.filter((g) => g !== "CUSTOM_HOST");
+const LOCKDOWN_PRESENT_GROUPS = ["CUSTOM_HOST"];
+
 const SCENARIOS = [
   {
     // Positive control / upstream-parity baseline: nothing gated, every literal
@@ -202,11 +221,13 @@ const SCENARIOS = [
   },
   {
     // Corporate-minimal lockdown: every provider/BYOK/OAuth/enterprise literal
-    // must be physically absent from the bundle.
+    // must be physically absent — EXCEPT the ServerUrlField surface, which is
+    // an orthogonal axis (v1.7.11). Self-hosters need both lockdown=true AND
+    // a Server URL field to point the binary at their corporate backend.
     name: "lockdown",
     env: { OPENWHISPR_PROVIDER_LOCKDOWN: "true" },
-    expectPresent: [],
-    expectAbsent: ALL_GROUPS,
+    expectPresent: LOCKDOWN_PRESENT_GROUPS,
+    expectAbsent: LOCKDOWN_ABSENT_GROUPS,
   },
 ];
 

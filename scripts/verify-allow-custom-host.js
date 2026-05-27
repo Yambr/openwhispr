@@ -1,20 +1,23 @@
 #!/usr/bin/env node
-// Phase 3 BG-02 (v1.8.0) — bundle-grep gate for OPENWHISPR_ALLOW_CUSTOM_HOST.
+// Phase 3 BG-02 (v1.7.11) — bundle-grep gate for OPENWHISPR_ALLOW_CUSTOM_HOST.
 //
-// Builds the app TWICE:
-//   1. Default scenario (no env) → ALLOW_CUSTOM_HOST_ENABLED = false → asserts
-//      the Server URL field's literals are ABSENT from the renderer bundle
-//      (Rolldown DCE'd the field out).
-//   2. Enabled scenario (OPENWHISPR_ALLOW_CUSTOM_HOST=true) → asserts the same
-//      literals are PRESENT in the renderer bundle.
+// Builds the app across FOUR scenarios so the no-env default and the
+// lockdown+custom-host coexistence are both grep-pinned. v1.7.10 shipped a
+// release-breaking regression precisely because the prior two-scenario
+// matrix never exercised the implicit-default or lockdown combinations.
+//
+//   1. Implicit default (no env vars)        → expect PRESENT  (v1.7.11 flip).
+//   2. Explicit off  (ALLOW_CUSTOM_HOST=false) → expect ABSENT  (tree-shake).
+//   3. Explicit on   (ALLOW_CUSTOM_HOST=true)  → expect PRESENT (positive).
+//   4. Lockdown      (PROVIDER_LOCKDOWN=true)  → expect PRESENT (orthogonal
+//                                                 axes — locks in v1.7.11
+//                                                 WARN-03 cascade removal).
 //
 // Targets (Phase 4 UI-01..04 deliverables):
-//   - The ServerUrlField component identifier (a class/function name we can
-//     grep on in the minified bundle).
 //   - The i18n key `onboarding.serverUrl.label` (added in UI-04 across 9 locales).
+//   - The `server-url-field` data-testid attribute (Phase 4 UI-01).
 //
-// This script is structurally identical to verify-provider-lockdown.js /
-// verify-oauth-gating.js — same scenario-based build-and-grep approach.
+// Structurally aligned with verify-provider-lockdown.js / verify-oauth-gating.js.
 
 "use strict";
 
@@ -35,8 +38,17 @@ const TARGETS = [
 ];
 
 const SCENARIOS = [
-  { name: "default (flag off)", env: { OPENWHISPR_ALLOW_CUSTOM_HOST: "false" }, expectPresent: false },
-  { name: "enabled (flag on)", env: { OPENWHISPR_ALLOW_CUSTOM_HOST: "true" }, expectPresent: true },
+  // (1) The actual no-env default. v1.7.10 missed its regression because no
+  // scenario tested this combination — both scenarios were explicit.
+  { name: "implicit default (no env)", env: {}, expectPresent: true },
+  // (2) Explicit opt-out → field tree-shaken.
+  { name: "explicit off (OPENWHISPR_ALLOW_CUSTOM_HOST=false)", env: { OPENWHISPR_ALLOW_CUSTOM_HOST: "false" }, expectPresent: false },
+  // (3) Explicit on → field present (positive control).
+  { name: "explicit on (OPENWHISPR_ALLOW_CUSTOM_HOST=true)", env: { OPENWHISPR_ALLOW_CUSTOM_HOST: "true" }, expectPresent: true },
+  // (4) Lockdown + custom-host coexistence. v1.7.10 WARN-03 cascade pinned
+  // ALLOW_CUSTOM_HOST=false under lockdown, breaking every Yambr release.
+  // v1.7.11 removed the cascade; this scenario locks that decision in.
+  { name: "lockdown (PROVIDER_LOCKDOWN=true) — custom-host coexists", env: { OPENWHISPR_PROVIDER_LOCKDOWN: "true" }, expectPresent: true },
 ];
 
 const DIST_RENDERER = path.join(ROOT, "src", "dist", "assets");
