@@ -1,6 +1,6 @@
 {
   "name": "open-whispr",
-  "version": "1.7.13",
+  "version": "1.7.14",
   "description": "A desktop dictation application using whisper.cpp for speech-to-text transcription",
   "main": "main.js",
   "private": true,
@@ -85,6 +85,10 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "bddgen --config tests/e2e/playwright.config.ts && playwright test --config tests/e2e/playwright.config.ts",
     "test:e2e:list": "bddgen --config tests/e2e/playwright.config.ts && playwright test --config tests/e2e/playwright.config.ts --list",
+    "e2e:checkpoint": "node scripts/e2e-checkpoint.js",
+    "e2e:checkpoint:quick": "node scripts/e2e-checkpoint.js --quick",
+    "git:install-hooks": "node scripts/install-git-hooks.js",
+    "postinstall:hooks": "node scripts/install-git-hooks.js || true",
     "test:lockdown-ui": "playwright test --config tests/ui/playwright.config.ts",
     "preview": "cd src && vite preview",
     "clean": "node cleanup.js"

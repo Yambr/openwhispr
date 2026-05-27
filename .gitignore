@@ -355,3 +355,7 @@ tests/e2e/.env.e2e
 tests/e2e/reports/
 tests/e2e/.playwright-bdd/
 test-results/
+
+# v1.7.13: per-developer e2e checkpoints — local to each machine,
+# regenerated on every `npm run e2e:checkpoint`. Not committed.
+.planning/e2e-checkpoints/
