@@ -223,6 +223,16 @@
       "body": "{{cause}} Sie können zur lokalen Engine wechseln oder fortfahren und es später erneut versuchen.",
       "useLocal": "Lokale Engine verwenden",
       "continue": "Trotzdem fortfahren"
+    },
+    "serverUrl": {
+      "label": "Server-URL",
+      "helper": "Geben Sie die OpenWhispr-Backend-URL Ihrer Organisation ein",
+      "errorEmpty": "Server-URL ist erforderlich",
+      "errorScheme": "URL muss mit https:// beginnen",
+      "errorInvalid": "Ungültiges URL-Format",
+      "errorUnreachable": "Server ist nicht erreichbar. URL prüfen und erneut versuchen.",
+      "checking": "Server wird überprüft…",
+      "success": "Server ist erreichbar"
     }
   },
   "streaming": {

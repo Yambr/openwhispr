@@ -223,6 +223,16 @@
       "body": "{{cause}} ローカルエンジンに切り替えるか、続行して後でもう一度お試しください。",
       "useLocal": "ローカルエンジンを使う",
       "continue": "そのまま続行"
+    },
+    "serverUrl": {
+      "label": "サーバー URL",
+      "helper": "組織の OpenWhispr バックエンド URL を入力してください",
+      "errorEmpty": "サーバー URL は必須です",
+      "errorScheme": "URL は https:// で始まる必要があります",
+      "errorInvalid": "URL の形式が無効です",
+      "errorUnreachable": "サーバーに接続できません。URL を確認して再試行してください。",
+      "checking": "サーバーを確認中…",
+      "success": "サーバーに接続できます"
     }
   },
   "streaming": {

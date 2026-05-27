@@ -223,6 +223,16 @@
       "body": "{{cause}} Puoi passare al motore locale o continuare e riprovare più tardi.",
       "useLocal": "Usa motore locale",
       "continue": "Continua comunque"
+    },
+    "serverUrl": {
+      "label": "URL del server",
+      "helper": "Inserisci l'URL del backend OpenWhispr della tua organizzazione",
+      "errorEmpty": "L'URL del server è obbligatorio",
+      "errorScheme": "L'URL deve iniziare con https://",
+      "errorInvalid": "Formato URL non valido",
+      "errorUnreachable": "Impossibile raggiungere questo server. Controlla l'URL e riprova.",
+      "checking": "Verifica del server in corso…",
+      "success": "Server raggiungibile"
     }
   },
   "streaming": {

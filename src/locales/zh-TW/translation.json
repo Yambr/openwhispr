@@ -223,6 +223,16 @@
       "body": "{{cause}} 你可以切換到本機引擎，或繼續並稍後再試。",
       "useLocal": "使用本機引擎",
       "continue": "仍然繼續"
+    },
+    "serverUrl": {
+      "label": "伺服器網址",
+      "helper": "請輸入您組織的 OpenWhispr 後端網址",
+      "errorEmpty": "伺服器網址必填",
+      "errorScheme": "網址必須以 https:// 開頭",
+      "errorInvalid": "網址格式無效",
+      "errorUnreachable": "無法連接到此伺服器。請檢查網址後重試。",
+      "checking": "正在檢查伺服器…",
+      "success": "伺服器可連線"
     }
   },
   "streaming": {
@@ -1072,7 +1082,12 @@
           "annualEquivalent": "$16.67",
           "includesPrefix": "所有 Pro 功能 +",
           "badge": "最熱門",
-          "features": ["無限會議錄製", "代理模式", "與您的資料對話", "優先支援"],
+          "features": [
+            "無限會議錄製",
+            "代理模式",
+            "與您的資料對話",
+            "優先支援"
+          ],
           "cta": "開始使用",
           "switchToAnnual": "切換為年付"
         },

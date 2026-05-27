@@ -13,7 +13,9 @@ import {
   OAUTH_GOOGLE_ENABLED,
   OAUTH_APPLE_ENABLED,
   OAUTH_MICROSOFT_ENABLED,
+  ALLOW_CUSTOM_HOST_ENABLED,
 } from "../config/defaults";
+import { ServerUrlField } from "./onboarding/ServerUrlField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { AlertCircle, ArrowRight, Check, Loader2, ChevronLeft } from "lucide-react";
@@ -88,6 +90,9 @@ export default function AuthenticationStep({
   const [error, setError] = useState<string | null>(null);
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
   const [oauthProtocolRegistered, setOauthProtocolRegistered] = useState(true);
+  // Phase 4 UI-01..04 (v1.8.0): when ALLOW_CUSTOM_HOST_ENABLED, the user must
+  // type and validate a Server URL before the form can proceed.
+  const [serverUrlValidated, setServerUrlValidated] = useState(false);
   const isMacOS = getCachedPlatform() === "darwin";
 
   const needsVerificationRef = useRef(false);
@@ -579,6 +584,13 @@ export default function AuthenticationStep({
         }}
         className="space-y-2"
       >
+        {ALLOW_CUSTOM_HOST_ENABLED && (
+          <ServerUrlField
+            onValidated={() => setServerUrlValidated(true)}
+            onInvalidated={() => setServerUrlValidated(false)}
+            disabled={isSocialLoading !== null || isCheckingEmail}
+          />
+        )}
         <Input
           type="email"
           placeholder={t("auth.emailStep.emailPlaceholder")}
@@ -586,12 +598,21 @@ export default function AuthenticationStep({
           onChange={(e) => setEmail(e.target.value)}
           className="h-9 text-sm"
           required
-          disabled={isSocialLoading !== null || isCheckingEmail}
+          disabled={
+            isSocialLoading !== null ||
+            isCheckingEmail ||
+            (ALLOW_CUSTOM_HOST_ENABLED && !serverUrlValidated)
+          }
         />
         <Button
           type="submit"
           variant="outline"
-          disabled={!email.trim() || isSocialLoading !== null || isCheckingEmail}
+          disabled={
+            !email.trim() ||
+            isSocialLoading !== null ||
+            isCheckingEmail ||
+            (ALLOW_CUSTOM_HOST_ENABLED && !serverUrlValidated)
+          }
           className="w-full h-9"
         >
           {isCheckingEmail ? (

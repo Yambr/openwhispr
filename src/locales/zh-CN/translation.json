@@ -223,6 +223,16 @@
       "body": "{{cause}} 你可以切换到本地引擎，或继续并稍后重试。",
       "useLocal": "使用本地引擎",
       "continue": "仍然继续"
+    },
+    "serverUrl": {
+      "label": "服务器地址",
+      "helper": "请输入您组织的 OpenWhispr 后端地址",
+      "errorEmpty": "服务器地址必填",
+      "errorScheme": "地址必须以 https:// 开头",
+      "errorInvalid": "URL 格式无效",
+      "errorUnreachable": "无法连接到此服务器。请检查地址后重试。",
+      "checking": "正在检查服务器…",
+      "success": "服务器可访问"
     }
   },
   "streaming": {
@@ -1072,7 +1082,12 @@
           "annualEquivalent": "$16.67",
           "includesPrefix": "所有 Pro 功能 +",
           "badge": "最受欢迎",
-          "features": ["无限会议录制", "代理模式", "与您的数据对话", "优先支持"],
+          "features": [
+            "无限会议录制",
+            "代理模式",
+            "与您的数据对话",
+            "优先支持"
+          ],
           "cta": "开始使用",
           "switchToAnnual": "切换为年付"
         },

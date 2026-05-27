@@ -223,6 +223,16 @@
       "body": "{{cause}} You can switch to the local engine, or continue and try again later.",
       "useLocal": "Use local engine",
       "continue": "Continue anyway"
+    },
+    "serverUrl": {
+      "label": "Server URL",
+      "helper": "Enter your organization's OpenWhispr backend URL",
+      "errorEmpty": "Server URL is required",
+      "errorScheme": "URL must start with https://",
+      "errorInvalid": "Invalid URL format",
+      "errorUnreachable": "Could not reach this server. Check the URL and try again.",
+      "checking": "Checking server…",
+      "success": "Server is reachable"
     }
   },
   "streaming": {

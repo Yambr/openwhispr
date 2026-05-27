@@ -26,9 +26,12 @@ const ROOT = path.resolve(__dirname, "..");
 
 // Targets — strings that MUST appear in the bundle when the flag is ON, and
 // MUST NOT appear when the flag is OFF.
+// Stable bundle literals that survive Rolldown minification — i18n keys are
+// string literals preserved verbatim, and the data-testid attribute is also
+// a literal. Component class names get mangled, so we don't grep on those.
 const TARGETS = [
-  "ServerUrlField", // component name (Phase 4 UI-01)
   "onboarding.serverUrl.label", // i18n key (Phase 4 UI-04)
+  "server-url-field", // data-testid on the field (Phase 4 UI-01)
 ];
 
 const SCENARIOS = [
@@ -85,6 +88,8 @@ for (const scenario of SCENARIOS) {
   }
   buildScenario(scenario.env);
 
+  // Grep IMMEDIATELY after this scenario's build, before the next scenario
+  // overwrites src/dist/assets/.
   for (const target of TARGETS) {
     totalGreps++;
     const matches = grepBundle(target);

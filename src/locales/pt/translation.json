@@ -195,6 +195,16 @@
       "body": "{{cause}} Você pode mudar para o motor local ou continuar e tentar de novo depois.",
       "useLocal": "Usar motor local",
       "continue": "Continuar mesmo assim"
+    },
+    "serverUrl": {
+      "label": "URL do servidor",
+      "helper": "Insira a URL do backend OpenWhispr da sua organização",
+      "errorEmpty": "URL do servidor é obrigatória",
+      "errorScheme": "A URL deve começar com https://",
+      "errorInvalid": "Formato de URL inválido",
+      "errorUnreachable": "Não foi possível alcançar este servidor. Verifique a URL e tente novamente.",
+      "checking": "Verificando servidor…",
+      "success": "Servidor acessível"
     }
   },
   "streaming": {
