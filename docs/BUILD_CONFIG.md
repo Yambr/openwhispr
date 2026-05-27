@@ -104,6 +104,34 @@ provider / BYOK / enterprise / OAuth branches dead-code-eliminated, and packages
 an unsigned `--dir` build. Verify the result with
 `npm run verify:provider-lockdown` (see [Verification gates](#verification-gates)).
 
+### Runtime Backend Host Flag (Phase 1.8.0)
+
+Introduced in v1.8.0 Phase 3 alongside ADR-001
+(`docs/adr/ADR-001-runtime-host-configurability.md`). Gates whether the
+onboarding screen renders a "Server URL" field that lets the end-user enter
+their organization's backend host at runtime, without rebuilding the binary.
+
+| Name | Purpose | Default | Allowed values | Read at | Source-of-truth file |
+|------|---------|---------|----------------|---------|----------------------|
+| `OPENWHISPR_ALLOW_CUSTOM_HOST` | When `true`, emits `ALLOW_CUSTOM_HOST_ENABLED = true` and renders the Server URL field on the onboarding screen (Phase 4 UI-01..04). End-user enters their org's backend URL; client validates HTTPS-only + reachability (`GET /api/auth/get-session` returns 401), persists to `useSettingsStore.serverUrl` (localStorage), and Better Auth + all `/api/*` calls hit the persisted host. When `false` (default), the field is physically tree-shaken from the bundle and the binary uses the build-time `OPENWHISPR_BACKEND_URL` exactly as v1.7.x did — ordinary Yambr users see zero behavioral change. See ADR-001 for the full threat model and mitigations M1–M6. | `false` | Anything other than `"false"` is treated as `true`; absent = default | build (renderer DCE) | `scripts/generate-build-config.js` BOOL_DEFAULTS + `src/config/build-config.generated.cjs` |
+
+**Worked example — corporate-minimal build with end-user host selection:**
+
+```bash
+OPENWHISPR_ALLOW_CUSTOM_HOST=true \
+  OPENWHISPR_PROVIDER_LOCKDOWN=true \
+  npm run pack
+```
+
+The packed binary boots to an onboarding screen with three fields: Server URL
+(empty), email, password. The user types `https://openwhispr.acme.com`,
+client validates reachability, persists the URL, and signs in. Without the
+flag, the field is gone and the binary uses whatever `OPENWHISPR_BACKEND_URL`
+was set at build time.
+
+Verify the tree-shake with `npm run verify:allow-custom-host` (added in
+Phase 3 BG-02).
+
 ### LLM Providers
 
 (generator: `scripts/generate-build-config.js`)

@@ -117,4 +117,9 @@ export {
   // direct named re-export so Rolldown propagates the literal across the
   // module boundary for DCE; the `Generated.*` alias form is forbidden.
   PROVIDER_LOCKDOWN_ENABLED,
+  // Phase 3 BG-01 (v1.8.0): ALLOW_CUSTOM_HOST_ENABLED gates the Server URL
+  // field on the onboarding screen (Phase 4 UI-01..04). Same direct
+  // named-re-export mechanism so Rolldown DCEs the field literals out of
+  // the default-build bundle. See docs/adr/ADR-001 mitigations M5 + M6.
+  ALLOW_CUSTOM_HOST_ENABLED,
 } from "./build-config.generated";

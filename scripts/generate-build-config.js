@@ -105,6 +105,14 @@ const BOOL_DEFAULTS = Object.freeze({
   // only when env is unset). Default false keeps upstream parity for
   // non-corporate builds.
   PROVIDER_LOCKDOWN_ENABLED: false,
+  // Phase 3 BG-01 (v1.8.0): when true, the onboarding screen renders a
+  // Server URL field that lets the user enter a custom backend host at
+  // runtime (Phase 4 UI-01..04). When false (default), the field is
+  // tree-shaken from the bundle and the binary uses the build-time
+  // OPENWHISPR_BACKEND_URL default exactly as v1.7.x did. Env var:
+  // OPENWHISPR_ALLOW_CUSTOM_HOST (any value other than "false" enables it;
+  // unset = false). Threat model + mitigations: see docs/adr/ADR-001.
+  ALLOW_CUSTOM_HOST_ENABLED: false,
 });
 
 const BOOL_KEYS = Object.keys(BOOL_DEFAULTS);

@@ -78,6 +78,7 @@
     "verify:provider-lockdown": "node scripts/verify-provider-lockdown.js",
     "verify:realtime-routing": "node scripts/verify-realtime-routing.js",
     "verify:backend-url-sot": "node scripts/verify-backend-url-sot.js",
+    "verify:allow-custom-host": "node scripts/verify-allow-custom-host.js",
     "test:build-config": "node --test scripts/generate-build-config.test.cjs test/helpers/whisperVadConfig.test.js test/helpers/whisperServerVadArgs.test.js",
     "test": "vitest run",
     "test:watch": "vitest",
