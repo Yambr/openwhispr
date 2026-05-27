@@ -124,16 +124,16 @@ export function ServerUrlField({
 
       if (!trimmed) {
         setState({ kind: "invalid", message: t("onboarding.serverUrl.errorEmpty") });
-        onInvalidated?.();
         return;
       }
 
+      // The useEffect below mirrors `state.kind === "valid"` → onValidated /
+      // → onInvalidated, so validate() only needs to setState.
       let parsed: URL;
       try {
         parsed = new URL(trimmed);
       } catch {
         setState({ kind: "invalid", message: t("onboarding.serverUrl.errorInvalid") });
-        onInvalidated?.();
         return;
       }
 
@@ -144,7 +144,6 @@ export function ServerUrlField({
         parsed.hostname.endsWith(".localhost");
       if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLocalhost)) {
         setState({ kind: "invalid", message: t("onboarding.serverUrl.errorScheme") });
-        onInvalidated?.();
         return;
       }
 
@@ -154,7 +153,6 @@ export function ServerUrlField({
       // through when isLocalhost === true, which is the legitimate dev case.
       if (parsed.protocol === "https:" && isPrivateOrLoopback(parsed.hostname)) {
         setState({ kind: "invalid", message: t("onboarding.serverUrl.errorScheme") });
-        onInvalidated?.();
         return;
       }
 
@@ -170,19 +168,15 @@ export function ServerUrlField({
         clearTimeout(timeout);
         if (!reachable) {
           setState({ kind: "invalid", message: t("onboarding.serverUrl.errorUnreachable") });
-          onInvalidated?.();
           return;
         }
-        const normalized = parsed.origin;
-        setState({ kind: "valid", url: normalized });
-        onValidated?.(normalized);
+        setState({ kind: "valid", url: parsed.origin });
       } catch {
         clearTimeout(timeout);
         setState({ kind: "invalid", message: t("onboarding.serverUrl.errorUnreachable") });
-        onInvalidated?.();
       }
     },
-    [onValidated, onInvalidated, t]
+    [t]
   );
 
   const handleBlur = useCallback(() => {
@@ -192,22 +186,43 @@ export function ServerUrlField({
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setValue(e.target.value);
-      // Reset to idle while typing; re-validate on blur.
+      // Reset to idle while typing; re-validate on blur. The useEffect below
+      // observes state.kind and fires onInvalidated when validUrl goes null.
       if (state.kind === "valid" || state.kind === "invalid") {
         setState({ kind: "idle" });
-        onInvalidated?.();
       }
     },
-    [state.kind, onInvalidated]
+    [state.kind]
   );
 
-  // Persist the URL into the settings store when validation succeeds.
-  // The Phase 1 HOST-02 proxy + IPC bridge propagate the change.
-  // INFO-04: depend on the actual URL string, not the state object, to avoid
+  // v1.7.13 fix: previously onValidated() was only called from inside
+  // validate() (the onBlur path), so when the component mounted with a
+  // already-persisted Server URL — state initialised to `{ kind: "valid" }`
+  // from the store — the parent's serverUrlValidated stayed false forever
+  // and the email input/Continue button stayed disabled. Returning users
+  // with a known-good Server URL hit a dead-end onboarding screen.
+  //
+  // Drive both the store-write AND the parent notification from the same
+  // effect, keyed on the URL string. The callback refs avoid re-running on
+  // every parent render (the parent passes inline arrow functions, which
+  // would otherwise turn this into an infinite loop).
+  //
+  // INFO-04: depend on the URL string, not the state object, to avoid
   // re-firing on idle/checking transitions that don't change the URL.
+  const onValidatedRef = React.useRef(onValidated);
+  const onInvalidatedRef = React.useRef(onInvalidated);
+  React.useEffect(() => {
+    onValidatedRef.current = onValidated;
+    onInvalidatedRef.current = onInvalidated;
+  });
   const validUrl = state.kind === "valid" ? state.url : null;
   React.useEffect(() => {
-    if (validUrl) setServerUrl(validUrl);
+    if (validUrl) {
+      setServerUrl(validUrl);
+      onValidatedRef.current?.(validUrl);
+    } else {
+      onInvalidatedRef.current?.();
+    }
   }, [validUrl, setServerUrl]);
 
   return (
