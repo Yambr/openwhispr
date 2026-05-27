@@ -258,6 +258,9 @@ const WhisperCudaManager = require("./src/helpers/whisperCudaManager");
 const GoogleCalendarManager = require("./src/helpers/googleCalendarManager");
 const BuildConfig = require("./src/config/build-config.generated.cjs");
 const backendUrlState = require("./src/helpers/backendUrlState");
+const safeOrigin = (u) => {
+  try { return new URL(u).origin; } catch { return null; }
+};
 const MeetingProcessDetector = require("./src/helpers/meetingProcessDetector");
 const AudioActivityDetector = require("./src/helpers/audioActivityDetector");
 const AudioTapManager = require("./src/helpers/audioTapManager");
@@ -751,31 +754,28 @@ async function startApp() {
   // trustedOrigins check rejects. Spoof Origin to the request's own URL so
   // calls to OpenWhispr's auth and API hosts are treated as same-origin.
   //
-  // The filter must cover whatever hosts THIS build talks to. The two
-  // openwhispr.com patterns are the upstream-parity defaults; a corporate
-  // build (OPENWHISPR_BACKEND_URL / OPENWHISPR_AUTH_URL set, e.g.
-  // openwhispr.yambr.com) derives its own patterns in
-  // scripts/generate-build-config.js (deriveOriginPattern). Without this
-  // the rewrite never fires for a non-openwhispr.com host → Origin stays
-  // null → Better Auth MISSING_OR_NULL_ORIGIN. localhost:3000 dev entries
-  // are always kept so the web-dashboard dev server works.
-  const originRewriteUrls = [
-    ...new Set(
-      [
-        BuildConfig.OPENWHISPR_AUTH_URL_PATTERN,
-        BuildConfig.OPENWHISPR_BACKEND_URL_PATTERN,
-        "http://localhost:3000/*",
-        "http://127.0.0.1:3000/*",
-      ].filter(Boolean)
-    ),
-  ];
+  // Decide per-request (not via URL pattern filter) so that runtime Server
+  // URL overrides (v1.8.0 Phase 4) are honoured — a build-time URL pattern
+  // cannot match a host the user types in onboarding.
+  const localhostOrigins = new Set([
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+  ]);
   session.defaultSession.webRequest.onBeforeSendHeaders(
-    {
-      urls: originRewriteUrls,
-    },
     (details, callback) => {
       try {
-        details.requestHeaders["Origin"] = new URL(details.url).origin;
+        const reqOrigin = new URL(details.url).origin;
+        const apiUrl = backendUrlState.getBackendUrl();
+        const authUrl = backendUrlState.getAuthUrl();
+        const apiOrigin = apiUrl ? safeOrigin(apiUrl) : null;
+        const authOrigin = authUrl ? safeOrigin(authUrl) : null;
+        const shouldRewrite =
+          (apiOrigin && reqOrigin === apiOrigin) ||
+          (authOrigin && reqOrigin === authOrigin) ||
+          localhostOrigins.has(reqOrigin);
+        if (shouldRewrite) {
+          details.requestHeaders["Origin"] = reqOrigin;
+        }
       } catch {
         // malformed URL — leave Origin as-is
       }
