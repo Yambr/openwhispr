@@ -47,9 +47,16 @@ export interface ServerUrlFieldProps {
 }
 
 /**
- * Reachability probe: GET <url>/api/auth/get-session and accept HTTP 401 as
- * "host alive". Anything else (5xx, network error, timeout, non-401 2xx)
- * is treated as unreachable for the safety-first onboarding flow.
+ * Reachability probe: GET <url>/api/auth/get-session and treat ANY HTTP
+ * response (1xx–5xx) as "host alive". A response — regardless of auth
+ * status — proves DNS+TCP+TLS+server are working. Per-server auth-status
+ * semantics (401 vs 200 vs 403 vs custom error envelope) are server-specific
+ * and the actual sign-in flow surfaces real auth failures with proper UX.
+ * Only network/parse failures count as unreachable.
+ *
+ * Pre-v1.7.10 review (WARN-01) — previously this only accepted 401,
+ * rejecting self-hosters whose Better Auth fork returns 200 with empty
+ * session body.
  */
 async function probe(url: string, signal: AbortSignal): Promise<boolean> {
   try {
@@ -62,10 +69,39 @@ async function probe(url: string, signal: AbortSignal): Promise<boolean> {
       // session to a potentially-untrusted runtime URL.
       credentials: "omit",
     });
-    return res.status === 401;
-  } catch (e) {
+    return res.status >= 100 && res.status < 600;
+  } catch {
     return false;
   }
+}
+
+/**
+ * Pre-v1.7.10 review (WARN-02): block SSRF surface for HTTPS URLs against
+ * RFC 1918 / link-local / loopback IP literals. The onboarding probe fires
+ * a real HTTP request against a user-typed URL; without this guard an
+ * onboarding deep-link could enumerate internal services or hit cloud
+ * metadata endpoints (e.g. AWS IMDS at 169.254.169.254). Local dev is
+ * already covered separately by the explicit "http://localhost" path.
+ */
+function isPrivateOrLoopback(hostname: string): boolean {
+  const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (h === "localhost" || h.endsWith(".localhost")) return true;
+  if (h === "::1" || h === "0.0.0.0") return true;
+  // IPv4-mapped IPv6
+  if (h.startsWith("::ffff:")) return true;
+  // IPv6 link-local
+  if (h.startsWith("fe80:")) return true;
+  // IPv6 unique-local
+  if (/^f[cd][0-9a-f]{2}:/.test(h)) return true;
+  // IPv4 loopback
+  if (/^127\./.test(h)) return true;
+  // RFC 1918
+  if (/^10\./.test(h)) return true;
+  if (/^192\.168\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(h)) return true;
+  // Link-local
+  if (/^169\.254\./.test(h)) return true;
+  return false;
 }
 
 export function ServerUrlField({
@@ -107,6 +143,16 @@ export function ServerUrlField({
         parsed.hostname === "127.0.0.1" ||
         parsed.hostname.endsWith(".localhost");
       if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLocalhost)) {
+        setState({ kind: "invalid", message: t("onboarding.serverUrl.errorScheme") });
+        onInvalidated?.();
+        return;
+      }
+
+      // WARN-02: SSRF guard — refuse HTTPS to RFC1918/link-local/loopback IP
+      // literals (admin UIs, IMDS, internal hosts). The local-dev http://
+      // path remains valid because the scheme-gate above only lets http
+      // through when isLocalhost === true, which is the legitimate dev case.
+      if (parsed.protocol === "https:" && isPrivateOrLoopback(parsed.hostname)) {
         setState({ kind: "invalid", message: t("onboarding.serverUrl.errorScheme") });
         onInvalidated?.();
         return;
@@ -157,9 +203,12 @@ export function ServerUrlField({
 
   // Persist the URL into the settings store when validation succeeds.
   // The Phase 1 HOST-02 proxy + IPC bridge propagate the change.
+  // INFO-04: depend on the actual URL string, not the state object, to avoid
+  // re-firing on idle/checking transitions that don't change the URL.
+  const validUrl = state.kind === "valid" ? state.url : null;
   React.useEffect(() => {
-    if (state.kind === "valid") setServerUrl(state.url);
-  }, [state, setServerUrl]);
+    if (validUrl) setServerUrl(validUrl);
+  }, [validUrl, setServerUrl]);
 
   return (
     <div className="space-y-1">
