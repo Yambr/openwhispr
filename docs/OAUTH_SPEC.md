@@ -100,7 +100,7 @@ The desktop client never embeds a Better Auth client ID. It hands off the OAuth 
    - Windows / Linux: relaunch is intercepted by `app.on("second-instance")` at `main.js:1339-1373`, which scans `commandLine` for the protocol URL.
 7. `handleOAuthDeepLink(url)` at `main.js:575-590` parses `bearer_token` and calls `applySessionTokenAndRefresh(...)`. If only `token=` (signed cookie) is present, `exchangeSignedTokenForRawBearer()` (`main.js:497-514`) POSTs `${AUTH_URL}/api/auth/get-session` to swap it for a raw bearer.
 8. Bearer token is persisted via `tokenStore.set()` to `userData/auth-token.bin` (encrypted via `safeStorage` when available) and the control panel is reloaded with the token attached to subsequent requests.
-9. `EmailVerificationStep` (when sign-up flow) polls `${OPENWHISPR_API_URL}/api/auth/verification-status?email=...` every 5s (`src/components/EmailVerificationStep.tsx:28-50`) until `verified: true`.
+9. `EmailVerificationStep` (when sign-up flow) polls `${OPENWHISPR_BACKEND_URL}/api/auth/verification-status?email=...` every 5s (`src/components/EmailVerificationStep.tsx:28-50`) until `verified: true`.
 
 **Notes / quirks**
 

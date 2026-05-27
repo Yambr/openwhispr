@@ -47,7 +47,7 @@ This file is **not**:
 
 **Audience.** Self-hosters and OSS contributors building a backend that is wire-compatible with the OpenWhispr Electron desktop client. No prior familiarity with the OpenWhispr internals is assumed. Terms are defined before they are used.
 
-**In scope.** Everything the desktop client sends to or expects from `${OPENWHISPR_API_URL}/api/...` — the OpenWhispr cloud surface — plus the OAuth sign-in round-trip whose final hop is the `openwhispr://` custom-protocol redirect into the desktop app.
+**In scope.** Everything the desktop client sends to or expects from `${OPENWHISPR_BACKEND_URL}/api/...` — the OpenWhispr cloud surface — plus the OAuth sign-in round-trip whose final hop is the `openwhispr://` custom-protocol redirect into the desktop app.
 
 **Out of scope.**
 
@@ -67,13 +67,13 @@ The OpenWhispr desktop client is an Electron app with three execution contexts:
 2. **Renderer process** (React — `src/components/*`, `src/services/*`). The UI. Talks to the cloud either directly via `fetch()` or through the main process via IPC.
 3. **Preload bridge** (`preload.js`). The narrow, context-isolated surface the renderer uses to invoke main-process IPC handlers.
 
-From the **server's** perspective, both call paths look identical: HTTPS JSON requests to `${OPENWHISPR_API_URL}/api/<path>`. The split exists for security (CORS, secret keys never leave main) and resilience (system proxy support via Electron's `net.fetch`), not because the server has to behave differently.
+From the **server's** perspective, both call paths look identical: HTTPS JSON requests to `${OPENWHISPR_BACKEND_URL}/api/<path>`. The split exists for security (CORS, secret keys never leave main) and resilience (system proxy support via Electron's `net.fetch`), not because the server has to behave differently.
 
 ### Base URL
 
-`${OPENWHISPR_API_URL}` is the cloud's base URL. It is **baked into the binary at build time** from `VITE_OPENWHISPR_API_URL` and resolved at runtime from `OPENWHISPR_API_URL` / `VITE_OPENWHISPR_API_URL` env vars or `src/dist/runtime-env.json`. An empty string disables all cloud calls — useful for fully-offline builds.
+`${OPENWHISPR_BACKEND_URL}` is the cloud's base URL. It is **baked into the binary at build time** from `OPENWHISPR_BACKEND_URL` and resolved at runtime from `OPENWHISPR_BACKEND_URL` / `OPENWHISPR_BACKEND_URL` env vars or `src/dist/runtime-env.json`. An empty string disables all cloud calls — useful for fully-offline builds.
 
-> Forward link: in Phase 3 (CFG-04 of this fork's roadmap) the renderer-time and runtime resolution will be unified under a single env variable named `OPENWHISPR_BACKEND_URL`. For v1, the current `OPENWHISPR_API_URL` resolution chain is the contract.
+> Forward link: in Phase 3 (CFG-04 of this fork's roadmap) the renderer-time and runtime resolution will be unified under a single env variable named `OPENWHISPR_BACKEND_URL`. For v1, the current `OPENWHISPR_BACKEND_URL` resolution chain is the contract.
 
 ### Transport
 
@@ -104,7 +104,7 @@ For full per-endpoint detail (request/response examples, error semantics, source
 
 **When and why.** Called once per onboarding email-entry submit. The desktop pre-checks whether the email already exists so it can route the user to the sign-in vs. sign-up branch. If the cloud is unreachable, the client falls through to the sign-up branch.
 
-**Method + URL.** `POST ${OPENWHISPR_API_URL}/api/check-user` — pre-auth, no bearer token.
+**Method + URL.** `POST ${OPENWHISPR_BACKEND_URL}/api/check-user` — pre-auth, no bearer token.
 
 **Request body.**
 ```json
@@ -124,7 +124,7 @@ For full per-endpoint detail (request/response examples, error semantics, source
 
 **When and why.** Polled every 5 seconds by the email-verification onboarding step until the user clicks the verification link. Stops on success, on a 4xx auth failure, or on unmount.
 
-**Method + URL.** `GET ${OPENWHISPR_API_URL}/api/auth/verification-status?email=<urlencoded>` — uses the session cookie via `credentials: "include"`; the renderer-direct path does not attach the bearer token here.
+**Method + URL.** `GET ${OPENWHISPR_BACKEND_URL}/api/auth/verification-status?email=<urlencoded>` — uses the session cookie via `credentials: "include"`; the renderer-direct path does not attach the bearer token here.
 
 **Request body.** None (`GET`); email is a query parameter.
 
@@ -143,7 +143,7 @@ For full per-endpoint detail (request/response examples, error semantics, source
 
 **When and why.** Called from the settings panel "Delete Account" action. Permanently deletes the signed-in user from the cloud. Renderer-direct (no IPC bridge); attaches only the session cookie via `credentials: "include"` — does **not** send the bearer header.
 
-**Method + URL.** `DELETE ${OPENWHISPR_API_URL}/api/auth/delete-account`.
+**Method + URL.** `DELETE ${OPENWHISPR_BACKEND_URL}/api/auth/delete-account`.
 
 **Request body.** None.
 
@@ -200,7 +200,7 @@ The desktop client connects to `WSS ${OPENWHISPR_REALTIME_WSS_URL}?intent=transc
 
 ### Generic passthrough: `cloud-api-request`
 
-The renderer can ask the main process to proxy any `${OPENWHISPR_API_URL}/api/<path>` request through `proxyFetch()`. New endpoints added to the cloud can be exercised this way without adding a dedicated IPC handler. The error envelope is read as `data.error` (or, for nested errors, `data.error.message`). See [`BACKEND_SPEC.md` § Generic passthrough](./BACKEND_SPEC.md#generic-passthrough-cloud-api-request).
+The renderer can ask the main process to proxy any `${OPENWHISPR_BACKEND_URL}/api/<path>` request through `proxyFetch()`. New endpoints added to the cloud can be exercised this way without adding a dedicated IPC handler. The error envelope is read as `data.error` (or, for nested errors, `data.error.message`). See [`BACKEND_SPEC.md` § Generic passthrough](./BACKEND_SPEC.md#generic-passthrough-cloud-api-request).
 
 ---
 
@@ -218,7 +218,7 @@ After the OAuth round-trip completes, every authenticated cloud request from the
 Authorization: Bearer <token>
 ```
 
-In addition, on every authenticated call, the main process attaches a `Cookie:` header populated from Electron's `session.cookies` jar (scoped to `${OPENWHISPR_API_URL}` and the auth host). This cookie attachment is a **fallback** for two cases: (a) the brief window during boot before the one-time cookie→bearer migration has run, and (b) older sessions where cookies were not URL-scoped.
+In addition, on every authenticated call, the main process attaches a `Cookie:` header populated from Electron's `session.cookies` jar (scoped to `${OPENWHISPR_BACKEND_URL}` and the auth host). This cookie attachment is a **fallback** for two cases: (a) the brief window during boot before the one-time cookie→bearer migration has run, and (b) older sessions where cookies were not URL-scoped.
 
 The renderer's renderer-direct calls (`/api/check-user`, `/api/auth/verification-status`, `DELETE /api/auth/delete-account`) use `credentials: "include"` — they rely on the cookie jar, not the bearer header.
 
@@ -335,7 +335,7 @@ A self-hosted OpenWhispr cloud has **no role** in the Google Calendar OAuth flow
 
 For full detail (authorization endpoint, scopes, token endpoint, redirect URI, refresh trigger, token storage DDL), see [`OAUTH_SPEC.md` § Google Calendar](./OAUTH_SPEC.md#google-calendar).
 
-The only thing a self-hosted backend has to do for Google Calendar is **not** interfere with it: the client opens `accounts.google.com` directly in the OS browser and listens on a loopback port for the redirect. No traffic flows through `${OPENWHISPR_API_URL}` for this flow.
+The only thing a self-hosted backend has to do for Google Calendar is **not** interfere with it: the client opens `accounts.google.com` directly in the OS browser and listens on a loopback port for the redirect. No traffic flows through `${OPENWHISPR_BACKEND_URL}` for this flow.
 
 ---
 
@@ -343,7 +343,7 @@ The only thing a self-hosted backend has to do for Google Calendar is **not** in
 
 A first-pass implementation that lets the desktop client sign in, transcribe, and reason against your backend:
 
-- [ ] HTTPS endpoint serving `${OPENWHISPR_API_URL}/api/...` (your backend's base URL becomes the value of the `VITE_OPENWHISPR_API_URL` build env var when packaging the desktop client).
+- [ ] HTTPS endpoint serving `${OPENWHISPR_BACKEND_URL}/api/...` (your backend's base URL becomes the value of the `OPENWHISPR_BACKEND_URL` build env var when packaging the desktop client).
 - [ ] Implements `POST /api/check-user` per [BACKEND_SPEC](./BACKEND_SPEC.md#post-apicheck-user).
 - [ ] Implements `GET /api/auth/verification-status` per [BACKEND_SPEC](./BACKEND_SPEC.md#get-apiauthverification-status).
 - [ ] Implements `DELETE /api/auth/delete-account` per [BACKEND_SPEC](./BACKEND_SPEC.md#delete-apiauthdelete-account).
@@ -369,12 +369,12 @@ These are the client-observable behaviors a backend implementer needs to be awar
 - **Channel-specific protocol scheme.** Building the redirect URL with the wrong scheme (e.g., emitting `openwhispr://` to a `-dev` build) means the OS dispatches the URL to the wrong app — or to nothing at all if the production app is not installed. Always echo the scheme from the incoming `callbackURL`.
 - **`/api/transcribe` quota exhaustion at HTTP 200.** When the user has exhausted their plan, the server returns `200` with `limitReached: true`. The client surfaces a quota-exhaustion UI. **Do not** return a 4xx in this case.
 - **Server-streamed NDJSON for `/api/agent/stream`.** Response Content-Type is `application/x-ndjson`. Each line is one JSON event. Do not buffer the response — flush after every line.
-- **Cloud unreachable behavior.** If `OPENWHISPR_API_URL` is unset or the cloud is unreachable, the client gracefully degrades:
+- **Cloud unreachable behavior.** If `OPENWHISPR_BACKEND_URL` is unset or the cloud is unreachable, the client gracefully degrades:
   - `/api/check-user` failure → routes to the sign-up branch.
   - `/api/health` failure → streaming code paths surface a localized "offline" message.
   - All other calls → surface a generic "API error" message; the user re-issues the action.
 - **HTTPS required.** The client never strips or rewrites the URL scheme. Plaintext HTTP backends are unsupported.
-- **Cookie jar is auth-host scoped.** Electron's `session.cookies` jar is queried for both `${OPENWHISPR_API_URL}` and `${AUTH_URL}`. If your auth shim is on a different host than your API base URL, both must be reachable and both can set cookies.
+- **Cookie jar is auth-host scoped.** Electron's `session.cookies` jar is queried for both `${OPENWHISPR_BACKEND_URL}` and `${AUTH_URL}`. If your auth shim is on a different host than your API base URL, both must be reachable and both can set cookies.
 - **Renderer-direct vs. main-proxied calls have slightly different auth attachment.** The three pre-auth / lifecycle endpoints (`/api/check-user`, `/api/auth/verification-status`, `DELETE /api/auth/delete-account`) call from the renderer with `credentials: "include"` — only the cookie jar is attached, not the bearer header. Every other endpoint goes through the main process via `proxyFetch()` and attaches `Authorization: Bearer ...` plus the cookie fallback. Servers should accept either auth path.
 
 ---

@@ -8,7 +8,7 @@ This document is the wire-level contract between the OpenWhispr Electron client 
 
 | Surface | Treatment |
 |---|---|
-| OpenWhispr cloud (`${OPENWHISPR_API_URL}/api/...`) | **Detailed.** Every endpoint the current client calls, with method, URL, auth header, request body, response body, error semantics, and source pointers. |
+| OpenWhispr cloud (`${OPENWHISPR_BACKEND_URL}/api/...`) | **Detailed.** Every endpoint the current client calls, with method, URL, auth header, request body, response body, error semantics, and source pointers. |
 | `auth.openwhispr.com` (Better Auth identity provider) | **Sketched here, detailed in [`OAUTH_SPEC.md`](./OAUTH_SPEC.md).** This doc only documents the desktop OAuth shim endpoint and the protocol redirect; the rest of the flow lives in `OAUTH_SPEC.md`. |
 | Third-party AI APIs (OpenAI / Anthropic / Gemini / Mistral / Groq / AssemblyAI / Deepgram) | **Inventory only.** One row per call site (file:line, base URL, vendor docs link). No payload schemas. |
 | Enterprise BYOK providers (AWS Bedrock / Azure OpenAI / GCP Vertex) | **Inventory only.** Same treatment as third-party. |
@@ -28,11 +28,11 @@ This document is the wire-level contract between the OpenWhispr Electron client 
 
 | Item | Value |
 |---|---|
-| Base URL | `${OPENWHISPR_API_URL}` (legacy renderer constant) and `OPENWHISPR_BACKEND_URL` (build-time export from `src/config/defaults.ts`, re-exported from `src/config/build-config.generated.ts`). The Phase 3 build-time refactor introduced `OPENWHISPR_BACKEND_URL` (no `VITE_` prefix) as the canonical build-time env var written into `build-config.generated.{ts,cjs}` by `scripts/generate-build-config.js`; self-hosters set `OPENWHISPR_BACKEND_URL` at build time. The legacy `VITE_OPENWHISPR_API_URL` env var still feeds `OPENWHISPR_API_URL` in `src/config/constants.ts:116` for renderer call sites that haven't migrated, and the main process resolves at runtime from `process.env.OPENWHISPR_API_URL` / `process.env.VITE_OPENWHISPR_API_URL` / `src/dist/runtime-env.json` (`src/helpers/ipcHandlers.js:3331-3335`). Empty string disables all cloud calls (`if (!OPENWHISPR_API_URL)` guards in `src/lib/auth.ts:109`, `src/components/AuthenticationStep.tsx:154`, `src/components/EmailVerificationStep.tsx:29`). |
-| Transport | HTTPS only. The client always builds URLs as `${OPENWHISPR_API_URL}/api/<path>` and never strips/replaces the scheme. |
+| Base URL | `${OPENWHISPR_BACKEND_URL}` (legacy renderer constant) and `OPENWHISPR_BACKEND_URL` (build-time export from `src/config/defaults.ts`, re-exported from `src/config/build-config.generated.ts`). The Phase 3 build-time refactor introduced `OPENWHISPR_BACKEND_URL` (no `VITE_` prefix) as the canonical build-time env var written into `build-config.generated.{ts,cjs}` by `scripts/generate-build-config.js`; self-hosters set `OPENWHISPR_BACKEND_URL` at build time. The legacy `OPENWHISPR_BACKEND_URL` env var still feeds `OPENWHISPR_BACKEND_URL` in `src/config/constants.ts:116` for renderer call sites that haven't migrated, and the main process resolves at runtime from `process.env.OPENWHISPR_BACKEND_URL` / `process.env.OPENWHISPR_BACKEND_URL` / `src/dist/runtime-env.json` (`src/helpers/ipcHandlers.js:3331-3335`). Empty string disables all cloud calls (`if (!OPENWHISPR_BACKEND_URL)` guards in `src/lib/auth.ts:109`, `src/components/AuthenticationStep.tsx:154`, `src/components/EmailVerificationStep.tsx:29`). |
+| Transport | HTTPS only. The client always builds URLs as `${OPENWHISPR_BACKEND_URL}/api/<path>` and never strips/replaces the scheme. |
 | Content-Type | `application/json; charset=utf-8` for POST/PUT/DELETE bodies. **Exceptions** noted per-endpoint: `/api/transcribe` is `multipart/form-data`; `/api/agent/stream` returns `application/x-ndjson` (newline-delimited JSON). |
 | Auth header — preferred | `Authorization: Bearer <token>` where the token is a Better Auth bearer token persisted to `userData/auth-token.bin` via `src/helpers/tokenStore.js`. |
-| Auth header — fallback | `Cookie: <name>=<value>; ...` populated from the Electron `session.cookies` jar scoped to `${OPENWHISPR_API_URL}` and `${AUTH_URL}`. Used during the brief window before the startup token-migration bridge has run, and as a safety net for older sessions where cookies are not URL-scoped (`src/helpers/ipcHandlers.js:3338-3402`). The renderer's direct `fetch()` calls in `src/lib/auth.ts:114` use `credentials: "include"` to attach this same cookie. |
+| Auth header — fallback | `Cookie: <name>=<value>; ...` populated from the Electron `session.cookies` jar scoped to `${OPENWHISPR_BACKEND_URL}` and `${AUTH_URL}`. Used during the brief window before the startup token-migration bridge has run, and as a safety net for older sessions where cookies are not URL-scoped (`src/helpers/ipcHandlers.js:3338-3402`). The renderer's direct `fetch()` calls in `src/lib/auth.ts:114` use `credentials: "include"` to attach this same cookie. |
 | Source-pointer convention | Every endpoint card cites two pointers per call site: `<path>:<line>` for the `fetch()`/`proxyFetch()` site **and** the IPC handler where applicable. Pointers are relative to repo root and reflect HEAD as of this spec's authoring. Use `git grep` against the path to detect drift. The renderer's two pre-auth calls (`/api/check-user`, `/api/auth/verification-status`) and the renderer-only `DELETE /api/auth/delete-account` mark IPC as `renderer-direct` because they do not flow through the main process. |
 | `proxyFetch()` | Thin wrapper over Electron's `net.fetch()` (`src/helpers/ipcHandlers.js:3406`) with `useSessionCookies: false`. It honors the system proxy and gives main-process auth/cloud handlers a single fetch chokepoint. |
 
@@ -86,7 +86,7 @@ A small number of endpoints carry **per-endpoint deviations** (e.g., `/api/trans
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `POST` | `${OPENWHISPR_API_URL}/api/check-user` | none (pre-auth) | `src/components/AuthenticationStep.tsx:159` | `renderer-direct` |
+| `POST` | `${OPENWHISPR_BACKEND_URL}/api/check-user` | none (pre-auth) | `src/components/AuthenticationStep.tsx:159` | `renderer-direct` |
 
 **Request body**
 
@@ -104,7 +104,7 @@ The client only reads `data.exists` (`src/components/AuthenticationStep.tsx:170`
 
 **Error deviations:** Uses global error envelope. Any non-2xx response causes the client to optimistically route the user to the sign-up branch (`src/components/AuthenticationStep.tsx:171-173`).
 
-**Notes:** Called once per onboarding email-entry submit. Has no rate limit on the client side. If `OPENWHISPR_API_URL` is unset, the client skips the check entirely and routes to sign-up (`src/components/AuthenticationStep.tsx:154-156`).
+**Notes:** Called once per onboarding email-entry submit. Has no rate limit on the client side. If `OPENWHISPR_BACKEND_URL` is unset, the client skips the check entirely and routes to sign-up (`src/components/AuthenticationStep.tsx:154-156`).
 
 ---
 
@@ -114,7 +114,7 @@ The client only reads `data.exists` (`src/components/AuthenticationStep.tsx:170`
 
 | method | URL pattern | auth | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `GET` | `${OPENWHISPR_API_URL}/api/auth/verification-status?email=<urlencoded>` | dual-path — session cookie via `credentials: "include"` **or** `?email=` param | `src/components/EmailVerificationStep.tsx:31, 35` | `renderer-direct` |
+| `GET` | `${OPENWHISPR_BACKEND_URL}/api/auth/verification-status?email=<urlencoded>` | dual-path — session cookie via `credentials: "include"` **or** `?email=` param | `src/components/EmailVerificationStep.tsx:31, 35` | `renderer-direct` |
 
 **Auth model (R21 — additive dual-path).** The route resolves caller identity from **either** a session cookie **or** the `?email=` query param. It opts out of the global bearer/cookie auth gate and **never returns 401/403 for a format-valid request**. This is required because the sign-up→verify window has no session of any kind — Better Auth issues no session under `requireEmailVerification` until the email is verified, so a cookie-only route would be unpollable during exactly the window the onboarding step depends on. The cookie path (used once the user is verified-and-signed-in) is preserved; the `?email=` path is the addition.
 
@@ -150,7 +150,7 @@ The client only reads `data.verified`. When it flips to `true`, the client clear
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `DELETE` | `${OPENWHISPR_API_URL}/api/auth/delete-account` | session cookie via `credentials: "include"` | `src/lib/auth.ts:114` | `renderer-direct` |
+| `DELETE` | `${OPENWHISPR_BACKEND_URL}/api/auth/delete-account` | session cookie via `credentials: "include"` | `src/lib/auth.ts:114` | `renderer-direct` |
 
 **Request body**
 
@@ -176,7 +176,7 @@ The client ignores the success body. It only checks `res.ok`.
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `POST` | `${OPENWHISPR_API_URL}/api/transcribe` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:3464` (live transcribe), `src/helpers/ipcHandlers.js:3570` (retry path), `src/helpers/ipcHandlers.js:6113` (file upload), `src/helpers/ipcHandlers.js:211` (audioManager small-file path) | `ipcMain.handle("cloud-transcribe")` `src/helpers/ipcHandlers.js:3408`; `ipcMain.handle("transcribe-audio-file-cloud")` `src/helpers/ipcHandlers.js:6069` |
+| `POST` | `${OPENWHISPR_BACKEND_URL}/api/transcribe` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:3464` (live transcribe), `src/helpers/ipcHandlers.js:3570` (retry path), `src/helpers/ipcHandlers.js:6113` (file upload), `src/helpers/ipcHandlers.js:211` (audioManager small-file path) | `ipcMain.handle("cloud-transcribe")` `src/helpers/ipcHandlers.js:3408`; `ipcMain.handle("transcribe-audio-file-cloud")` `src/helpers/ipcHandlers.js:6069` |
 
 **Request (multipart/form-data)**
 
@@ -231,7 +231,7 @@ The client reads all of these (`src/helpers/ipcHandlers.js:3441-3454, 3473-3487`
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `GET` | `${OPENWHISPR_API_URL}/api/health` | none | `src/helpers/ipcHandlers.js:3507-3511` | `ipcMain.handle("cloud-health-check")` `src/helpers/ipcHandlers.js:3498` |
+| `GET` | `${OPENWHISPR_BACKEND_URL}/api/health` | none | `src/helpers/ipcHandlers.js:3507-3511` | `ipcMain.handle("cloud-health-check")` `src/helpers/ipcHandlers.js:3498` |
 
 **Request body**
 
@@ -257,7 +257,7 @@ The client only inspects `res.ok` and `res.status`. The body is not read.
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `POST` | `${OPENWHISPR_API_URL}/api/reason` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5576` | `ipcMain.handle("cloud-reason")` (handler defined immediately above the fetch site, registered around `src/helpers/ipcHandlers.js:5556`) |
+| `POST` | `${OPENWHISPR_BACKEND_URL}/api/reason` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5576` | `ipcMain.handle("cloud-reason")` (handler defined immediately above the fetch site, registered around `src/helpers/ipcHandlers.js:5556`) |
 
 **Request body**
 
@@ -317,7 +317,7 @@ The client reads exactly these five fields (`src/helpers/ipcHandlers.js:5630-563
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `POST` | `${OPENWHISPR_API_URL}/api/agent/stream` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5652` | `ipcMain.on("cloud-agent-stream-start")` `src/helpers/ipcHandlers.js:5644` |
+| `POST` | `${OPENWHISPR_BACKEND_URL}/api/agent/stream` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5652` | `ipcMain.on("cloud-agent-stream-start")` `src/helpers/ipcHandlers.js:5644` |
 
 **Request body**
 
@@ -364,7 +364,7 @@ Example chunk shapes (the client does not validate them — it forwards as-is):
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `POST` | `${OPENWHISPR_API_URL}/api/agent/web-search` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5747` | `ipcMain.handle("agent-web-search")` `src/helpers/ipcHandlers.js:5737` |
+| `POST` | `${OPENWHISPR_BACKEND_URL}/api/agent/web-search` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5747` | `ipcMain.handle("agent-web-search")` `src/helpers/ipcHandlers.js:5737` |
 
 **Request body**
 
@@ -396,7 +396,7 @@ The client returns `{ success: true, ...data }` (`src/helpers/ipcHandlers.js:577
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `POST` | `${OPENWHISPR_API_URL}/api/streaming-usage` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5788` | `ipcMain.handle("cloud-streaming-usage")` `src/helpers/ipcHandlers.js:5778` |
+| `POST` | `${OPENWHISPR_BACKEND_URL}/api/streaming-usage` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5788` | `ipcMain.handle("cloud-streaming-usage")` `src/helpers/ipcHandlers.js:5778` |
 
 **Request body**
 
@@ -435,7 +435,7 @@ The client returns `{ success: true, ...data }` — server can return updated qu
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `GET` | `${OPENWHISPR_API_URL}/api/usage` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5839` | `ipcMain.handle("cloud-usage")` `src/helpers/ipcHandlers.js:5831` |
+| `GET` | `${OPENWHISPR_BACKEND_URL}/api/usage` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5839` | `ipcMain.handle("cloud-usage")` `src/helpers/ipcHandlers.js:5831` |
 
 **Request body**
 
@@ -457,7 +457,7 @@ The client returns `{ success: true, ...data }` — exact shape is server-define
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `GET` | `${OPENWHISPR_API_URL}/api/stt-config` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:6020` | `ipcMain.handle("get-stt-config")` `src/helpers/ipcHandlers.js:6012` |
+| `GET` | `${OPENWHISPR_BACKEND_URL}/api/stt-config` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:6020` | `ipcMain.handle("get-stt-config")` `src/helpers/ipcHandlers.js:6012` |
 
 **Request body**
 
@@ -479,7 +479,7 @@ The client spreads the response into `{ success: true, ...data }` and forwards o
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `GET` | `${OPENWHISPR_API_URL}/api/note-recording-config` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:6050` | `ipcMain.handle("get-note-recording-config")` `src/helpers/ipcHandlers.js:6042` |
+| `GET` | `${OPENWHISPR_BACKEND_URL}/api/note-recording-config` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:6050` | `ipcMain.handle("get-note-recording-config")` `src/helpers/ipcHandlers.js:6042` |
 
 **Request body**
 
@@ -501,7 +501,7 @@ Spread into `{ success: true, ...data }` and forwarded opaquely.
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `POST` | `${OPENWHISPR_API_URL}/api/streaming-token` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:4119` (helper invocation), `src/helpers/ipcHandlers.js:6459` (token-refresh path) | Used by realtime-streaming session bootstrap (no public IPC channel — internal helper `postServerToken()`) |
+| `POST` | `${OPENWHISPR_BACKEND_URL}/api/streaming-token` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:4119` (helper invocation), `src/helpers/ipcHandlers.js:6459` (token-refresh path) | Used by realtime-streaming session bootstrap (no public IPC channel — internal helper `postServerToken()`) |
 
 **Request body**
 
@@ -529,7 +529,7 @@ Only `data.token` is read.
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `POST` | `${OPENWHISPR_API_URL}/api/deepgram-streaming-token` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:4134, 6660, 6690` | Internal helper `postServerToken()` and meeting-streaming token-refresh path |
+| `POST` | `${OPENWHISPR_BACKEND_URL}/api/deepgram-streaming-token` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:4134, 6660, 6690` | Internal helper `postServerToken()` and meeting-streaming token-refresh path |
 
 **Request body**
 
@@ -553,7 +553,7 @@ Only `data.token` is read.
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| `POST` | `${OPENWHISPR_API_URL}/api/openai-realtime-token` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:4146` | Internal helper `postServerToken()` invoked from realtime bootstrap |
+| `POST` | `${OPENWHISPR_BACKEND_URL}/api/openai-realtime-token` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:4146` | Internal helper `postServerToken()` invoked from realtime bootstrap |
 
 **Request body**
 
@@ -583,11 +583,11 @@ For `streams=1` the client reads `data.clientSecret`. For `streams=2` it reads `
 
 ### Generic passthrough: `cloud-api-request`
 
-**Purpose:** Generic main-process passthrough used by parts of the renderer that need to issue arbitrary authenticated requests against `${OPENWHISPR_API_URL}`. Not a single endpoint — it lets callers supply `{ method, path, body }` and surfaces the JSON response.
+**Purpose:** Generic main-process passthrough used by parts of the renderer that need to issue arbitrary authenticated requests against `${OPENWHISPR_BACKEND_URL}`. Not a single endpoint — it lets callers supply `{ method, path, body }` and surfaces the JSON response.
 
 | method | URL pattern | auth header | fetch() call site | IPC handler / wrapper |
 |---|---|---|---|---|
-| any | `${OPENWHISPR_API_URL}${opts.path}` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5986` | `ipcMain.handle("cloud-api-request")` `src/helpers/ipcHandlers.js:5969` |
+| any | `${OPENWHISPR_BACKEND_URL}${opts.path}` | `Authorization: Bearer <token>` (cookie fallback) | `src/helpers/ipcHandlers.js:5986` | `ipcMain.handle("cloud-api-request")` `src/helpers/ipcHandlers.js:5969` |
 
 **Notes:** Treats 401/503 the same as the dedicated handlers. Reads `data.error.message` (object) or `data.error` (string) for the error message — the only place that handles a structured `error` object. Servers MAY return `{ "error": { "message": "...", "code": "..." } }` for endpoints accessed through this channel; clients reading the same endpoint via a dedicated handler still see the global `{ "error": "..." }` envelope.
 
@@ -601,7 +601,7 @@ The desktop sign-in flow opens this URL in the user's external browser; the auth
 |---|---|---|---|---|
 | (browser navigation) | `${AUTH_URL}/api/desktop-signin/<provider>?callbackURL=<encoded>` | none (cookies set by browser jar) | `src/lib/auth.ts:183-185` | `renderer-direct` (opens via `openExternalLink`) |
 
-This endpoint is part of `auth.openwhispr.com`, not `${OPENWHISPR_API_URL}`. Full OAuth flow, scopes, and provider list are in [`OAUTH_SPEC.md`](./OAUTH_SPEC.md). It is sketched here only because `src/lib/auth.ts` is the single source for the URL construction.
+This endpoint is part of `auth.openwhispr.com`, not `${OPENWHISPR_BACKEND_URL}`. Full OAuth flow, scopes, and provider list are in [`OAUTH_SPEC.md`](./OAUTH_SPEC.md). It is sketched here only because `src/lib/auth.ts` is the single source for the URL construction.
 
 ---
 
@@ -709,7 +709,7 @@ These calls are intentionally **out of scope** for the OpenWhispr-cloud spec. Ea
 | GCP Vertex AI | SDK `@ai-sdk/google-vertex` (project + location supplied) | SDK | `src/services/ai/inferenceProviders/enterprise.ts:45-46` | https://cloud.google.com/vertex-ai/docs |
 | LAN provider (OpenAI-compatible) | `${cleanupRemoteUrl}/chat/completions` (user-supplied base URL from settings) | POST | `src/services/ai/inferenceProviders/lan.ts:14-18` | N/A (user-supplied; expected to be OpenAI-compatible) |
 | Local llama.cpp (loopback) | `http://127.0.0.1:${serverResult.port}/v1/chat/completions` and `.../v1` | POST | `src/services/ReasoningService.ts:357, 568` (used by `src/services/ai/inferenceProviders/local.ts:5` via IPC `processLocalReasoning`) | https://github.com/ggerganov/llama.cpp |
-| OpenWhispr cloud reasoning (this spec) | `${OPENWHISPR_API_URL}/api/reason` | POST | `src/services/ai/inferenceProviders/openwhispr.ts:16` (renderer) → `src/helpers/ipcHandlers.js:5576` | (this document) |
+| OpenWhispr cloud reasoning (this spec) | `${OPENWHISPR_BACKEND_URL}/api/reason` | POST | `src/services/ai/inferenceProviders/openwhispr.ts:16` (renderer) → `src/helpers/ipcHandlers.js:5576` | (this document) |
 
 > `:NN` line numbers reflect HEAD as of authoring. SDK rows that build URLs dynamically from region/project/endpoint (Bedrock, Vertex, Azure, LAN) point at the configuration site, not a literal URL — there is no static line to cite for the wire URL.
 

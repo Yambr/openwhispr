@@ -65,6 +65,9 @@ const HOST_03_LITERALS = [
   { literal: "https://openwhispr.com/auth/desktop-callback", allow: HOST_03_GENERATED_ALLOW },
   { literal: "https://openwhispr.com/reset-password", allow: HOST_03_GENERATED_ALLOW },
   { literal: "https://notes.openwhispr.com", allow: HOST_03_GENERATED_ALLOW },
+  // v1.7.10 review WARN-07: catch re-introductions of the auth.openwhispr.com
+  // literal outside the SoT (defaults.ts / build-config.generated).
+  { literal: "https://auth.openwhispr.com", allow: HOST_03_GENERATED_ALLOW },
 ];
 
 const violations = [];
@@ -120,6 +123,51 @@ for (const { literal, allow } of HOST_03_LITERALS) {
       check: `HOST-03-LITERAL: ${literal}`,
       details: forbidden.slice(0, 10).map((m) => `${m.file}:${m.line} — ${m.content.trim()}`),
       total: forbidden.length,
+    });
+  }
+}
+
+// WARN-04: also scan .env, .env.example, docs/**/*.md for retired tokens.
+// These are user-facing surfaces — stale references confuse contributors and
+// self-hosters even though they don't break the build. Surface as violations
+// so the next maintainer cleans them up.
+const DOC_SCAN_FILES = [
+  path.join(ROOT, ".env"),
+  path.join(ROOT, ".env.example"),
+];
+function scanFileForBanned(filePath, token) {
+  if (!fs.existsSync(filePath)) return [];
+  const hits = [];
+  try {
+    const lines = fs.readFileSync(filePath, "utf8").split("\n");
+    lines.forEach((line, i) => {
+      if (line.includes(token) && !isComment(line)) {
+        hits.push({ file: path.relative(ROOT, filePath), line: i + 1, content: line });
+      }
+    });
+  } catch {}
+  return hits;
+}
+for (const token of ["OPENWHISPR_API_URL", "VITE_OPENWHISPR_API_URL"]) {
+  checked++;
+  const hits = DOC_SCAN_FILES.flatMap((f) => scanFileForBanned(f, token));
+  // docs/ scan via grep (markdown)
+  try {
+    const out = execSync(
+      `grep -rn --include="*.md" "${token}" ${path.join(ROOT, "docs")}`,
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+    );
+    for (const line of out.split("\n")) {
+      if (!line) continue;
+      const m = line.match(/^([^:]+):(\d+):(.*)$/);
+      if (m) hits.push({ file: path.relative(ROOT, m[1]), line: Number(m[2]), content: m[3] });
+    }
+  } catch {}
+  if (hits.length > 0) {
+    violations.push({
+      check: `DOC-DRIFT: ${token}`,
+      details: hits.slice(0, 10).map((m) => `${m.file}:${m.line} — ${m.content.trim()}`),
+      total: hits.length,
     });
   }
 }
