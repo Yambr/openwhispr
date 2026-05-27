@@ -120,7 +120,13 @@ function makePathProxy(path: PropertyKey[]): unknown {
       if (typeof cur !== "function") {
         throw new TypeError(`authClient.${path.map(String).join(".")} is not a function`);
       }
-      return (cur as (...a: unknown[]) => unknown).apply(parent, args);
+      // CRITICAL: must use Reflect.apply, not `.apply()`. better-auth's internal
+      // dynamic-path proxy intercepts `get(target, "apply")` and returns a NEW
+      // path-proxy (treating "apply" as a URL segment), so `cur.apply(parent, args)`
+      // ends up POSTing to `/sign-out/apply` instead of `/sign-out`. Reflect.apply
+      // invokes the [[Call]] internal slot directly via the proxy's apply trap,
+      // bypassing the get-trap entirely. See v1.7.10 → 1.7.11 signOut regression.
+      return Reflect.apply(cur as (...a: unknown[]) => unknown, parent, args);
     },
   });
 }

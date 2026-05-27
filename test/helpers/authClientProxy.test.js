@@ -6,13 +6,55 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Mock createAuthClient before importing the module under test.
+// The mock for signIn.email + useSession is a plain object (these are leaf
+// properties accessed via dotted path). signOut is wrapped in a better-auth-
+// style dynamic path proxy so the outer authClient Proxy's apply-trap is
+// exercised against a callable proxy — this catches the v1.7.10 regression
+// where `(cur as Function).apply(parent, args)` invoked better-auth's
+// get-trap for the "apply" property instead of dispatching the call. A flat
+// vi.fn() does NOT have that trap and silently hid the bug.
 const createdInstances = [];
+const proxyCalls = [];
+function makeBetterAuthLikeProxy(routePath, opts) {
+  // Mirrors node_modules/better-auth/dist/client/proxy.mjs:
+  //  - get trap returns a new proxy for any non-then/catch/finally string prop
+  //  - apply trap dispatches the HTTP call (here just records and returns ok)
+  return new Proxy(function () {}, {
+    get(_t, prop) {
+      if (typeof prop !== "string") return undefined;
+      if (prop === "then" || prop === "catch" || prop === "finally") return undefined;
+      // For deeper paths in real better-auth this would recurse; for signOut
+      // it's a single-segment call, so we just return another sub-proxy.
+      return makeBetterAuthLikeProxy(`${routePath}/${prop}`, opts);
+    },
+    apply(_t, _thisArg, args) {
+      // Record what URL segment was actually invoked so the test can assert
+      // we hit "/sign-out", not "/sign-out/apply" or any other suffix.
+      proxyCalls.push({ routePath, baseURL: opts.baseURL, args });
+      return Promise.resolve({ ok: true, routePath });
+    },
+  });
+}
 const createAuthClientMock = vi.fn((opts) => {
   const instance = {
     __id: createdInstances.length,
     __baseURL: opts.baseURL,
-    signIn: { email: vi.fn(async () => ({ ok: true, viaUrl: opts.baseURL })) },
-    signOut: vi.fn(async () => ({ ok: true })),
+    // Every callable leaf is wrapped in the better-auth-style proxy so the
+    // outer authClient Proxy's apply-trap is exercised faithfully for ALL
+    // call sites, not just signOut. v1.7.10's signOut regression was latent
+    // in signIn/signUp too — luck-of-call-ordering hid it. Per v1.7.11
+    // REVIEW.md WR-03.
+    signIn: {
+      email: makeBetterAuthLikeProxy("/sign-in/email", opts),
+      social: makeBetterAuthLikeProxy("/sign-in/social", opts),
+    },
+    signUp: { email: makeBetterAuthLikeProxy("/sign-up/email", opts) },
+    sendVerificationEmail: makeBetterAuthLikeProxy("/send-verification-email", opts),
+    requestPasswordReset: makeBetterAuthLikeProxy("/request-password-reset", opts),
+    signOut: makeBetterAuthLikeProxy("/sign-out", opts),
+    // useSession stays a flat vi.fn() — better-auth's get-trap returns the
+    // raw hook function for atom-bound hooks (proxy.mjs:24), so it never
+    // reaches our apply-trap. See v1.7.11 REVIEW.md IN-02 trace.
     useSession: vi.fn(() => ({ data: null })),
   };
   createdInstances.push(instance);
@@ -67,6 +109,7 @@ async function loadAuthModule() {
 describe("authClient mutable Proxy (HOST-02)", () => {
   beforeEach(() => {
     createdInstances.length = 0;
+    proxyCalls.length = 0;
     createAuthClientMock.mockClear();
     notifyServerUrlChanged.mockClear();
     storeState = { serverUrl: null };
@@ -123,7 +166,9 @@ describe("authClient mutable Proxy (HOST-02)", () => {
     const { authClient } = await loadAuthModule();
     const result = await authClient.signIn.email({ email: "a@b.c", password: "x" });
     expect(result.ok).toBe(true);
-    expect(result.viaUrl).toBe(DEFAULT_AUTH_URL);
+    // Mock now uses better-auth-style proxy; assert path routing instead of
+    // the legacy `viaUrl` field that flat vi.fn() exposed.
+    expect(result.routePath).toBe("/sign-in/email");
   });
 
   it("notifies main process when serverUrl changes (D-02)", async () => {
@@ -140,8 +185,70 @@ describe("authClient mutable Proxy (HOST-02)", () => {
     // Swap URL — inner-A should now be invalidated; next dispatch uses inner-B.
     useSettingsStoreMock.__setServerUrl("http://swap-target:5000/auth");
     const result = await captured({ email: "x@y.z", password: "p" });
-    // Without the rebinding dispatch, viaUrl would be DEFAULT_AUTH_URL (inner-A).
-    expect(result.viaUrl).toBe("http://swap-target:5000/auth");
+    // Without the rebinding dispatch, baseURL would be DEFAULT_AUTH_URL (inner-A).
+    expect(result.ok).toBe(true);
+    // proxyCalls is used by the proxy mock; signIn.email pushes there too.
+    const matching = proxyCalls.find((c) => c.routePath === "/sign-in/email");
+    expect(matching).toBeDefined();
+    expect(matching.baseURL).toBe("http://swap-target:5000/auth");
+  });
+
+  // Per v1.7.11 REVIEW.md WR-03: the bug class — `(cur as Function).apply(...)`
+  // colliding with better-auth's get-trap for "apply" — covered every callable
+  // leaf, not just signOut. This parameterised test pins the entire surface.
+  const ALL_CALL_SITES = [
+    { name: "signIn.email", invoke: (c) => c.signIn.email({ email: "a@b", password: "p" }), expectedRoute: "/sign-in/email" },
+    { name: "signIn.social", invoke: (c) => c.signIn.social({ provider: "google" }), expectedRoute: "/sign-in/social" },
+    { name: "signUp.email", invoke: (c) => c.signUp.email({ email: "a@b", password: "p", name: "x" }), expectedRoute: "/sign-up/email" },
+    { name: "sendVerificationEmail", invoke: (c) => c.sendVerificationEmail({ email: "a@b" }), expectedRoute: "/send-verification-email" },
+    { name: "requestPasswordReset", invoke: (c) => c.requestPasswordReset({ email: "a@b" }), expectedRoute: "/request-password-reset" },
+    { name: "signOut", invoke: (c) => c.signOut(), expectedRoute: "/sign-out" },
+  ];
+  for (const callsite of ALL_CALL_SITES) {
+    it(`${callsite.name}: routePath is "${callsite.expectedRoute}", NOT suffixed with "/apply" (v1.7.10 bug class)`, async () => {
+      const { authClient } = await loadAuthModule();
+      await callsite.invoke(authClient);
+      expect(proxyCalls.length).toBe(1);
+      expect(proxyCalls[0].routePath).toBe(callsite.expectedRoute);
+      expect(proxyCalls[0].routePath).not.toMatch(/\/apply$/);
+    });
+  }
+
+  it("dispatches authClient.signOut() through better-auth's callable proxy (v1.7.10 regression)", async () => {
+    // Regression: in v1.7.10 the outer Proxy's apply-trap called
+    //   `(cur as Function).apply(parent, args)`
+    // which triggered better-auth's GET-trap for the property "apply",
+    // returning a NEW path-proxy for "/sign-out/apply". The actual sign-out
+    // never fired. v1.7.11 switched to Reflect.apply which invokes the
+    // [[Call]] slot directly through the apply-trap.
+    const { authClient } = await loadAuthModule();
+    const result = await authClient.signOut();
+    expect(result.ok).toBe(true);
+    expect(proxyCalls.length).toBe(1);
+    expect(proxyCalls[0].routePath).toBe("/sign-out");
+    // Specifically: NOT "/sign-out/apply" (the v1.7.10 bug signature).
+    expect(proxyCalls[0].routePath).not.toMatch(/\/apply$/);
+  });
+
+  it("dispatches signOut to the persisted server URL, not the default", async () => {
+    storeState = { serverUrl: "http://localhost:4005/auth" };
+    const { authClient } = await loadAuthModule();
+    await authClient.signOut();
+    expect(proxyCalls.length).toBe(1);
+    expect(proxyCalls[0].baseURL).toBe("http://localhost:4005/auth");
+    expect(proxyCalls[0].routePath).toBe("/sign-out");
+  });
+
+  it("dispatches signOut to the CURRENT inner after a serverUrl swap (HIGH-02 + signOut)", async () => {
+    const { authClient } = await loadAuthModule();
+    // Capture a ref while inner-A (default URL) is current.
+    const captured = authClient.signOut;
+    useSettingsStoreMock.__setServerUrl("http://swap-after-capture:5000/auth");
+    await captured();
+    expect(proxyCalls.length).toBe(1);
+    // Must hit the NEW URL, not the URL that was current at capture time.
+    expect(proxyCalls[0].baseURL).toBe("http://swap-after-capture:5000/auth");
+    expect(proxyCalls[0].routePath).toBe("/sign-out");
   });
 
   it("preserves the authClient export symbol (upstream-parity, D-01)", async () => {
