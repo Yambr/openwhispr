@@ -212,6 +212,11 @@ function buildResolved() {
     // lockdown is a contradiction — lockdown is the stronger corporate posture
     // and always wins (mirrors the OAuth override above).
     resolved.STREAMING_ENABLED = true;
+    // v1.8.0 review WARN-03: corporate lockdown means the backend host is
+    // fixed at build time. A runtime Server URL field under lockdown lets a
+    // user point a locked-down binary at any third-party host, defeating
+    // the entire corporate posture. Lockdown wins.
+    resolved.ALLOW_CUSTOM_HOST_ENABLED = false;
   }
   // Phase 05 D-01: apply derivation only when caller did not explicitly set
   // OPENWHISPR_REALTIME_WSS_URL (resolveValue returns "" both when unset
