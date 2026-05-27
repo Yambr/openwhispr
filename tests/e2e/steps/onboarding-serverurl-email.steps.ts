@@ -19,12 +19,30 @@ const { Given, When, Then } = createBdd(test);
 
 Given(
   "the Server URL {string} is persisted in settings",
-  async ({ page }, url: string) => {
-    // Persist via the test hook that wraps useSettingsStore.setServerUrl,
-    // exposed in src/lib/auth.ts:154. The HOST-02 Proxy subscribes to the
-    // store and invalidates cachedInner; the ServerUrlField also reads
-    // useSettingsStore.serverUrl as its initial state.
-    await page.evaluate((u) => {
+  async ({ electronApp }, url: string) => {
+    // To reproduce the v1.7.13 bug we need ServerUrlField to MOUNT with a
+    // hydrated-valid initial state — not a runtime store-update after the
+    // component has already rendered. The bug ONLY fires on initial mount
+    // (onValidated was wired into validate() / onBlur; initial-mount with
+    // hydrated-valid state skipped it).
+    //
+    // Strategy: locate the control-panel window first (firstWindow is the
+    // main recording window), push the URL into useSettingsStore so Zustand
+    // persist writes it to localStorage, then reload ONLY that window. Re-
+    // hydration on the reload pulls the URL into store state before the
+    // ServerUrlField's first useState() runs.
+    let panelPage = electronApp
+      .windows()
+      .find((p) => p.url().includes("panel=true"));
+    if (!panelPage) {
+      panelPage = await electronApp.waitForEvent("window", {
+        predicate: (p) => p.url().includes("panel=true"),
+        timeout: 25_000,
+      });
+    }
+    await panelPage.waitForLoadState("domcontentloaded");
+
+    await panelPage.evaluate((u) => {
       const w = window as unknown as {
         __zustand_setServerUrl?: (u: string | null) => void;
         electronAPI?: { notifyServerUrlChanged?: (u: string | null) => void };
@@ -32,42 +50,96 @@ Given(
       w.__zustand_setServerUrl?.(u);
       w.electronAPI?.notifyServerUrlChanged?.(u);
     }, url);
+
+    // Let Zustand persist flush to localStorage (async by design).
+    await panelPage.waitForTimeout(300);
+    await panelPage.reload({ waitUntil: "domcontentloaded" });
+    // Stash for the When-step so it can re-use the same page.
+    (lastPanelPageRef as { current: typeof panelPage }).current = panelPage;
   }
 );
 
-Given("no Server URL is persisted in settings", async ({ page }) => {
-  await page.evaluate(() => {
-    const w = window as unknown as {
-      __zustand_setServerUrl?: (u: string | null) => void;
-      electronAPI?: { notifyServerUrlChanged?: (u: string | null) => void };
-    };
-    w.__zustand_setServerUrl?.(null);
-    w.electronAPI?.notifyServerUrlChanged?.(null);
-    try {
-      localStorage.removeItem("serverUrl");
-    } catch {
-      /* ignore */
+// "no Server URL is persisted in settings" is defined in
+// tests/e2e/steps/host-runtime-override.steps.ts and reused here.
+
+When(
+  "the onboarding authentication step is rendered",
+  async ({ electronApp }, _) => {
+    // The Yambr build opens the main dictation window first; the onboarding
+    // flow lives in a SEPARATE control-panel window opened with ?panel=true
+    // on first run. firstWindow() returns the dictation window, not the
+    // onboarding one — locate the panel window by URL. The Given-step
+    // above may already have stashed it after a reload.
+    let panelPage = lastPanelPageRef.current;
+    if (!panelPage || panelPage.isClosed()) {
+      panelPage = electronApp
+        .windows()
+        .find((p) => p.url().includes("panel=true"));
+      if (!panelPage) {
+        panelPage = await electronApp.waitForEvent("window", {
+          predicate: (p) => p.url().includes("panel=true"),
+          timeout: 25_000,
+        });
+      }
     }
-  });
-});
+    await panelPage.waitForLoadState("domcontentloaded");
 
-When("the onboarding authentication step is rendered", async ({ page }) => {
-  // The packed Yambr build opens onboarding on first run when no session
-  // exists. We do not navigate; we wait for the ServerUrlField to mount.
-  // ALLOW_CUSTOM_HOST_ENABLED=true in the v1.7.11+ default build, so
-  // the field is always in the DOM.
-  await page.waitForSelector('[data-testid="server-url-field"]', {
-    state: "attached",
-    timeout: 15_000,
-  });
-  // Allow the validation effect to flush — initial mount with persisted
-  // valid URL fires the useEffect on the next microtask.
-  await page.waitForTimeout(150);
-});
+    const consoleMessages: string[] = [];
+    panelPage.on("console", (msg) =>
+      consoleMessages.push(`[${msg.type()}] ${msg.text()}`)
+    );
+    panelPage.on("pageerror", (err) =>
+      consoleMessages.push(`[pageerror] ${err.message}`)
+    );
 
-Then("the email input is enabled", async ({ page }) => {
-  // The email input is `<input type="email" placeholder="you@example.com" />`
-  // — it's the only type=email input on the AuthenticationStep form.
+    // Stash the page on the test info for downstream steps.
+    (lastPanelPageRef as { current: typeof panelPage }).current = panelPage;
+
+    try {
+      await panelPage.waitForSelector('[data-testid="server-url-field"]', {
+        state: "attached",
+        timeout: 25_000,
+      });
+    } catch (e) {
+      const url = panelPage.url();
+      const bodyText = await panelPage.evaluate(() =>
+        document.body.innerText.slice(0, 1500)
+      );
+      const htmlSnippet = await panelPage.evaluate(() =>
+        document.body.innerHTML.slice(0, 1500)
+      );
+      throw new Error(
+        `Onboarding ServerUrlField did not mount.\n` +
+          `URL: ${url}\n` +
+          `Body innerText (truncated):\n${bodyText || "(empty)"}\n\n` +
+          `Body innerHTML (truncated):\n${htmlSnippet || "(empty)"}\n\n` +
+          `Console messages (last 20):\n${
+            consoleMessages.slice(-20).join("\n") || "(none)"
+          }\n\n` +
+          `Original error: ${(e as Error).message}`
+      );
+    }
+    await panelPage.waitForTimeout(250);
+  }
+);
+
+// Shared reference so the Then-steps below can act on the panel window
+// the When-step located. (BDD's playwright fixture gives one `page` per
+// scenario but we need the SECOND window — the control panel.)
+const lastPanelPageRef: { current: import("@playwright/test").Page | null } = {
+  current: null,
+};
+function getPanelPage(): import("@playwright/test").Page {
+  if (!lastPanelPageRef.current) {
+    throw new Error(
+      "Panel page not set — call the When-step 'the onboarding authentication step is rendered' first."
+    );
+  }
+  return lastPanelPageRef.current;
+}
+
+Then("the email input is enabled", async () => {
+  const page = getPanelPage();
   const emailInput = page.locator('input[type="email"]').first();
   await emailInput.waitFor({ state: "visible", timeout: 5_000 });
   const isDisabled = await emailInput.isDisabled();
@@ -80,7 +152,8 @@ Then("the email input is enabled", async ({ page }) => {
   }
 });
 
-Then("the email input is disabled", async ({ page }) => {
+Then("the email input is disabled", async () => {
+  const page = getPanelPage();
   const emailInput = page.locator('input[type="email"]').first();
   await emailInput.waitFor({ state: "visible", timeout: 5_000 });
   const isDisabled = await emailInput.isDisabled();
@@ -93,12 +166,9 @@ Then("the email input is disabled", async ({ page }) => {
 });
 
 Then(
-  'the "Continue with email" button has the expected enablement (driven by email content)',
-  async ({ page }) => {
-    // With Server URL valid but empty email, the button must still be disabled
-    // (the `!email.trim()` clause at AuthenticationStep.tsx:611). After typing
-    // an email it must enable. This pins both halves of the disabled expression
-    // — without the v1.7.13 fix, the URL clause held it permanently disabled.
+  "the {string} button has the expected enablement \\(driven by email content)",
+  async ({}, _label: string) => {
+    const page = getPanelPage();
     const button = page.getByRole("button", { name: /continue with email/i });
     await button.waitFor({ state: "visible", timeout: 5_000 });
 
@@ -108,8 +178,6 @@ Then(
 
     const emailInput = page.locator('input[type="email"]').first();
     await emailInput.fill("user@example.com");
-    // Microtask flush — the disabled prop re-evaluates synchronously, but
-    // give React one frame to commit.
     await page.waitForTimeout(50);
 
     if (await button.isDisabled()) {
@@ -122,7 +190,8 @@ Then(
   }
 );
 
-Then('the "Continue with email" button is disabled', async ({ page }) => {
+Then('the "Continue with email" button is disabled', async () => {
+  const page = getPanelPage();
   const button = page.getByRole("button", { name: /continue with email/i });
   await button.waitFor({ state: "visible", timeout: 5_000 });
   if (!(await button.isDisabled())) {

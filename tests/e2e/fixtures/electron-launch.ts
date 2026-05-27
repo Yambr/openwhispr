@@ -10,7 +10,14 @@
  * Returns the ElectronApplication + the first BrowserWindow page.
  */
 
-import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import {
+  _electron as electron,
+  type ElectronApplication,
+  type Page,
+} from "@playwright/test";
+import { test as bddBase } from "playwright-bdd";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export type LaunchResult = {
@@ -61,12 +68,32 @@ export async function launchClient(opts: LaunchOptions = {}): Promise<LaunchResu
     env.OPENWHISPR_E2E_AUTH_TOKEN = opts.authToken;
   }
 
+  // v1.7.13: isolate userData so e2e launches never inherit the dev
+  // machine's safeStorage (a real bearer token would auto-skip the
+  // onboarding flow). main.js channel-isolates userData under
+  // OpenWhispr-<channel> when OPENWHISPR_CHANNEL is staging/development.
+  // VALID_CHANNELS is a hardcoded set ("development","staging","production"),
+  // so we can't invent a per-scenario channel — instead we pin "staging"
+  // and wipe its directory before each launch. Staging is the right
+  // bucket here: it isolates from production state but is still a
+  // recognised channel string.
+  env.OPENWHISPR_CHANNEL = "staging";
+  const macAppData = path.join(os.homedir(), "Library/Application Support");
+  const isolatedDir = path.join(macAppData, "OpenWhispr-staging");
+  try {
+    fs.rmSync(isolatedDir, { recursive: true, force: true });
+  } catch {
+    /* best-effort */
+  }
+
   const app = await electron.launch({
     args: [REPO_ROOT, "--no-sandbox"],
     cwd: REPO_ROOT,
     env,
     timeout: 30_000,
   });
+
+  (app as unknown as { _isolatedUserData?: string })._isolatedUserData = isolatedDir;
 
   const page = await app.firstWindow({ timeout: 30_000 });
   await page.waitForLoadState("domcontentloaded");
@@ -104,4 +131,55 @@ export async function closeClient(result: LaunchResult): Promise<void> {
   } catch {
     // Process already reaped — ignore.
   }
+
+  // v1.7.13: clean the staging userData dir so the next launch starts
+  // from zero state. The same path is wiped pre-launch too — this is the
+  // post-launch belt to keep dev workstations tidy.
+  const isolated = (result.app as unknown as { _isolatedUserData?: string })
+    ._isolatedUserData;
+  if (isolated && isolated.endsWith("OpenWhispr-staging")) {
+    try {
+      fs.rmSync(isolated, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
 }
+
+/**
+ * Playwright-BDD test fixture. Step definitions that need an Electron
+ * window import this `test` (instead of the bare `@playwright/test`
+ * symbol) to receive `electronApp` + `page` per scenario.
+ *
+ * The fixture launches one Electron app per scenario and tears it down
+ * cleanly via `closeClient`. Workers are serialised in playwright.config
+ * (`workers: 1`) because Electron's IPC pipe isn't reentrant.
+ *
+ * Pre-v1.7.13 this fixture exported only the bare helper functions —
+ * `host-runtime-override.steps.ts` imported `test` from this module but
+ * it was never exported. Bddgen generated specs that referenced
+ * `electronApp` and `page` parameters Playwright didn't know about, so
+ * EVERY scenario silently produced 0 runnable tests. v1.7.13 wires the
+ * fixture so the e2e suite actually executes.
+ */
+export const test = bddBase.extend<{
+  electronApp: ElectronApplication;
+  page: Page;
+}>({
+  electronApp: async ({}, use) => {
+    const result = await launchClient();
+    try {
+      await use(result.app);
+    } finally {
+      await closeClient(result);
+    }
+  },
+  // Bind the test's `page` to the Electron window that came out of the
+  // launch above. Playwright's default `page` fixture wires to a
+  // browser context, which Electron doesn't have.
+  page: async ({ electronApp }, use) => {
+    const page = await electronApp.firstWindow({ timeout: 30_000 });
+    await page.waitForLoadState("domcontentloaded");
+    await use(page);
+  },
+});

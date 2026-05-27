@@ -34,7 +34,15 @@ const tags = tagParts.length ? tagParts.join(" and ") : undefined;
 
 const testDir = defineBddConfig({
   features: [path.join(ROOT, "tests/e2e/features/**/*.feature")],
-  steps: [path.join(ROOT, "tests/e2e/steps/**/*.ts")],
+  // v1.7.13: include the fixture file in `steps` so bddgen can pick up
+  // the extended `test` export. Without this the generated specs use the
+  // bare playwright-bdd `test` and Playwright rejects scenarios that
+  // reference `electronApp` / `page` fixtures — pre-v1.7.13 the whole
+  // e2e suite silently produced 0 runnable tests for exactly this reason.
+  steps: [
+    path.join(ROOT, "tests/e2e/steps/**/*.ts"),
+    path.join(ROOT, "tests/e2e/fixtures/electron-launch.ts"),
+  ],
   outputDir: path.join(ROOT, "tests/e2e/.playwright-bdd"),
   tags,
 });
