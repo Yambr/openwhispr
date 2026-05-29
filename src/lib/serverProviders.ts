@@ -54,10 +54,11 @@ export function parseProvidersResponse(json: unknown): ServerProvider[] {
     const e = entry as { id?: unknown; name?: unknown; enabled?: unknown };
     if (e.enabled !== true) continue;
     if (typeof e.id !== "string" || !ID_RE.test(e.id)) continue;
-    if (typeof e.name !== "string" || e.name.trim().length === 0) continue;
+    const name = typeof e.name === "string" ? e.name.trim() : "";
+    if (name.length === 0) continue;
     if (seen.has(e.id)) continue;
     seen.add(e.id);
-    out.push({ id: e.id, name: e.name.slice(0, MAX_NAME), iconHint: iconHintForId(e.id) });
+    out.push({ id: e.id, name: name.slice(0, MAX_NAME), iconHint: iconHintForId(e.id) });
   }
   return out;
 }

@@ -81,6 +81,24 @@ describe("parseProvidersResponse", () => {
     const out = parseProvidersResponse({ providers: [{ id: "a", name: long, enabled: true }] });
     expect(out[0].name).toHaveLength(40);
   });
+
+  it("trims surrounding whitespace before storing/truncating the name", () => {
+    const out = parseProvidersResponse({
+      providers: [{ id: "a", name: "  Company SSO  ", enabled: true }],
+    });
+    expect(out[0].name).toBe("Company SSO");
+  });
+
+  it("a disabled first duplicate does not poison the seen set (later enabled dup survives)", () => {
+    const out = parseProvidersResponse({
+      providers: [
+        { id: "google", name: "Disabled First", enabled: false },
+        { id: "google", name: "Enabled Second", enabled: true },
+      ],
+    });
+    expect(out.map((p) => p.id)).toEqual(["google"]);
+    expect(out[0].name).toBe("Enabled Second");
+  });
 });
 
 describe("resolveProviderView", () => {
