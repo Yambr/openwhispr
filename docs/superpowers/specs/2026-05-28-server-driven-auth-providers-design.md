@@ -34,7 +34,7 @@ The product requirement is the inverse: **the client's sign-in screen must mirro
 
 | # | Decision | Rationale |
 |---|----------|-----------|
-| D1 | **Arbitrary providers, each as its own button** (incl. `keycloak`), with dynamic label + icon | Product: login surface mirrors server; corporate SSO needs a distinct branded button, not "Continue with Microsoft". |
+| D1 | **Server-driven provider buttons**, each rendered dynamically from the server list, with label from server `name` + client-derived icon | Product: login surface mirrors server. *(Revised post-verification: the server models generic OIDC as a single `id:"oidc"` provider, so Keycloak appears as one "Company SSO"-style button, not a literal per-IdP `keycloak` button. This meets the goal — corporate SSO appears when enabled server-side — with zero server change.)* |
 | D2 | **Single source of truth = server pre-auth endpoint.** No response / unreachable → render **email+password only**, no social buttons. **No stale cache.** | Simplicity + correctness: never show a provider the current server doesn't actually support. Offline = degraded to password auth, which always works. |
 | D3 | **Lockdown (`PROVIDER_LOCKDOWN_ENABLED`) is fully decoupled from social.** Server alone decides social visibility, even in corporate-minimal builds. | Explicit product choice. **Accepted cost:** corporate-minimal bundle is no longer guaranteed free of OAuth deep-link literals; `verify-provider-lockdown.js` must be rewritten to the new invariant; Project Constraints doc must be updated. |
 | D4 | **Isolation strategy:** new logic in fork-only modules; upstream files get 1–2-line integration hooks only. | Minimize upstream merge conflict surface. |
@@ -100,25 +100,35 @@ AuthenticationStep mounts
 
 User clicks a provider button → `ServerProviderButtons` calls `onSelect(provider.id)` → which is the upstream `handleSocialSignIn` → upstream `signInWithSocial(id)` → existing `${AUTH_URL}/api/desktop-signin/${id}` deep-link in the browser. **The entire OAuth round-trip is unchanged** — we only changed *which ids* can reach it and *how the button is drawn*.
 
-### 3.3 Server contract (server owns this — see §6)
+### 3.3 Server contract (VERIFIED against live server code 2026-05-28 — server owns this, no change requested)
 
-`GET /api/auth/providers` — pre-auth, no token (same posture as `POST /api/check-user`).
+`GET /api/auth/providers` — pre-auth, no token. Verified at `apps/api/src/routes/auth-providers.ts:86` (`auth:false`, rate-limited 60/min, public). Already in prod since server Phase 12; Phase 35 made it genuinely public.
+
+**Real response shape** (`oidc-providers.ts:27-30`, `auth-providers.ts:10-11`):
 
 ```json
 {
   "providers": [
-    { "id": "google",    "label": "Google",            "iconHint": "google" },
-    { "id": "microsoft", "label": "Microsoft",          "iconHint": "microsoft" },
-    { "id": "keycloak",  "label": "Company SSO",         "iconHint": "generic" }
-  ]
+    { "id": "google", "name": "Google", "enabled": true },
+    { "id": "github", "name": "GitHub", "enabled": true },
+    { "id": "oidc",   "name": "OIDC",   "enabled": true }
+  ],
+  "emailVerification": { "required": true, "configured": true }
 }
 ```
 
-- `id` (required): the better-auth provider id used verbatim in `/api/desktop-signin/<id>`. `^[a-z0-9][a-z0-9_-]{0,31}$`.
-- `label` (required): human display text. The client shows it raw, prefixed by an i18n template `auth.social.continueWith` → `"Continue with {{label}}"`. ≤ 40 chars.
-- `iconHint` (optional): one of `google | microsoft | apple | generic`. Unknown / missing → `generic`. **The client never loads a remote icon** (no SSRF / no remote asset surface) — `iconHint` only selects a *bundled* icon.
+- `id` (required): canonical provider id, **`"google" | "github" | "oidc"`** — used verbatim in `/api/desktop-signin/<id>`. Generic OIDC (Keycloak, Okta, any IdP) rides as the **single `id:"oidc"`** provider (`oidc-providers.ts:79,105`); the server models all generic OIDC as one genericOAuth registration, not per-IdP.
+- `name` (required): server's display name (`"Google"`, `"GitHub"`, `"OIDC"` — or whatever the operator configures). The client uses this as the button label.
+- `enabled` (always `true` in current server): the server only emits enabled providers. Client defensively filters `enabled !== true`.
+- `emailVerification` (extra top-level key): consumed by the server's own onboarding wizard. **The client ignores it** (reads only `.providers`) — extra keys are harmless.
+- ETag + `Cache-Control: public, max-age=60` + 304 on `If-None-Match` — the server already provides HTTP caching; the client need not add its own (and per D2 keeps no stale cache of its own).
 
-The server derives this list from its own configured better-auth social providers. If Keycloak is wired as a better-auth `genericOAuth`/OIDC provider with id `keycloak`, it appears here. **The client requires no knowledge of Keycloak specifically** — it's just another `{id,label,iconHint}` row.
+**Client adapts to this contract** (per fork rules — server unchanged):
+
+- **Display label** = the server's `name` (operator-configurable; for `oidc` the operator can set it to "Company SSO" via the server's env). Rendered through `auth.social.continueWith` → `"Continue with {{name}}"`, except the two legacy brands keep their exact upstream i18n labels for parity.
+- **Icon** is derived **client-side from `id`** (`google`→Google icon, `github`→GitHub icon, anything else incl. `oidc`→generic `KeyRound`). The server does NOT send an icon hint — icon assets are a purely client concern, and asking the server to own them would be needless coupling (and a remote-icon path would be an SSRF surface). **The client never loads a remote icon.**
+
+**The client requires no knowledge of Keycloak specifically** — Keycloak appears as `id:"oidc"`, a generic SSO button. The user's goal ("corporate SSO appears when enabled server-side") is met: the operator enables the OIDC triplet on the server, and the `oidc` button appears with the operator's chosen name. The earlier design assumption of a literal `id:"keycloak"` per-IdP button is dropped — it would require a server-side canonical-id change to the desktop-signin round-trip for no product gain.
 
 ### 3.4 Type strategy (keeping upstream intact)
 
@@ -177,24 +187,25 @@ New/changed keys in **all 10 locale dirs** (`en, es, fr, de, pt, it, ja, ru, zh-
 
 - Keep existing `auth.social.completeInBrowser`, `auth.social.protocolUnavailable` (unchanged).
 - Keep `continueWithGoogle/Apple/Microsoft` (still used as exact labels when `iconHint` matches a known brand, for visual parity with upstream).
-- **Add** `auth.social.continueWith` = `"Continue with {{provider}}"` (interpolation) — used for any server provider whose `label` isn't one of the three known brands (e.g. Keycloak → "Continue with Company SSO").
+- **Add** `auth.social.continueWith` = `"Continue with {{provider}}"` (interpolation) — used for any server provider whose `id` isn't a known legacy brand (e.g. `oidc` with server `name` "Company SSO" → "Continue with Company SSO").
 
-Brand names (`Google`, `Microsoft`, `Apple`) and operator-supplied `label`s are **not** translated (per i18n rules: brand names excluded). Only the surrounding template ("Continue with …", "Complete sign-in in your browser") is localized.
+Known-brand ids keep their exact upstream i18n labels for visual parity: `google` → `auth.social.continueWithGoogle`. The fork adds `github` handling, but since `github` isn't an upstream brand key, it renders via the `continueWith` template with the server `name` ("Continue with GitHub"). Brand names (`Google`, `GitHub`) and the operator-supplied `name` are **not** translated (per i18n rules: brand/proper names excluded). Only the surrounding template ("Continue with …", "Complete sign-in in your browser") is localized.
+
+> Note: `microsoft`/`apple` legacy brand keys (`continueWithMicrosoft`/`continueWithApple`) remain in the locale files (still upstream) but are currently unreachable, because the real server emits only `google|github|oidc`. They stay for upstream parity and in case the server later adds those ids.
 
 ---
 
-## 6. Server requirements (SERVER repo is READ-ONLY — filed, not implemented here)
+## 6. Server requirements — ALREADY SATISFIED (verified 2026-05-28)
 
-A `SERVER-REQUIREMENTS.md` entry will be written for the openwhispr-server team specifying:
+**No server change is required.** `GET /api/auth/providers` already exists in prod (server Phase 12, made public in Phase 35), verified read-only against `/Users/nick/openwhispr-server`:
 
-- **New endpoint** `GET /api/auth/providers`, pre-auth (no token), same auth posture as `POST /api/check-user`.
-- Response contract per §3.3 (`{providers:[{id,label,iconHint}]}`).
-- `id` MUST equal the better-auth provider id consumed by the existing `/api/desktop-signin/<id>` shim — they must round-trip.
-- The list MUST reflect the server's actually-configured providers (including any generic-OIDC/Keycloak provider), not a static list.
-- Must never 401/403 for a well-formed request (pre-auth, like `verification-status` R21).
-- Empty `providers: []` is valid (means "password-only server").
+- `apps/api/src/routes/auth-providers.ts:86` — `auth:false`, rate-limited 60/min → genuinely public, never 401/403 for a well-formed request.
+- `auth-providers.ts:61` — `listConfiguredOidcProviders(env)` → dynamic, reflects live config.
+- `oidc-providers.ts:27-30,73-79,105` — shape `{id,name,enabled:true}`, id ∈ `google|github|oidc`; `oidc` round-trips with `/api/desktop-signin/oidc`.
+- Empty `{"providers":[]}` is a valid 200 (password-only server).
+- ETag + `Cache-Control: public, max-age=60` + 304.
 
-This is the **only** new server dependency. Everything else (the `/api/desktop-signin/<id>` deep-link, the bearer/token-store handshake, `set-auth-token` rotation) already exists and is unchanged.
+The client adapts to this contract (§3.3). All other pieces (the `/api/desktop-signin/<id>` deep-link, the bearer/token-store handshake, `set-auth-token` rotation) already exist and are unchanged. See `.planning/phases/06-server-driven-auth-providers/SERVER-REQUIREMENTS.md` for the verification record (BLOCKER → satisfied).
 
 ---
 

@@ -4,7 +4,32 @@
 **From:** openwhispr client, phase 06
 **Date:** 2026-05-28
 **Design ref:** `docs/superpowers/specs/2026-05-28-server-driven-auth-providers-design.md`
-**Severity:** BLOCKER for the client feature (client cannot ship dynamic provider buttons without this endpoint).
+**Severity:** ~~BLOCKER~~ → **ALREADY SATISFIED.** Endpoint verified live in server code 2026-05-28.
+
+---
+
+## ⚠️ STATUS UPDATE (2026-05-28, verified against server code, not memory)
+
+The endpoint **already exists and needs no server change.** Verified read-only against
+`/Users/nick/openwhispr-server`:
+
+- `apps/api/src/routes/auth-providers.ts:86` — `config: { auth: false, rateLimit: {max:60, timeWindow:'1 minute'} }` → genuinely public, no token, no 401/403 (Phase 35 CRIT-FIX-04). ✅
+- `auth-providers.ts:61` — `providers: listConfiguredOidcProviders(env)` → **dynamic**, reflects live env config. ✅
+- `apps/api/src/lib/oidc-providers.ts:27-30` — real per-provider shape is **`{id, name, enabled:true}`**, id ∈ **`"google" | "github" | "oidc"`** (NOT google/microsoft/apple as the original client design assumed). ✅
+- `oidc-providers.ts:79,105` — generic OIDC (Keycloak/Okta/any) rides as a **single `id:"oidc"`** provider, round-tripping with `/api/desktop-signin/oidc` + genericOAuth `providerId:"oidc"`. ✅
+- Top-level shape is `{providers, emailVerification:{required,configured}}` + ETag/`Cache-Control: public, max-age=60` + 304.
+
+**Resolution: the CLIENT adapts to this real contract. No server change requested.** (Per
+fork rules: the client adapts to the server's existing contract; we do NOT ask the server to
+add `label`/`iconHint` aliases for client convenience, because `name` already serves as the
+label and `iconHint` is a purely client-side icon-asset concern the server should not own.)
+
+The requirement cards below are kept for historical context but are **superseded** by the
+real contract above. The client design + plan have been updated to consume `{id,name,enabled}`.
+
+---
+
+## (Superseded) original requirement cards
 
 ---
 
