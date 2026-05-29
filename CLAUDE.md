@@ -34,7 +34,7 @@ CI (`release.yml`, tag glob `v*`) reads the tag, strips the leading `v`, and inj
 
 - **Tech stack pinned**: Node 24 / Electron 41 / Vite. Do not introduce new core deps without strong reason. Do not regenerate `package-lock.json` with a different Node major version.
 - **Default build = upstream parity**: No behavioral drift for existing Yambr users when env vars are unset.
-- **Build-time only configurability**: All v1 configurability happens at build time, NOT runtime. Reduces attack surface, keeps the binary auditable.
+- **Build-time only configurability**: All v1 configurability happens at build time, NOT runtime. Reduces attack surface, keeps the binary auditable. **Exception (phase 06, D3)**: social sign-in is server-driven at runtime — the corporate-minimal (`PROVIDER_LOCKDOWN_ENABLED`) bundle audit no longer covers social sign-in literals (`desktop-signin` / `handleSocialSignIn`), since social visibility is fetched at runtime via `GET /api/auth/providers`. See `docs/superpowers/specs/2026-05-28-server-driven-auth-providers-design.md`.
 - **Documentation lives in `docs/`** (committed), not `.planning/` — third parties need it.
 - **Signing**: Existing Developer ID signing flow (`afterSign.js`, electron-builder) must continue working with env-driven config.
 - **Secrets**: API keys remain user-provided at runtime via Electron `safeStorage`. Build-time vars are for *defaults and endpoints*, never for secret material.

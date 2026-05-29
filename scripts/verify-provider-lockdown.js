@@ -8,8 +8,10 @@
 //   - `default`  (env {}):                          all literals PRESENT  (upstream parity)
 //   - `lockdown` (OPENWHISPR_PROVIDER_LOCKDOWN=true): all literals ABSENT  (lockdown DCE)
 //
-// Modeled on scripts/verify-oauth-gating.js. Six target groups:
-//   OAUTH_TARGETS         — OAuth desktop-sign-in surface (welcome screen).
+// Modeled on scripts/verify-oauth-gating.js. Target groups (Phase 06 (D3):
+// the former OAUTH_TARGETS group — desktop-sign-in / handleSocialSignIn
+// literals — was removed because social sign-in is server-driven and no
+// longer stripped under lockdown):
 //   ALT_CLOUD_TARGETS     — alternative cloud provider key-console URL literals.
 //   BYOK_TARGETS          — BYOK / enterprise IPC channel literals (preload-byok).
 //   ENTERPRISE_TARGETS    — enterprise provider config surface literals.
@@ -43,6 +45,12 @@
 // Usage:
 //   node scripts/verify-provider-lockdown.js
 //   SKIP_RESTORE=1 node scripts/verify-provider-lockdown.js   # skip trailing default build
+//
+// Phase 06 (D3): social sign-in is NO LONGER stripped under lockdown — its
+// visibility is server-driven at runtime (GET /api/auth/providers). This
+// verifier therefore no longer asserts absence of `desktop-signin` or
+// handleSocialSignIn(...) literals. It continues to assert lockdown strips
+// BYOK / enterprise / alternative-cloud / billing / referrals.
 "use strict";
 
 const { spawnSync, execSync } = require("child_process");
@@ -71,17 +79,6 @@ const PRELOAD_TARGETS = [
 // a `!PROVIDER_LOCKDOWN_ENABLED` (or build-config-forced-off OAuth) branch, or
 // inside the gated preload-byok factory. Under lockdown, Rolldown DCE removes
 // the branch and the literal disappears from the bundle.
-
-// OAuth desktop sign-in surface. PROVIDER_LOCKDOWN forces the three
-// OPENWHISPR_OAUTH_* flags off at build-config generation (plan 10-02), so the
-// social-sign-in code path DCEs. `desktop-signin` is the deep-link path literal
-// in src/lib/auth.ts that plan 10-02 confirmed absent under lockdown.
-const OAUTH_TARGETS = [
-  "desktop-signin",
-  'handleSocialSignIn("apple")',
-  'handleSocialSignIn("google")',
-  'handleSocialSignIn("microsoft")',
-];
 
 // Alternative cloud provider BYOK key-console URLs. These live in the gated
 // provider panels of TranscriptionModelPicker.tsx / ReasoningModelSelector.tsx.
@@ -179,7 +176,6 @@ const CUSTOM_HOST_TARGETS = [
 ];
 
 const GROUPS = {
-  OAUTH: OAUTH_TARGETS,
   ALT_CLOUD: ALT_CLOUD_TARGETS,
   BYOK: BYOK_TARGETS,
   ENTERPRISE: ENTERPRISE_TARGETS,
