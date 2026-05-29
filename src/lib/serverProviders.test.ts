@@ -1,5 +1,67 @@
-import { describe, it, expect } from "vitest";
-import { parseProvidersResponse, resolveProviderView, fetchServerProviders } from "./serverProviders";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock the settings store the same way auth.ts's resolveBaseURL reads it:
+// resolveProvidersBaseUrl calls useSettingsStore.getState().serverUrl. In node
+// env there's no real store wiring, so we mock the module and drive getState().
+const mockState: { serverUrl: string | null } = { serverUrl: null };
+vi.mock("../stores/settingsStore", () => ({
+  useSettingsStore: {
+    getState: () => mockState,
+  },
+}));
+
+// Build-default backend used as the fallback when no custom serverUrl is set.
+// Mock the defaults module so the test is independent of the generated build
+// config (which is "" / a real URL depending on the bundle).
+vi.mock("../config/defaults", () => ({
+  OPENWHISPR_BACKEND_URL: "https://default.build.example",
+}));
+
+import {
+  parseProvidersResponse,
+  resolveProviderView,
+  fetchServerProviders,
+  resolveProvidersBaseUrl,
+} from "./serverProviders";
+
+describe("resolveProvidersBaseUrl", () => {
+  beforeEach(() => {
+    mockState.serverUrl = null;
+  });
+
+  it("returns the build-default backend when no custom serverUrl is set", () => {
+    mockState.serverUrl = null;
+    expect(resolveProvidersBaseUrl()).toBe("https://default.build.example");
+  });
+
+  it("returns the build-default backend when serverUrl is an empty string", () => {
+    mockState.serverUrl = "";
+    expect(resolveProvidersBaseUrl()).toBe("https://default.build.example");
+  });
+
+  it("returns the custom serverUrl when the user has typed one (self-hosting)", () => {
+    mockState.serverUrl = "https://my-keycloak-host.example";
+    expect(resolveProvidersBaseUrl()).toBe("https://my-keycloak-host.example");
+  });
+
+  it("custom serverUrl takes precedence over the build default", () => {
+    mockState.serverUrl = "https://custom.example";
+    expect(resolveProvidersBaseUrl()).not.toBe("https://default.build.example");
+    expect(resolveProvidersBaseUrl()).toBe("https://custom.example");
+  });
+
+  it("does not append a path segment — the trailing-slash strip is fetchServerProviders' job", () => {
+    // Mirror auth.ts: resolution returns the bare base; URL assembly (and the
+    // trailing-slash strip) happens in fetchServerProviders so both layers
+    // agree. A custom host with a trailing slash round-trips to the same
+    // /api/auth/providers URL fetchServerProviders would build.
+    mockState.serverUrl = "https://custom.example/";
+    const resolved = resolveProvidersBaseUrl();
+    expect(`${resolved.replace(/\/$/, "")}/api/auth/providers`).toBe(
+      "https://custom.example/api/auth/providers"
+    );
+  });
+});
 
 describe("parseProvidersResponse", () => {
   it("accepts the real server body (google/github/oidc + extra emailVerification key)", () => {

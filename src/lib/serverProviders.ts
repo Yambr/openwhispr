@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { OPENWHISPR_BACKEND_URL } from "../config/defaults";
+import { useSettingsStore } from "../stores/settingsStore";
 
 // Phase 06 — Server-driven auth providers (fork-only).
 // Single source of truth for which social sign-in buttons the client shows
@@ -129,21 +130,49 @@ export interface ProvidersState {
 }
 
 /**
- * Fetches the server provider list once on mount. Source of truth is
- * OPENWHISPR_BACKEND_URL. On any failure -> status "error" + empty list,
- * which the UI renders as password-only. No stale cache (design D2).
- * The renderer reloads on serverUrl change (auth.ts HOST-02), so a fresh
- * mount re-runs this — no extra subscription needed.
+ * Resolve the base URL the providers fetch should target, mirroring auth.ts's
+ * resolveBaseURL precedence so providers are fetched from the SAME host the
+ * better-auth client talks to. In an ALLOW_CUSTOM_HOST build the real backend
+ * is the user-typed custom host persisted in useSettingsStore.serverUrl; only
+ * when that's unset/empty do we fall back to the build-time default
+ * (OPENWHISPR_BACKEND_URL, which may itself be "" — pickAllowEmpty).
+ *
+ * Pure + synchronous so it's unit-testable in node env by mocking the store
+ * module (same pattern auth.ts's resolveBaseURL relies on: getState() is always
+ * available because the store module is mocked in tests). The trailing-slash
+ * strip is intentionally NOT done here — fetchServerProviders owns URL assembly
+ * and strips the slash, so both layers agree.
+ */
+export function resolveProvidersBaseUrl(): string {
+  const persisted = useSettingsStore.getState().serverUrl;
+  return persisted || OPENWHISPR_BACKEND_URL;
+}
+
+/**
+ * Fetches the server provider list on mount and whenever the active backend
+ * changes. Source of truth is the RESOLVED base URL — the user's custom
+ * serverUrl when set (self-hosting / ALLOW_CUSTOM_HOST), else the build-time
+ * OPENWHISPR_BACKEND_URL. On any failure -> status "error" + empty list, which
+ * the UI renders as password-only. No stale cache (design D2).
+ *
+ * The hook subscribes to the settings store's serverUrl slice so a custom-host
+ * change re-runs the fetch against the new backend (HOST-02). Relying on the
+ * renderer reload alone would be fragile; subscribing is the robust fix — a
+ * self-hoster who points the binary at their own server (e.g. a Keycloak
+ * `oidc` provider) sees their buttons without a manual reload.
  */
 export function useServerProviders(): ProvidersState {
+  const serverUrl = useSettingsStore((s) => s.serverUrl);
+  const baseUrl = serverUrl || OPENWHISPR_BACKEND_URL;
   const [state, setState] = useState<ProvidersState>({ status: "loading", providers: [] });
   useEffect(() => {
     let alive = true;
-    if (!OPENWHISPR_BACKEND_URL) {
+    if (!baseUrl) {
       setState({ status: "ready", providers: [] });
       return;
     }
-    fetchServerProviders(OPENWHISPR_BACKEND_URL)
+    setState({ status: "loading", providers: [] });
+    fetchServerProviders(baseUrl)
       .then((providers) => {
         if (alive) setState({ status: "ready", providers });
       })
@@ -153,6 +182,6 @@ export function useServerProviders(): ProvidersState {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [baseUrl]);
   return state;
 }
