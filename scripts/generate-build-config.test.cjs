@@ -92,16 +92,24 @@ function withEnvMap(map, fn) {
   }
 }
 
-test("PROVIDER_LOCKDOWN=true forces all three OAUTH_* flags off", () => {
+// Phase 06 (D3): lockdown NO LONGER forces the OAUTH_*_ENABLED social flags off.
+// Social sign-in visibility is server-driven at runtime (GET /api/auth/providers);
+// the client renders exactly what the server enables, in lockdown builds too. The
+// OAUTH_*_ENABLED flags therefore stay at their BOOL_DEFAULTS value (true) under
+// lockdown — they gate only the per-provider social-button defense-in-depth guard
+// in src/lib/auth.ts, not the Google Calendar IPC surface (that is GCAL_ENABLED,
+// HIGH-01 fix).
+
+test("PROVIDER_LOCKDOWN=true leaves the three OAUTH_* social flags ON (server-driven, D3)", () => {
   withEnvMap({ OPENWHISPR_PROVIDER_LOCKDOWN: "true" }, () => {
     const resolved = buildResolved();
-    assert.strictEqual(resolved.OAUTH_GOOGLE_ENABLED, false);
-    assert.strictEqual(resolved.OAUTH_APPLE_ENABLED, false);
-    assert.strictEqual(resolved.OAUTH_MICROSOFT_ENABLED, false);
+    assert.strictEqual(resolved.OAUTH_GOOGLE_ENABLED, true);
+    assert.strictEqual(resolved.OAUTH_APPLE_ENABLED, true);
+    assert.strictEqual(resolved.OAUTH_MICROSOFT_ENABLED, true);
   });
 });
 
-test("PROVIDER_LOCKDOWN overrides an explicit OPENWHISPR_OAUTH_GOOGLE=true (lockdown wins)", () => {
+test("PROVIDER_LOCKDOWN does not override an explicit OPENWHISPR_OAUTH_GOOGLE=true (social stays on)", () => {
   withEnvMap(
     {
       OPENWHISPR_PROVIDER_LOCKDOWN: "true",
@@ -111,9 +119,9 @@ test("PROVIDER_LOCKDOWN overrides an explicit OPENWHISPR_OAUTH_GOOGLE=true (lock
     },
     () => {
       const resolved = buildResolved();
-      assert.strictEqual(resolved.OAUTH_GOOGLE_ENABLED, false);
-      assert.strictEqual(resolved.OAUTH_APPLE_ENABLED, false);
-      assert.strictEqual(resolved.OAUTH_MICROSOFT_ENABLED, false);
+      assert.strictEqual(resolved.OAUTH_GOOGLE_ENABLED, true);
+      assert.strictEqual(resolved.OAUTH_APPLE_ENABLED, true);
+      assert.strictEqual(resolved.OAUTH_MICROSOFT_ENABLED, true);
     }
   );
 });
@@ -133,6 +141,60 @@ test("lockdown unset -> OAUTH_* flags keep their BOOL_DEFAULTS value true", () =
       assert.strictEqual(resolved.OAUTH_MICROSOFT_ENABLED, true);
     }
   );
+});
+
+// HIGH-01 regression fix: GCAL_ENABLED is a dedicated flag for the Google
+// Calendar IPC surface (emitPreloadGcal), decoupled from OAUTH_GOOGLE_ENABLED
+// (which now means only "social Google sign-in button defense-in-depth").
+// Env var: OPENWHISPR_GCAL. Default true (upstream parity). Lockdown strips it.
+
+test("BOOL_KEYS includes GCAL_ENABLED", () => {
+  assert.ok(
+    BOOL_KEYS.includes("GCAL_ENABLED"),
+    "BOOL_KEYS should contain GCAL_ENABLED"
+  );
+});
+
+test("unset env -> GCAL_ENABLED is true (upstream parity default)", () => {
+  withEnvMap({ OPENWHISPR_GCAL: undefined, OPENWHISPR_PROVIDER_LOCKDOWN: undefined }, () => {
+    assert.strictEqual(buildResolved().GCAL_ENABLED, true);
+  });
+});
+
+test("OPENWHISPR_GCAL=false -> GCAL_ENABLED is false", () => {
+  withEnvMap({ OPENWHISPR_GCAL: "false", OPENWHISPR_PROVIDER_LOCKDOWN: undefined }, () => {
+    assert.strictEqual(buildResolved().GCAL_ENABLED, false);
+  });
+});
+
+test("OPENWHISPR_GCAL=1 -> GCAL_ENABLED is true (any non-false value enables)", () => {
+  withEnvMap({ OPENWHISPR_GCAL: "1", OPENWHISPR_PROVIDER_LOCKDOWN: undefined }, () => {
+    assert.strictEqual(buildResolved().GCAL_ENABLED, true);
+  });
+});
+
+test("PROVIDER_LOCKDOWN=true forces GCAL_ENABLED off (HIGH-01: lockdown strips gcal IPC)", () => {
+  withEnvMap({ OPENWHISPR_PROVIDER_LOCKDOWN: "true" }, () => {
+    assert.strictEqual(buildResolved().GCAL_ENABLED, false);
+  });
+});
+
+test("PROVIDER_LOCKDOWN=true overrides an explicit OPENWHISPR_GCAL=true (lockdown wins)", () => {
+  withEnvMap(
+    { OPENWHISPR_PROVIDER_LOCKDOWN: "true", OPENWHISPR_GCAL: "true" },
+    () => {
+      assert.strictEqual(buildResolved().GCAL_ENABLED, false);
+    }
+  );
+});
+
+test("GCAL_ENABLED is independent of OAUTH_GOOGLE_ENABLED under lockdown (decoupled)", () => {
+  withEnvMap({ OPENWHISPR_PROVIDER_LOCKDOWN: "true" }, () => {
+    const resolved = buildResolved();
+    // social Google stays on (server-driven), gcal is stripped — proves decoupling
+    assert.strictEqual(resolved.OAUTH_GOOGLE_ENABLED, true);
+    assert.strictEqual(resolved.GCAL_ENABLED, false);
+  });
 });
 
 test("PROVIDER_LOCKDOWN=true with backend URL -> STREAMING_ENABLED is true", () => {
