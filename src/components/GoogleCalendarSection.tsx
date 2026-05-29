@@ -1,11 +1,16 @@
 // Phase 04.1 CFG-07: Google Calendar UI + IPC call sites are isolated into a
 // dedicated module so Rolldown DCE can fully eliminate this file's contents
 // (including the `gcalStartOAuth`, `gcalDisconnect`, `onGcalConnectionChanged`
-// string literals) from the renderer bundle when OAUTH_GOOGLE_ENABLED is the
+// string literals) from the renderer bundle when GCAL_ENABLED is the
 // literal `false`.
 //
+// W-01: the DCE gate is GCAL_ENABLED (the Google Calendar integration axis),
+// NOT OAUTH_GOOGLE_ENABLED — the latter now gates ONLY social-Google sign-in
+// defense-in-depth (see src/lib/auth.ts). Lockdown forces GCAL_ENABLED off,
+// which strips this whole module while leaving social sign-in server-driven.
+//
 // Mounted by IntegrationsView as
-// `{OAUTH_GOOGLE_ENABLED && <GoogleCalendarSection ... />}`. When the gate
+// `{GCAL_ENABLED && <GoogleCalendarSection ... />}`. When the gate
 // is the literal `false`, Rolldown drops the JSX subtree, sees no remaining
 // references to the imported `GoogleCalendarSection` symbol, and prunes the
 // import edge — leaving this entire file out of the IntegrationsView chunk.

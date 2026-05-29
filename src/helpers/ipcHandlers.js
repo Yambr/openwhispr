@@ -1990,7 +1990,11 @@ class IPCHandlers {
       } catch (e) {
         errors.push(`Whisper stop: ${e.message}`);
       }
-      if (BuildConfig.OAUTH_GOOGLE_ENABLED) {
+      // W-01: gcal cleanup is gated by GCAL_ENABLED (the Google Calendar
+      // integration axis), NOT OAUTH_GOOGLE_ENABLED (social-Google sign-in).
+      // Under lockdown GCAL_ENABLED is false and the manager is never
+      // instantiated (see main.js), so this cleanup is correctly skipped.
+      if (BuildConfig.GCAL_ENABLED) {
         try {
           this.googleCalendarManager?.stop();
         } catch (e) {
@@ -1999,7 +2003,7 @@ class IPCHandlers {
       }
 
       // Revoke Google OAuth tokens before DB is closed
-      if (BuildConfig.OAUTH_GOOGLE_ENABLED) {
+      if (BuildConfig.GCAL_ENABLED) {
         try {
           await this.googleCalendarManager?.revokeAllTokens();
         } catch (e) {
@@ -7133,8 +7137,13 @@ class IPCHandlers {
       return { success: true };
     });
 
-    // Google Calendar (gated by build-time OAUTH_GOOGLE_ENABLED — see Phase 4 CFG-03)
-    if (BuildConfig.OAUTH_GOOGLE_ENABLED) {
+    // Google Calendar (gated by build-time GCAL_ENABLED — see Phase 4 CFG-03,
+    // Phase 06 D3). GCAL_ENABLED (not OAUTH_GOOGLE_ENABLED) owns the calendar
+    // integration: lockdown forces it off so corporate-minimal builds register
+    // no gcal-* handlers — matching the empty preload factory (preload boundary
+    // alone left these handlers registered-but-unreachable; this closes the
+    // main side too so both layers agree).
+    if (BuildConfig.GCAL_ENABLED) {
       ipcMain.handle("gcal-start-oauth", async () => {
         try {
           return await this.googleCalendarManager.startOAuth();

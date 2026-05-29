@@ -19,6 +19,19 @@
 //                           HIGH-01: gated by GCAL_ENABLED (lockdown forces off),
 //                           decoupled from social sign-in (server-driven, NOT
 //                           asserted). Restored after Phase 06 D3 dropped it.
+//   GCAL_UI_TARGETS       — W-01: RENDERER-side gcal UI literals (camelCase
+//                           preload API method names referenced by
+//                           GoogleCalendarSection). Dist-only. Catches the
+//                           renderer half of W-01 (the gcal settings subtree
+//                           surviving in the lockdown bundle). NOTE: the
+//                           MAIN-side half of W-01 (GoogleCalendarManager
+//                           instantiation + gcal IPC handler registration in
+//                           main.js / ipcHandlers.js) is NOT bundle-greppable —
+//                           those run from source, not dist. That half is
+//                           covered by the unit test
+//                           test/scripts/gcal-lockdown-decoupling.test.js,
+//                           which asserts buildResolved().GCAL_ENABLED === false
+//                           under lockdown (the exact value the main gates read).
 //   TRANSCRIPTION_TARGETS — custom transcription provider code-path literals.
 //   SURFACE_TARGETS       — unreviewed renderer surface: the MCP integration
 //                           card's component-local docs-URL literal.
@@ -141,6 +154,27 @@ const GCAL_TARGETS = [
   "gcal-connection-changed",
 ];
 
+// W-01 follow-up: RENDERER-side Google Calendar UI literals. The kebab-case
+// channel names in GCAL_TARGETS above are the IPC channel strings — they live
+// ONLY in preload-gcal.generated.cjs (the `ipcRenderer.invoke("gcal-...")`
+// call sites), NOT in the renderer bundle. The renderer (GoogleCalendarSection
+// mounted by IntegrationsView) references the preload API by its camelCase
+// method names instead. Before W-01, IntegrationsView gated GoogleCalendarSection
+// on OAUTH_GOOGLE_ENABLED — which lockdown leaves `true` (social sign-in is
+// server-driven, D3) — so the gcal UI subtree (and these camelCase literals)
+// SURVIVED in the lockdown renderer bundle even though its preload backend was
+// stripped: a dead/broken "Connect Google Calendar" button. W-01 re-gated the
+// mount on GCAL_ENABLED (lockdown-forced-off), letting Rolldown DCE the subtree.
+// These targets are the renderer-distinct presence/absence signal for that fix.
+// Asserted dist-only: they ALSO appear in preload-gcal.generated.cjs (the API
+// exposure), so a preload grep is not a renderer-leak signal — the renderer
+// chunk (src/dist/) is the only place that proves the UI subtree itself DCE'd.
+const GCAL_UI_TARGETS = [
+  "gcalStartOAuth",
+  "gcalDisconnect",
+  "onGcalConnectionChanged",
+];
+
 // Custom transcription provider code-path literals. The "custom" transcription
 // provider tab + its BYOK custom-endpoint panel live in TranscriptionModelPicker.tsx
 // behind `!PROVIDER_LOCKDOWN_ENABLED && selectedCloudProvider === "custom"`. The
@@ -208,6 +242,7 @@ const GROUPS = {
   BYOK: BYOK_TARGETS,
   ENTERPRISE: ENTERPRISE_TARGETS,
   GCAL: GCAL_TARGETS,
+  GCAL_UI: GCAL_UI_TARGETS,
   TRANSCRIPTION: TRANSCRIPTION_TARGETS,
   SURFACE: SURFACE_TARGETS,
   REALTIME: REALTIME_TARGETS,
@@ -217,7 +252,12 @@ const GROUPS = {
 // Groups whose absence is asserted ONLY against the renderer dist bundle
 // (not preload/main): the literals may legitimately survive in main-process
 // source behind a build-config guard.
-const DIST_ONLY_GROUPS = new Set(["REALTIME"]);
+// GCAL_UI is dist-only: the camelCase API method names also appear in
+// preload-gcal.generated.cjs (the API exposure), so a preload grep would
+// false-positive against the preload even when the renderer subtree DCE'd
+// correctly. Only the renderer dist (src/dist/) proves the UI subtree itself
+// was eliminated — which is precisely the W-01 main-vs-renderer gap.
+const DIST_ONLY_GROUPS = new Set(["REALTIME", "GCAL_UI"]);
 
 const ALL_GROUPS = Object.keys(GROUPS);
 

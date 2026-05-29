@@ -360,7 +360,10 @@ function initializeCoreManagers() {
   }
   parakeetManager = new ParakeetManager();
   diarizationManager = new DiarizationManager();
-  if (BuildConfig.OAUTH_GOOGLE_ENABLED) {
+  // Gated by GCAL_ENABLED (not OAUTH_GOOGLE_ENABLED): the calendar integration
+  // is a distinct axis from social-Google sign-in. Lockdown forces GCAL_ENABLED
+  // off, so corporate-minimal builds never instantiate the manager (Phase 06 D3).
+  if (BuildConfig.GCAL_ENABLED) {
     googleCalendarManager = new GoogleCalendarManager(databaseManager, windowManager);
   }
   meetingDetectionEngine = new MeetingDetectionEngine(

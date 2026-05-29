@@ -17,7 +17,7 @@ import { canManageSystemAudioInApp } from "../utils/systemAudioAccess";
 import ApiKeysSection from "./ApiKeysSection";
 import CliIntegrationCard from "./CliIntegrationCard";
 import McpIntegrationCard from "./McpIntegrationCard";
-import { OAUTH_GOOGLE_ENABLED, PROVIDER_LOCKDOWN_ENABLED } from "../config/defaults";
+import { GCAL_ENABLED, PROVIDER_LOCKDOWN_ENABLED } from "../config/defaults";
 import GoogleCalendarSection from "./GoogleCalendarSection";
 
 const API_DOCS_URL = "https://docs.openwhispr.com/api/overview";
@@ -52,7 +52,7 @@ export default function IntegrationsView({ isPaid, onUpgrade }: IntegrationsView
         <p className="text-xs text-muted-foreground/70 mt-0.5">{t("integrations.description")}</p>
       </div>
 
-      {OAUTH_GOOGLE_ENABLED && (
+      {GCAL_ENABLED && (
         <GoogleCalendarSection
           needsSystemAudioGrant={needsSystemAudioGrant}
           requestSystemAudioAccess={requestSystemAudioAccess}
