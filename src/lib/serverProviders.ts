@@ -21,7 +21,10 @@ export interface ServerProvider {
   iconHint: ProviderIconHint; // derived client-side from id
 }
 
-const ID_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+// Canonical provider-id format. Shared with auth.ts's signInWithSocial as a
+// defense-in-depth guard so a stale-localStorage / remote-command provider id
+// can never flow into the /api/desktop-signin/<id> URL path unvalidated.
+export const ID_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const MAX_NAME = 40;
 
 // Client-side icon mapping by canonical provider id. Anything not listed
@@ -122,7 +125,13 @@ export async function fetchServerProviders(
   }
 }
 
-export type ProvidersStatus = "loading" | "ready" | "error";
+// `fetchServerProviders` swallows every failure (network throw, non-2xx, parse
+// error) and resolves to [] — degrade-to-password-only is the only failure mode,
+// and it is indistinguishable from "server has no providers". There is therefore
+// no honest "error" state to surface: the fetch never rejects, so an "error"
+// member would only ever be a dead, unreachable branch. Keep the union to the
+// two states that actually occur.
+export type ProvidersStatus = "loading" | "ready";
 
 export interface ProvidersState {
   status: ProvidersStatus;
@@ -152,8 +161,9 @@ export function resolveProvidersBaseUrl(): string {
  * Fetches the server provider list on mount and whenever the active backend
  * changes. Source of truth is the RESOLVED base URL — the user's custom
  * serverUrl when set (self-hosting / ALLOW_CUSTOM_HOST), else the build-time
- * OPENWHISPR_BACKEND_URL. On any failure -> status "error" + empty list, which
- * the UI renders as password-only. No stale cache (design D2).
+ * OPENWHISPR_BACKEND_URL. fetchServerProviders never rejects (it degrades any
+ * failure to []), so the terminal state is always "ready" + whatever list the
+ * server yielded ([] renders as password-only). No stale cache (design D2).
  *
  * The hook subscribes to the settings store's serverUrl slice so a custom-host
  * change re-runs the fetch against the new backend (HOST-02). Relying on the
@@ -172,13 +182,9 @@ export function useServerProviders(): ProvidersState {
       return;
     }
     setState({ status: "loading", providers: [] });
-    fetchServerProviders(baseUrl)
-      .then((providers) => {
-        if (alive) setState({ status: "ready", providers });
-      })
-      .catch(() => {
-        if (alive) setState({ status: "error", providers: [] });
-      });
+    fetchServerProviders(baseUrl).then((providers) => {
+      if (alive) setState({ status: "ready", providers });
+    });
     return () => {
       alive = false;
     };

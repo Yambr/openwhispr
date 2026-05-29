@@ -101,3 +101,57 @@ describe("signInWithSocial under PROVIDER_LOCKDOWN_ENABLED (Phase 06 D3 regressi
     expect(openedUrls[0]).toContain(`${AUTH_URL}/api/desktop-signin/github`);
   });
 });
+
+// MEDIUM-01 — id-format validation before URL construction.
+//
+// SocialProvider was widened to (string & {}) in Phase 06, so signInWithSocial
+// now accepts arbitrary strings. The in-app UI passes a parser-validated id and
+// the host is anchored to the build-time AUTH_URL (no cross-host SSRF), but the
+// function's own comment admits stale localStorage / remote commands could call
+// it with an arbitrary id that would otherwise land in the
+// /api/desktop-signin/<id> URL path. The closed-union used to guarantee
+// validation; this test pins the defense-in-depth ID_RE guard that restores it.
+describe("signInWithSocial id-format validation (MEDIUM-01)", () => {
+  beforeEach(() => {
+    openedUrls.length = 0;
+    storeState = { serverUrl: null };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // Path-traversal, whitespace, and empty-string ids must be rejected up front:
+  // an error is returned and NO desktop-signin URL is ever built/opened.
+  it.each([
+    ["../../../etc/passwd"],
+    ["evil id"],
+    [""],
+    ["UPPER"], // canonical ids are lowercase
+    ["a/b"],
+    ["https://attacker.example"],
+    ["x".repeat(33)], // exceeds the 32-char id cap
+  ])("rejects %j without constructing a desktop-signin URL", async (badId) => {
+    const { signInWithSocial } = await loadAuthModule();
+    const result = await signInWithSocial(badId);
+    expect(result.error).toBeInstanceOf(Error);
+    expect(openedUrls).toHaveLength(0);
+  });
+
+  // A valid canonical id still reaches the deep-link — the guard is not
+  // over-broad.
+  it("still reaches /api/desktop-signin/oidc for a valid 'oidc' id", async () => {
+    const { signInWithSocial } = await loadAuthModule();
+    const result = await signInWithSocial("oidc");
+    expect(result.error).toBeUndefined();
+    expect(openedUrls).toHaveLength(1);
+    expect(openedUrls[0]).toContain(`${AUTH_URL}/api/desktop-signin/oidc`);
+  });
+
+  it("accepts a hyphenated/underscored custom id like 'my_sso-1'", async () => {
+    const { signInWithSocial } = await loadAuthModule();
+    const result = await signInWithSocial("my_sso-1");
+    expect(result.error).toBeUndefined();
+    expect(openedUrls[0]).toContain(`${AUTH_URL}/api/desktop-signin/my_sso-1`);
+  });
+});

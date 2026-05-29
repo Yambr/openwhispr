@@ -10,6 +10,7 @@ import {
 } from "../config/defaults";
 import { useSettingsStore } from "../stores/settingsStore";
 import { openExternalLink } from "../utils/externalLinks";
+import { ID_RE } from "./serverProviders";
 
 // Phase 1 HOST-03 (v1.8.0): re-apply Phase 03-02's defaults.ts wiring that
 // was reverted by the Phase 6 upstream merge (commit 56f4efb8). AUTH_URL
@@ -327,6 +328,18 @@ export async function signInWithSocial(provider: SocialProvider): Promise<{ erro
   // a provider only reaches this function if the server returned it. The
   // per-provider OAUTH_*_ENABLED guards below remain as harmless defense-in-depth
   // for the three legacy ids.
+  // MEDIUM-01 defense-in-depth: the SocialProvider type was widened to
+  // (string & {}) in Phase 06 so server-driven ids flow through, which dropped
+  // the closed-union's implicit id validation. The UI path is safe (the button
+  // passes a parser-validated id) and the host is anchored to the build-time
+  // AUTH_URL (no cross-host SSRF), but stale localStorage / remote commands
+  // could attempt this call with an arbitrary id that lands in the
+  // /api/desktop-signin/<id> URL path. Reject anything that is not a canonical
+  // provider id BEFORE any URL construction. Mirrors the parser's ID_RE so the
+  // two layers agree.
+  if (!ID_RE.test(provider)) {
+    return { error: new Error("Provider not enabled in this build") };
+  }
   // D-08 defensive guard: build flags short-circuit any disabled-provider invocation.
   // UI never reaches this branch because the corresponding button is absent (AuthenticationStep.tsx),
   // but stale localStorage / remote commands could still attempt the call.
