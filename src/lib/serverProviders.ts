@@ -61,3 +61,32 @@ export function parseProvidersResponse(json: unknown): ServerProvider[] {
   }
   return out;
 }
+
+export interface ServerProviderView {
+  id: string;
+  iconHint: ProviderIconHint;
+  /** Already-localized button label. */
+  displayLabel: string;
+}
+
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
+// Upstream brand i18n keys, kept for exact visual parity on ids that match.
+// The real server currently emits google|github|oidc — only `google` matches
+// an upstream brand key, so github/oidc fall through to the generic
+// "Continue with {name}" template using the server-supplied name (brand /
+// operator names are not translated, per i18n rules). microsoft/apple keys
+// remain mapped in case the server adds those ids later.
+const BRAND_LABEL_KEY: Record<string, string> = {
+  google: "auth.social.continueWithGoogle",
+  microsoft: "auth.social.continueWithMicrosoft",
+  apple: "auth.social.continueWithApple",
+};
+
+export function resolveProviderView(p: ServerProvider, t: TFunc): ServerProviderView {
+  const brandKey = BRAND_LABEL_KEY[p.id];
+  const displayLabel = brandKey
+    ? t(brandKey)
+    : t("auth.social.continueWith", { provider: p.name });
+  return { id: p.id, iconHint: p.iconHint, displayLabel };
+}

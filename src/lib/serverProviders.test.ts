@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseProvidersResponse } from "./serverProviders";
+import { parseProvidersResponse, resolveProviderView } from "./serverProviders";
 
 describe("parseProvidersResponse", () => {
   it("accepts the real server body (google/github/oidc + extra emailVerification key)", () => {
@@ -80,5 +80,37 @@ describe("parseProvidersResponse", () => {
     const long = "x".repeat(60);
     const out = parseProvidersResponse({ providers: [{ id: "a", name: long, enabled: true }] });
     expect(out[0].name).toHaveLength(40);
+  });
+});
+
+describe("resolveProviderView", () => {
+  const t = (key: string, opts?: Record<string, unknown>) =>
+    key === "auth.social.continueWith" ? `Continue with ${opts?.provider}` : key;
+
+  it("known brand google -> brand i18n label + google icon hint", () => {
+    const v = resolveProviderView({ id: "google", name: "Google", iconHint: "google" }, t);
+    expect(v.iconHint).toBe("google");
+    expect(v.displayLabel).toBe("auth.social.continueWithGoogle");
+  });
+
+  it("github -> continueWith template with server name (no upstream brand key)", () => {
+    const v = resolveProviderView({ id: "github", name: "GitHub", iconHint: "github" }, t);
+    expect(v.iconHint).toBe("github");
+    expect(v.displayLabel).toBe("Continue with GitHub");
+  });
+
+  it("oidc/generic -> continueWith template with the server name", () => {
+    const v = resolveProviderView(
+      { id: "oidc", name: "Company SSO", iconHint: "generic" },
+      t
+    );
+    expect(v.iconHint).toBe("generic");
+    expect(v.displayLabel).toBe("Continue with Company SSO");
+  });
+
+  it("carries id through unchanged for the click handler", () => {
+    expect(
+      resolveProviderView({ id: "oidc", name: "X", iconHint: "generic" }, t).id
+    ).toBe("oidc");
   });
 });
