@@ -618,7 +618,8 @@
       "continueWithApple": "Continuar com a Apple",
       "continueWithGoogle": "Continuar com o Google",
       "continueWithMicrosoft": "Continuar com a Microsoft",
-      "protocolUnavailable": "Login pelo navegador indisponível — registre novamente o protocolo openwhispr:// nas configurações de Aplicativos Padrão do sistema."
+      "protocolUnavailable": "Login pelo navegador indisponível — registre novamente o protocolo openwhispr:// nas configurações de Aplicativos Padrão do sistema.",
+      "continueWith": "Continuar com {{provider}}"
     },
     "welcomeSubtitle": "Use sua voz para ditar em qualquer lugar",
     "welcomeTitle": "Boas-vindas ao OpenWhispr"
