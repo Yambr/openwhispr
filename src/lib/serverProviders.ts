@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { OPENWHISPR_BACKEND_URL } from "../config/defaults";
+
 // Phase 06 — Server-driven auth providers (fork-only).
 // Single source of truth for which social sign-in buttons the client shows
 // is the server's GET /api/auth/providers endpoint (already in prod; pre-auth,
@@ -116,4 +119,40 @@ export async function fetchServerProviders(
   } catch {
     return [];
   }
+}
+
+export type ProvidersStatus = "loading" | "ready" | "error";
+
+export interface ProvidersState {
+  status: ProvidersStatus;
+  providers: ServerProvider[];
+}
+
+/**
+ * Fetches the server provider list once on mount. Source of truth is
+ * OPENWHISPR_BACKEND_URL. On any failure -> status "error" + empty list,
+ * which the UI renders as password-only. No stale cache (design D2).
+ * The renderer reloads on serverUrl change (auth.ts HOST-02), so a fresh
+ * mount re-runs this — no extra subscription needed.
+ */
+export function useServerProviders(): ProvidersState {
+  const [state, setState] = useState<ProvidersState>({ status: "loading", providers: [] });
+  useEffect(() => {
+    let alive = true;
+    if (!OPENWHISPR_BACKEND_URL) {
+      setState({ status: "ready", providers: [] });
+      return;
+    }
+    fetchServerProviders(OPENWHISPR_BACKEND_URL)
+      .then((providers) => {
+        if (alive) setState({ status: "ready", providers });
+      })
+      .catch(() => {
+        if (alive) setState({ status: "error", providers: [] });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return state;
 }
