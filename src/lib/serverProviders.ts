@@ -90,3 +90,29 @@ export function resolveProviderView(p: ServerProvider, t: TFunc): ServerProvider
     : t("auth.social.continueWith", { provider: p.name });
   return { id: p.id, iconHint: p.iconHint, displayLabel };
 }
+
+type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * Fetch the server's enabled providers. Pre-auth (no token), mirroring
+ * POST /api/check-user. Any failure -> [] (degrade to password-only).
+ * fetchImpl is injectable for tests; defaults to global fetch.
+ */
+export async function fetchServerProviders(
+  baseUrl: string,
+  fetchImpl: FetchLike = (url, init) => fetch(url, init)
+): Promise<ServerProvider[]> {
+  if (!baseUrl) return [];
+  const url = `${baseUrl.replace(/\/$/, "")}/api/auth/providers`;
+  try {
+    const res = await fetchImpl(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return [];
+    const body = await res.json();
+    return parseProvidersResponse(body);
+  } catch {
+    return [];
+  }
+}

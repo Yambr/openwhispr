@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseProvidersResponse, resolveProviderView } from "./serverProviders";
+import { parseProvidersResponse, resolveProviderView, fetchServerProviders } from "./serverProviders";
 
 describe("parseProvidersResponse", () => {
   it("accepts the real server body (google/github/oidc + extra emailVerification key)", () => {
@@ -112,5 +112,60 @@ describe("resolveProviderView", () => {
     expect(
       resolveProviderView({ id: "oidc", name: "X", iconHint: "generic" }, t).id
     ).toBe("oidc");
+  });
+});
+
+describe("fetchServerProviders", () => {
+  it("returns parsed providers on 200 (real shape)", async () => {
+    const fetchImpl = async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          providers: [{ id: "google", name: "Google", enabled: true }],
+          emailVerification: { required: true, configured: true },
+        }),
+      }) as unknown as Response;
+    const out = await fetchServerProviders("https://srv.example", fetchImpl);
+    expect(out.map((p) => p.id)).toEqual(["google"]);
+  });
+
+  it("returns [] when baseUrl is empty (no fetch performed)", async () => {
+    let called = false;
+    const fetchImpl = async () => {
+      called = true;
+      return {} as Response;
+    };
+    const out = await fetchServerProviders("", fetchImpl);
+    expect(out).toEqual([]);
+    expect(called).toBe(false);
+  });
+
+  it("returns [] on non-2xx", async () => {
+    const fetchImpl = async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response;
+    expect(await fetchServerProviders("https://srv.example", fetchImpl)).toEqual([]);
+  });
+
+  it("returns [] on network throw", async () => {
+    const fetchImpl = async () => {
+      throw new Error("network down");
+    };
+    expect(await fetchServerProviders("https://srv.example", fetchImpl)).toEqual([]);
+  });
+
+  it("returns [] when body fails validation", async () => {
+    const fetchImpl = async () =>
+      ({ ok: true, status: 200, json: async () => ({ garbage: true }) }) as Response;
+    expect(await fetchServerProviders("https://srv.example", fetchImpl)).toEqual([]);
+  });
+
+  it("strips a trailing slash on baseUrl", async () => {
+    let calledUrl = "";
+    const fetchImpl = async (url: string) => {
+      calledUrl = url;
+      return { ok: true, status: 200, json: async () => ({ providers: [] }) } as Response;
+    };
+    await fetchServerProviders("https://srv.example/", fetchImpl);
+    expect(calledUrl).toBe("https://srv.example/api/auth/providers");
   });
 });
