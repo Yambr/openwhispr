@@ -645,7 +645,8 @@
       "continueWithApple": "Продолжить с Apple",
       "continueWithGoogle": "Продолжить с Google",
       "continueWithMicrosoft": "Продолжить с Microsoft",
-      "protocolUnavailable": "Вход через браузер недоступен — повторно зарегистрируйте протокол openwhispr:// в системных настройках приложений по умолчанию."
+      "protocolUnavailable": "Вход через браузер недоступен — повторно зарегистрируйте протокол openwhispr:// в системных настройках приложений по умолчанию.",
+      "continueWith": "Продолжить с {{provider}}"
     },
     "welcomeSubtitle": "Диктуйте где угодно голосом",
     "welcomeTitle": "Добро пожаловать в OpenWhispr",

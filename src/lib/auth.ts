@@ -3,7 +3,6 @@ import {
   OAUTH_GOOGLE_ENABLED,
   OAUTH_APPLE_ENABLED,
   OAUTH_MICROSOFT_ENABLED,
-  PROVIDER_LOCKDOWN_ENABLED,
   OPENWHISPR_AUTH_URL,
   OPENWHISPR_BACKEND_URL,
   OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL,
@@ -165,7 +164,10 @@ if (typeof window !== "undefined") {
   };
 }
 
-export type SocialProvider = "google" | "microsoft" | "apple";
+// Phase 06: widened to an open set so server-driven providers (GitHub, generic
+// OIDC / Keycloak) can flow through signInWithSocial unchanged. Additive — the
+// three legacy literals are preserved for upstream call-site/type parity.
+export type SocialProvider = "google" | "microsoft" | "apple" | (string & {});
 
 const LAST_SIGN_IN_STORAGE_KEY = "openwhispr:lastSignInTime";
 const GRACE_PERIOD_MS = 60_000;
@@ -319,14 +321,12 @@ export async function withSessionRefresh<T>(operation: () => Promise<T>): Promis
 const DESKTOP_OAUTH_CALLBACK_URL = OPENWHISPR_OAUTH_DESKTOP_CALLBACK_URL;
 
 export async function signInWithSocial(provider: SocialProvider): Promise<{ error?: Error }> {
-  // Phase 10 PLD-06: corporate-minimal lockdown removes every OAuth surface.
-  // This `if (PROVIDER_LOCKDOWN_ENABLED)` against the build-time literal lets
-  // Rolldown const-fold the whole social-sign-in body away — including the
-  // `/api/desktop-signin/` deep-link URL — so no OAuth literal survives in the
-  // lockdown bundle (verified by scripts/verify-provider-lockdown.js).
-  if (PROVIDER_LOCKDOWN_ENABLED) {
-    return { error: new Error("Provider not enabled in this build") };
-  }
+  // Phase 06 (D3): social sign-in is server-driven — the lockdown build no
+  // longer strips it (the PLD-06 early-return here was fork drift, removed to
+  // restore upstream parity). Visibility is decided by GET /api/auth/providers;
+  // a provider only reaches this function if the server returned it. The
+  // per-provider OAUTH_*_ENABLED guards below remain as harmless defense-in-depth
+  // for the three legacy ids.
   // D-08 defensive guard: build flags short-circuit any disabled-provider invocation.
   // UI never reaches this branch because the corresponding button is absent (AuthenticationStep.tsx),
   // but stale localStorage / remote commands could still attempt the call.

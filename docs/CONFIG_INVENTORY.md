@@ -54,7 +54,20 @@ _Enterprise note: enterprise provider endpoints (Bedrock, Azure, Vertex) are ent
 
 When the build-time flag `OPENWHISPR_PROVIDER_LOCKDOWN` is set (emitted as the
 `PROVIDER_LOCKDOWN_ENABLED` constant), the corporate-minimal build strips the
-BYOK and enterprise key-management surface. Two configuration notes:
+BYOK and enterprise key-management surface.
+
+> **Phase 06 (D3) — lockdown decoupled from social sign-in.** As of phase 06,
+> `PROVIDER_LOCKDOWN_ENABLED` is no longer coupled to social sign-in. Social
+> provider visibility is now server-driven at runtime via
+> `GET /api/auth/providers` (the client renders exactly what the server
+> enables, in lockdown builds too), so the lockdown cascade no longer
+> force-disables the `OAUTH_*_ENABLED` flags and the lockdown verifier no
+> longer asserts absence of `desktop-signin` / `handleSocialSignIn(...)`
+> literals. Lockdown still strips BYOK / enterprise / alternative-cloud /
+> billing / referrals. See
+> [`docs/superpowers/specs/2026-05-28-server-driven-auth-providers-design.md`](./superpowers/specs/2026-05-28-server-driven-auth-providers-design.md).
+
+Two configuration notes:
 
 - **BYOK key fields in `src/stores/settingsStore.ts` are kept (typed) but never
   written.** The per-provider key fields (`openaiApiKey`, `anthropicApiKey`,
@@ -74,9 +87,11 @@ BYOK and enterprise key-management surface. Two configuration notes:
 
 The provider-lockdown DCE contract is mechanically verified by
 `npm run verify:provider-lockdown` (Phase 10 Plan 06): a 2-scenario bundle-grep
-gate that asserts every OAuth / alternative-cloud / BYOK / enterprise literal is
+gate that asserts every alternative-cloud / BYOK / enterprise literal is
 PRESENT in the default build (parity) and ABSENT under
-`OPENWHISPR_PROVIDER_LOCKDOWN=true`. See
+`OPENWHISPR_PROVIDER_LOCKDOWN=true`. (Per phase 06 (D3) the OAuth/social
+target group was removed from this gate — social sign-in is server-driven and
+no longer stripped under lockdown.) See
 [`docs/BUILD_CONFIG.md` § Provider Lockdown Flag](./BUILD_CONFIG.md#provider-lockdown-flag-phase-10).
 
 ## Verification Notes

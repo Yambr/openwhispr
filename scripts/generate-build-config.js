@@ -205,9 +205,13 @@ function buildResolved() {
   // four. An explicit OPENWHISPR_OAUTH_*=true cannot re-enable a provider under
   // lockdown — lockdown is the stronger corporate posture and always wins.
   if (resolved.PROVIDER_LOCKDOWN_ENABLED === true) {
-    resolved.OAUTH_GOOGLE_ENABLED = false;
-    resolved.OAUTH_APPLE_ENABLED = false;
-    resolved.OAUTH_MICROSOFT_ENABLED = false;
+    // Phase 06 (D3): lockdown no longer strips social sign-in. Social
+    // visibility is server-driven (GET /api/auth/providers); the client
+    // renders exactly what the server enables, in lockdown builds too.
+    // The OAUTH_*_ENABLED flags remain (they still gate the separate Google
+    // Calendar integration via emitPreloadGcal), they just no longer gate
+    // the social sign-in UI. BYOK / enterprise / streaming cascade below
+    // is unchanged.
     // Under lockdown realtime ASR is always served by our backend's WSS proxy,
     // so streaming must be enabled. An explicit OPENWHISPR_STREAMING=false under
     // lockdown is a contradiction — lockdown is the stronger corporate posture

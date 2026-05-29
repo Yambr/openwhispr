@@ -646,7 +646,8 @@
       "continueWithApple": "Apple で続ける",
       "continueWithGoogle": "Google で続ける",
       "continueWithMicrosoft": "Microsoft で続ける",
-      "protocolUnavailable": "ブラウザでのサインインを利用できません — システムの「既定のアプリ」設定で openwhispr:// プロトコルを再登録してください。"
+      "protocolUnavailable": "ブラウザでのサインインを利用できません — システムの「既定のアプリ」設定で openwhispr:// プロトコルを再登録してください。",
+      "continueWith": "{{provider}}で続行"
     },
     "welcomeSubtitle": "音声でどこでもディクテーション",
     "welcomeTitle": "OpenWhispr へようこそ"
