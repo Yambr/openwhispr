@@ -44,36 +44,60 @@ jobs:
         # electron's postinstall (`node install.js`) downloads the binary from
         # GitHub; if that flakes, `require("electron")` throws "Electron failed
         # to install correctly" from src/helpers/debugLogger.js during vitest
-        # collection. That broke v1.7.11/v1.7.13/v1.7.14 release CI runs
-        # (v1.7.12 won the network coin flip).
+        # collection. That broke v1.7.11/v1.7.13/v1.7.14 release CI runs.
         #
-        # v1.7.14 fix: the old check tested only `[ -d dist ] && ls -A dist`.
-        # That is too weak — a PARTIAL unpack leaves a non-empty `dist/` that
-        # passes the dir check but still makes `require("electron")` throw,
-        # because the electron entrypoint reads `path.txt` + the actual binary,
-        # not just the dir. The retry then printed "present (attempt 1)" and
-        # exited 0 over a broken install, so the unit-test step failed anyway.
-        # Now we validate via the REAL resolver (`require("electron")` must
-        # return a string path) and, on failure, do a CLEAN reinstall
-        # (`rm -rf` then `install.js`) rather than re-running install over a
-        # corrupt tree.
+        # History of fixes:
+        #  - 516e9ccc: `[ -d dist ] && ls -A dist` + re-run install.js. Too weak
+        #    (passed over a partial unpack) AND silenced errors.
+        #  - efa6be81: validated via require() but did `rm -rf dist path.txt`
+        #    first — that DELETES a working path.txt, and when the subsequent
+        #    install.js download fails the tree is left worse than found, with
+        #    the real error swallowed by `2>/dev/null` / `|| true`. Self-inflicted.
+        #
+        # This version (per systematic-debugging): make the failure VISIBLE
+        # first — dump the actual electron install state and the real install.js
+        # stderr — and recover via a proper `npm rebuild electron` (which re-runs
+        # the package's own install lifecycle and rewrites path.txt) WITHOUT
+        # pre-deleting a possibly-good path.txt. We only `rm -rf` as a last
+        # resort on the final attempt, and we never hide stderr.
         run: |
           check_electron() {
-            node -e "const p=require('electron'); if(typeof p!=='string'||!p){process.exit(1)} const fs=require('fs'); process.exit(fs.existsSync(p)?0:1)" 2>/dev/null
+            node -e "const p=require('electron'); const fs=require('fs'); if(typeof p==='string'&&p&&fs.existsSync(p)) process.exit(0); process.exit(1)"
           }
-          for attempt in 1 2 3; do
-            if check_electron; then
-              echo "Electron binary resolves correctly (attempt $attempt)."
-              break
-            fi
-            echo "Electron binary invalid on attempt $attempt; clean reinstall."
-            rm -rf node_modules/electron/dist node_modules/electron/path.txt
-            node node_modules/electron/install.js || true
-          done
-          if ! check_electron; then
-            echo "::error::Electron binary still not resolvable after 3 attempts."
-            exit 1
+          dump_state() {
+            echo "--- electron install state ---"
+            echo "path.txt: $(cat node_modules/electron/path.txt 2>/dev/null || echo '<missing>')"
+            echo "dist/version: $(cat node_modules/electron/dist/version 2>/dev/null || echo '<missing>')"
+            echo "package version: $(node -p "require('./node_modules/electron/package.json').version" 2>/dev/null || echo '?')"
+            echo "dist/ entries: $(ls -A node_modules/electron/dist 2>/dev/null | head -5 | tr '\n' ' ')"
+            echo "------------------------------"
+          }
+          if check_electron 2>/dev/null; then
+            echo "Electron resolves correctly out of the box."
+            exit 0
           fi
+          echo "::warning::Electron did not resolve after npm ci; diagnosing + recovering."
+          dump_state
+          for attempt in 1 2 3; do
+            echo "=== recovery attempt $attempt ==="
+            if [ "$attempt" -eq 3 ]; then
+              echo "last resort: full clean reinstall of electron"
+              rm -rf node_modules/electron/dist node_modules/electron/path.txt
+            fi
+            # npm rebuild re-runs electron's own install.js lifecycle; show its
+            # real stderr instead of swallowing it.
+            npm rebuild electron --foreground-scripts || node node_modules/electron/install.js || true
+            if check_electron 2>/dev/null; then
+              echo "Electron resolves correctly after attempt $attempt."
+              dump_state
+              exit 0
+            fi
+            echo "still failing after attempt $attempt:"
+            dump_state
+          done
+          echo "::error::Electron binary not resolvable after 3 recovery attempts. Real error:"
+          node node_modules/electron/install.js || true
+          exit 1
 
       - name: Install platform-specific native binaries
         run: npm install @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu --no-save
