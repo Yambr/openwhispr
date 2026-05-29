@@ -165,7 +165,10 @@ if (typeof window !== "undefined") {
   };
 }
 
-export type SocialProvider = "google" | "microsoft" | "apple";
+// Phase 06: widened to an open set so server-driven providers (GitHub, generic
+// OIDC / Keycloak) can flow through signInWithSocial unchanged. Additive — the
+// three legacy literals are preserved for upstream call-site/type parity.
+export type SocialProvider = "google" | "microsoft" | "apple" | (string & {});
 
 const LAST_SIGN_IN_STORAGE_KEY = "openwhispr:lastSignInTime";
 const GRACE_PERIOD_MS = 60_000;
