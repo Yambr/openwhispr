@@ -100,6 +100,13 @@ export {
   OAUTH_GOOGLE_ENABLED,
   OAUTH_APPLE_ENABLED,
   OAUTH_MICROSOFT_ENABLED,
+  // HIGH-01 fix: GCAL_ENABLED gates the Google Calendar IPC surface
+  // (emitPreloadGcal — gcal-* methods), decoupled from OAUTH_GOOGLE_ENABLED.
+  // OAUTH_GOOGLE_ENABLED is now ONLY the social-Google-sign-in defense-in-depth
+  // guard (server-driven under lockdown, D3); GCAL_ENABLED is the separate gcal
+  // integration gate that lockdown forces off. Direct named re-export so
+  // Rolldown propagates the literal across the module boundary for DCE.
+  GCAL_ENABLED,
   // Phase 04.1 CFG-09 PLAN-03: BILLING_ENABLED gates Stripe checkout/portal/
   // switch-plan UI + IPC. Re-exported via the same direct named-re-export
   // mechanism so Rolldown propagates the literal across the module boundary.

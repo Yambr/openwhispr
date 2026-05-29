@@ -15,6 +15,10 @@
 //   ALT_CLOUD_TARGETS     — alternative cloud provider key-console URL literals.
 //   BYOK_TARGETS          — BYOK / enterprise IPC channel literals (preload-byok).
 //   ENTERPRISE_TARGETS    — enterprise provider config surface literals.
+//   GCAL_TARGETS          — Google Calendar IPC channel literals (preload-gcal).
+//                           HIGH-01: gated by GCAL_ENABLED (lockdown forces off),
+//                           decoupled from social sign-in (server-driven, NOT
+//                           asserted). Restored after Phase 06 D3 dropped it.
 //   TRANSCRIPTION_TARGETS — custom transcription provider code-path literals.
 //   SURFACE_TARGETS       — unreviewed renderer surface: the MCP integration
 //                           card's component-local docs-URL literal.
@@ -113,6 +117,30 @@ const ENTERPRISE_TARGETS = [
   "save-bedrock-access-key-id",
 ];
 
+// HIGH-01 fix: Google Calendar preload IPC channel literals. These are emitted
+// into preload-gcal.generated.cjs by emitPreloadGcal; under lockdown the factory
+// body is `return {}` (GCAL_ENABLED forced false), so the gcal-* invoke/listener
+// channel names are physically absent. Phase 06 D3 deleted the former OAUTH_TARGETS
+// group when it made social sign-in server-driven, which also dropped this gcal
+// absence assertion and let the gcal IPC surface silently re-appear in lockdown
+// bundles (the regression this group guards against). NOTE: these are gcal-only
+// (Calendar integration) literals — NOT social-sign-in literals. Social
+// (`desktop-signin` / `handleSocialSignIn`) is correctly NOT asserted here, since
+// it is server-driven and intentionally NOT stripped under lockdown.
+//
+// preload-byok/billing/etc. greps run against PRELOAD_TARGETS, which already
+// includes preload-gcal.generated.cjs, so a non-empty gcal factory under lockdown
+// (the regression) is caught here as a preload violation.
+const GCAL_TARGETS = [
+  "gcal-start-oauth",
+  "gcal-disconnect",
+  "gcal-get-connection-status",
+  "gcal-get-calendars",
+  "gcal-set-calendar-selection",
+  "gcal-sync-events",
+  "gcal-connection-changed",
+];
+
 // Custom transcription provider code-path literals. The "custom" transcription
 // provider tab + its BYOK custom-endpoint panel live in TranscriptionModelPicker.tsx
 // behind `!PROVIDER_LOCKDOWN_ENABLED && selectedCloudProvider === "custom"`. The
@@ -179,6 +207,7 @@ const GROUPS = {
   ALT_CLOUD: ALT_CLOUD_TARGETS,
   BYOK: BYOK_TARGETS,
   ENTERPRISE: ENTERPRISE_TARGETS,
+  GCAL: GCAL_TARGETS,
   TRANSCRIPTION: TRANSCRIPTION_TARGETS,
   SURFACE: SURFACE_TARGETS,
   REALTIME: REALTIME_TARGETS,

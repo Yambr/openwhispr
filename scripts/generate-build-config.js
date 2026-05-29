@@ -68,6 +68,18 @@ const BOOL_DEFAULTS = Object.freeze({
   OAUTH_GOOGLE_ENABLED: true,
   OAUTH_APPLE_ENABLED: true,
   OAUTH_MICROSOFT_ENABLED: true,
+  // HIGH-01 fix: dedicated gate over the Google Calendar IPC surface
+  // (emitPreloadGcal — gcal-* invoke/listener methods). Historically the
+  // gcal preload keyed off OAUTH_GOOGLE_ENABLED, overloading that flag with
+  // TWO roles: (1) social-Google-sign-in-button visibility AND (2) the gcal
+  // integration. Phase 06 D3 made social server-driven and stopped lockdown
+  // from forcing OAUTH_GOOGLE_ENABLED off, which silently re-exposed the
+  // gcal-* IPC surface in lockdown builds. GCAL_ENABLED decouples the two:
+  // social stays server-driven (OAUTH_GOOGLE_ENABLED), gcal is gated here.
+  // Env var: OPENWHISPR_GCAL (any value other than "false" enables it; unset
+  // = true via BOOL_DEFAULTS for upstream parity). Lockdown forces it false
+  // (see buildResolved) so corporate-minimal bundles strip the gcal IPC.
+  GCAL_ENABLED: true,
   // Phase 04.1 CFG-09 (PLAN-03): corporate-minimal default — Stripe billing UI
   // and IPC physically removed from the bundle when this is false. Env var:
   // OPENWHISPR_BILLING (any value other than "false" enables it; unset = false
@@ -208,10 +220,20 @@ function buildResolved() {
     // Phase 06 (D3): lockdown no longer strips social sign-in. Social
     // visibility is server-driven (GET /api/auth/providers); the client
     // renders exactly what the server enables, in lockdown builds too.
-    // The OAUTH_*_ENABLED flags remain (they still gate the separate Google
-    // Calendar integration via emitPreloadGcal), they just no longer gate
-    // the social sign-in UI. BYOK / enterprise / streaming cascade below
-    // is unchanged.
+    // The OAUTH_*_ENABLED flags remain at their defaults — they now gate
+    // ONLY the per-provider social-button defense-in-depth guard in
+    // src/lib/auth.ts (signInWithSocial), not the Google Calendar IPC
+    // surface and not the social sign-in UI. BYOK / enterprise / streaming
+    // cascade below is unchanged.
+    //
+    // HIGH-01 fix: the Google Calendar IPC surface (emitPreloadGcal) is gated
+    // by its own GCAL_ENABLED flag, NOT by OAUTH_GOOGLE_ENABLED. Lockdown is
+    // the corporate-minimal posture and strips the gcal-* IPC methods from the
+    // bundle, so force GCAL_ENABLED off here (mirrors the STREAMING_ENABLED
+    // override below: an explicit OPENWHISPR_GCAL=true under lockdown cannot
+    // re-enable it — lockdown always wins). This is independent of social
+    // sign-in, which stays server-driven per D3 above.
+    resolved.GCAL_ENABLED = false;
     // Under lockdown realtime ASR is always served by our backend's WSS proxy,
     // so streaming must be enabled. An explicit OPENWHISPR_STREAMING=false under
     // lockdown is a contradiction — lockdown is the stronger corporate posture
@@ -335,27 +357,33 @@ function emitCjs(resolved, outPath) {
 // Phase 04.1 PLAN-02 Task 3: emit preload-gcal.generated.cjs.
 //
 // preload.js is shipped verbatim by electron-builder, so a runtime
-// `BuildConfig.OAUTH_GOOGLE_ENABLED ? {...} : {}` conditional spread would
+// `BuildConfig.GCAL_ENABLED ? {...} : {}` conditional spread would
 // leave the literal `gcalStartOAuth` / `gcalDisconnect` /
 // `onGcalConnectionChanged` strings in the shipped preload source — defeating
 // CFG-07 at the preload trust boundary.
 //
-// Instead we code-generate this preload-gcal factory: when Google is enabled
+// Instead we code-generate this preload-gcal factory: when gcal is enabled
 // the file contains the full IPC method block; when disabled it is a no-op
 // returning {}. The literal method names physically exist in the build only
-// when the provider is enabled.
+// when the gcal integration is enabled.
+//
+// HIGH-01 fix: this factory is gated by GCAL_ENABLED, NOT OAUTH_GOOGLE_ENABLED.
+// OAUTH_GOOGLE_ENABLED is about social-Google-sign-in-button defense-in-depth
+// (src/lib/auth.ts) and is server-driven under lockdown (D3); the Google
+// Calendar IPC surface is a separate concern gated by GCAL_ENABLED, which
+// lockdown forces off (corporate-minimal strips the gcal-* methods).
 //
 // preload.js consumes via:
 //   const buildGcalApi = require("./preload-gcal.generated.cjs");
 //   ...buildGcalApi(ipcRenderer, registerListener),
 function emitPreloadGcal(resolved, outPath) {
-  const enabled = resolved.OAUTH_GOOGLE_ENABLED === true;
+  const enabled = resolved.GCAL_ENABLED === true;
   const header = [
     "// AUTO-GENERATED — do not edit. Produced by scripts/generate-build-config.js at build time.",
     "// Phase 04.1 CFG-07: build-time gate over the Google Calendar preload IPC method",
-    "// exposures. When OAUTH_GOOGLE_ENABLED=false the factory returns {} and the literal",
+    "// exposures. When GCAL_ENABLED=false the factory returns {} and the literal",
     "// method names are physically absent from this file (verified by",
-    "// scripts/verify-oauth-gating.js#PRELOAD_TARGETS).",
+    "// scripts/verify-provider-lockdown.js#GCAL_TARGETS).",
     "",
     '"use strict";',
     "",
@@ -403,7 +431,7 @@ function emitPreloadGcal(resolved, outPath) {
     ].join("\n");
   } else {
     body = [
-      "// OAUTH_GOOGLE_ENABLED=false at build time — no Google Calendar preload methods exposed.",
+      "// GCAL_ENABLED=false at build time — no Google Calendar preload methods exposed.",
       "module.exports = function buildGcalApi() {",
       "  return {};",
       "};",
@@ -702,7 +730,7 @@ function main() {
 
   // eslint-disable-next-line no-console
   console.log(
-    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming,byok}.generated.cjs (17 string keys + 7 booleans)"
+    "[build-config] wrote src/config/build-config.generated.{ts,cjs} + preload-{gcal,billing,referrals,streaming,byok}.generated.cjs (17 string keys + 8 booleans)"
   );
 }
 
