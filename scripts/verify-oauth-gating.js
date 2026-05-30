@@ -37,10 +37,15 @@ const GOOGLE_TARGETS = [
   "googleapis.com/calendar",
   'signInWithSocial("google")',
   "GoogleIcon",
-  // Phase 4 review WR-01 + Phase 04.1 fix: IntegrationsView Google Calendar surface.
-  "gcalStartOAuth",
-  "gcalDisconnect",
-  "onGcalConnectionChanged",
+  // Phase 06 W-01: the Google Calendar surface (gcalStartOAuth / gcalDisconnect /
+  // onGcalConnectionChanged) USED to be gated by OAUTH_GOOGLE_ENABLED and was
+  // asserted here. It is now gated by the dedicated GCAL_ENABLED flag (the
+  // calendar integration is a distinct axis from social-Google sign-in), so a
+  // `google-disabled` build (OAUTH_GOOGLE=false, GCAL_ENABLED=true) CORRECTLY
+  // still ships the gcal UI. Those literals moved to GCAL_UI_TARGETS in
+  // scripts/verify-provider-lockdown.js, which asserts they vanish under
+  // lockdown (GCAL_ENABLED=false). Keeping them here would wrongly fail the
+  // google-disabled scenario. See docs/CONFIG_INVENTORY.md (D3 + W-01).
 ];
 
 const APPLE_TARGETS = [
