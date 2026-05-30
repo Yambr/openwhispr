@@ -76,34 +76,32 @@ jobs:
             echo "Electron resolves correctly out of the box."
             exit 0
           fi
-          echo "::warning::Electron did not resolve after npm ci; diagnosing + recovering."
+          echo "::warning::Electron did not resolve after npm ci; FULL diagnostic mode."
           dump_state
-          # Root cause (v1.7.14, proven from CI dump_state + reproduced locally):
-          # npm ci's electron postinstall leaves a PARTIAL dist/ (only `locales/`,
-          # no binary, no path.txt, no dist/version). The @electron/get cache then
-          # believes the artifact is already fetched, so plain `install.js` /
-          # `npm rebuild` exit in <1s WITHOUT re-downloading — dist/ stays partial
-          # forever. The fix is to bypass that cache: `force_no_cache=true` forces
-          # @electron/get to re-download, and we also wipe its cache dirs so a
-          # corrupt cached zip can't be reused. (force_no_cache is the env knob
-          # install.js passes straight into downloadArtifact's `force`.)
-          for attempt in 1 2 3; do
-            echo "=== recovery attempt $attempt (force re-download) ==="
-            rm -rf node_modules/electron/dist node_modules/electron/path.txt
-            rm -rf "$HOME/.cache/electron" "$HOME/.npm/_cacache/electron" 2>/dev/null || true
-            # force_no_cache=true => @electron/get re-fetches the binary instead of
-            # trusting a partial/corrupt cache entry. Stderr is shown, not swallowed.
-            force_no_cache=true node node_modules/electron/install.js || true
-            if check_electron 2>/dev/null; then
-              echo "Electron resolves correctly after attempt $attempt."
-              dump_state
-              exit 0
-            fi
-            echo "still failing after attempt $attempt:"
-            dump_state
-          done
-          echo "::error::Electron binary not resolvable after 3 forced re-downloads. Real error:"
-          force_no_cache=true node node_modules/electron/install.js || true
+          # Prior fixes (cache-bypass, npm rebuild, force_no_cache) all failed
+          # because install.js exits in <1s WITHOUT downloading and WITHOUT
+          # emitting any stderr — meaning it never reaches downloadArtifact.
+          # This run captures EVERYTHING so we stop guessing:
+          echo "=== ENV (electron/skip/cache knobs) ==="
+          env | grep -iE "electron|npm_config|SKIP_BINARY|^CI=" || echo "(none)"
+          echo "=== electron pkg + install.js head ==="
+          node -p "require('./node_modules/electron/package.json').version" || true
+          echo "--- install.js first 22 lines (the early-exit guards) ---"
+          sed -n '1,22p' node_modules/electron/install.js || true
+          echo "=== run install.js with @electron/get DEBUG, capture exit code + ALL output ==="
+          rm -rf node_modules/electron/dist node_modules/electron/path.txt
+          rm -rf "$HOME/.cache/electron" 2>/dev/null || true
+          set +e
+          DEBUG='@electron/get:*' force_no_cache=true node node_modules/electron/install.js
+          install_rc=$?
+          set -e
+          echo "=== install.js exit code: $install_rc ==="
+          dump_state
+          if check_electron 2>/dev/null; then
+            echo "Electron resolves correctly after diagnostic install."
+            exit 0
+          fi
+          echo "::error::Electron still not resolvable (install.js rc=$install_rc). See diagnostics above."
           exit 1
 
       - name: Install platform-specific native binaries
