@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 Phase: 1 of 5 (Backend URL SoT Consolidation + Dynamic Better Auth)
 Plan: — (not yet planned)
 Status: Not started — roadmap created, ready to plan Phase 1
-Last activity: 2026-05-26 — v1.8.0 roadmap created (5 phases, 12 requirements mapped)
+Last activity: 2026-05-30 — Completed quick task 260530-ms3: Adopt upstream #835 (skip API key check for self-hosted transcription)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -71,6 +71,12 @@ None blocking. Phase 1 carries forward two v1.7.2 integration-check findings as 
 - **INT-01** (HIGH): `src/lib/auth.ts:12` `authClient` is a frozen module-singleton — runtime URL reconfig requires refactor → HOST-02.
 - **INT-02** (MED): Two parallel env-var systems for backend host (`OPENWHISPR_BACKEND_URL` vs `OPENWHISPR_API_URL`) need collapsing → HOST-01.
 - **INT-03/04/05** (MED): 3 hardcoded URLs in `src/lib/auth.ts:177`, `auth.ts:227`, `ShareNoteDialog.tsx:26` → HOST-03.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260530-ms3 | Adopt upstream #835 — skip API key check for self-hosted transcription servers | 2026-05-30 | fdc9527c | [260530-ms3-adopt-upstream-835-skip-api-key-check-fo](./quick/260530-ms3-adopt-upstream-835-skip-api-key-check-fo/) |
 
 ## Session Continuity
 
