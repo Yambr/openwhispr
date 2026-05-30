@@ -1603,7 +1603,12 @@ if (gotSingleInstanceLock) {
   app.on("before-quit", (event) => {
     if (isShuttingDown) return;
     isShuttingDown = true;
-    event.preventDefault();
+    // Guarded: UpdateManager.installUpdate() does a synthetic `app.emit("before-quit")`
+    // with NO event arg (src/updater.js). Unguarded `event.preventDefault()` then threw
+    // a TypeError that rejected the install-update IPC call and aborted quitAndInstall,
+    // so auto-update never installed (all of 1.7.x). Optional chaining keeps the real
+    // quit path (event present) intact while tolerating the synthetic emit.
+    event?.preventDefault?.();
     performSyncTeardown();
     sidecarRegistry.shutdownAll().finally(() => app.exit(0));
   });
