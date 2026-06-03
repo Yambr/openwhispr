@@ -4,7 +4,7 @@ milestone: v1.8.0
 milestone_name: Custom Server URL Onboarding
 status: ready-to-ship
 last_updated: "2026-05-27T10:40:00.000Z"
-last_activity: 2026-05-27 — v1.8.0 milestone COMPLETE (5/5 phases, all live-verified). Next - code review + release tag.
+last_activity: 2026-06-03 — Released v1.7.17 (#8 OIDC runtime host, #9 server-driven local-login gating, WR-01 prod test-hook hardening). All live-verified against real :4000 (run1 11/11 localLogin:true, run2 4/4 localLogin:false + CDP sso-only DOM, WR-01 CDP prod-absence). 18 assets published.
 progress:
   total_phases: 5
   completed_phases: 5
