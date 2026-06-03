@@ -331,12 +331,14 @@ export async function signInWithSocial(provider: SocialProvider): Promise<{ erro
   // MEDIUM-01 defense-in-depth: the SocialProvider type was widened to
   // (string & {}) in Phase 06 so server-driven ids flow through, which dropped
   // the closed-union's implicit id validation. The UI path is safe (the button
-  // passes a parser-validated id) and the host is anchored to the build-time
-  // AUTH_URL (no cross-host SSRF), but stale localStorage / remote commands
-  // could attempt this call with an arbitrary id that lands in the
-  // /api/desktop-signin/<id> URL path. Reject anything that is not a canonical
-  // provider id BEFORE any URL construction. Mirrors the parser's ID_RE so the
-  // two layers agree.
+  // passes a parser-validated id). The host resolves to the runtime serverUrl
+  // (HOST-03, v1.8.0) — SSRF-safe because serverUrl is HTTPS-only and
+  // RFC1918/loopback/link-local screened at entry (ServerUrlField M2/WARN-02),
+  // so it can only hold a validated HTTPS host. Stale localStorage / remote
+  // commands could still attempt this call with an arbitrary id that lands in
+  // the /api/desktop-signin/<id> URL path. Reject anything that is not a
+  // canonical provider id BEFORE any URL construction. Mirrors the parser's
+  // ID_RE so the two layers agree.
   if (!ID_RE.test(provider)) {
     return { error: new Error("Provider not enabled in this build") };
   }
@@ -361,7 +363,8 @@ export async function signInWithSocial(provider: SocialProvider): Promise<{ erro
       // that handles the /api/auth/callback/* round-trip. The shim endpoint
       // does the POST server-side and 302s with the cookies attached.
       const protocol = (await window.electronAPI?.getOAuthProtocol?.()) || "openwhispr";
-      const url = new URL(`${AUTH_URL}/api/desktop-signin/${provider}`);
+      const baseURL = resolveBaseURL();
+      const url = new URL(`${baseURL}/api/desktop-signin/${provider}`);
       url.searchParams.set("callbackURL", `${DESKTOP_OAUTH_CALLBACK_URL}?protocol=${protocol}`);
       openExternalLink(url.toString());
       return {};

@@ -155,3 +155,33 @@ describe("signInWithSocial id-format validation (MEDIUM-01)", () => {
     expect(openedUrls[0]).toContain(`${AUTH_URL}/api/desktop-signin/my_sso-1`);
   });
 });
+
+// finding #8 / HOST-03 — desktop OIDC sign-in must use runtime serverUrl, not
+// build-time AUTH_URL, so a self-hosted deployment's OIDC flow stays on-prem.
+describe("signInWithSocial honors runtime serverUrl (finding #8 / HOST-03)", () => {
+  beforeEach(() => {
+    openedUrls.length = 0;
+    storeState = { serverUrl: null };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("uses runtime serverUrl as origin when serverUrl is set", async () => {
+    storeState = { serverUrl: "https://org.example" };
+    const { signInWithSocial } = await loadAuthModule();
+    await signInWithSocial("oidc");
+    expect(openedUrls).toHaveLength(1);
+    expect(new URL(openedUrls[0]).origin).toBe("https://org.example");
+    expect(openedUrls[0]).toContain("/api/desktop-signin/oidc");
+  });
+
+  it("falls back to build-time AUTH_URL origin when serverUrl is null", async () => {
+    storeState = { serverUrl: null };
+    const { signInWithSocial } = await loadAuthModule();
+    await signInWithSocial("oidc");
+    expect(openedUrls).toHaveLength(1);
+    expect(new URL(openedUrls[0]).origin).toBe(AUTH_URL);
+  });
+});
