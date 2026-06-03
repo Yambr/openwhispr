@@ -192,12 +192,18 @@ export interface ProvidersState {
 }
 
 /**
- * Resolve the base URL the providers fetch should target, mirroring auth.ts's
- * resolveBaseURL precedence so providers are fetched from the SAME host the
- * better-auth client talks to. In an ALLOW_CUSTOM_HOST build the real backend
- * is the user-typed custom host persisted in useSettingsStore.serverUrl; only
- * when that's unset/empty do we fall back to the build-time default
- * (OPENWHISPR_BACKEND_URL, which may itself be "" — pickAllowEmpty).
+ * Resolve the base URL the providers fetch should target. Precedence mirrors
+ * auth.ts's resolveBaseURL (serverUrl override → build-time default), but the
+ * BUILD-TIME fallback differs by design: providers come from the API host
+ * (OPENWHISPR_BACKEND_URL — the /api/auth/providers route lives there), whereas
+ * auth.ts's desktop-signin deep-link falls back to the AUTH host
+ * (OPENWHISPR_AUTH_URL). In a split-host deployment these are intentionally
+ * different hosts (BACKEND_SPEC.md: desktop-signin is served by the auth host,
+ * not the backend) — do NOT "unify" them. They converge to the SAME value only
+ * in custom-host mode, where serverUrl overrides both. In an ALLOW_CUSTOM_HOST
+ * build the real backend is the user-typed custom host persisted in
+ * useSettingsStore.serverUrl; only when that's unset/empty do we fall back to
+ * the build-time default (OPENWHISPR_BACKEND_URL, which may itself be "").
  *
  * Pure + synchronous so it's unit-testable in node env by mocking the store
  * module (same pattern auth.ts's resolveBaseURL relies on: getState() is always

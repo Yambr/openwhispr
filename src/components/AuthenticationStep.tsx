@@ -548,47 +548,57 @@ export default function AuthenticationStep({
               <p className="text-xs text-destructive">{error}</p>
             </div>
           )}
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={onContinueWithoutAccount}
-              className="w-full text-center text-xs text-muted-foreground/85 hover:text-foreground transition-colors py-1.5 rounded hover:bg-muted/30"
-              disabled={isSocialLoading !== null || isCheckingEmail}
-            >
-              {t("auth.emailStep.continueWithoutAccount")}
-            </button>
-          </div>
-
-          <p className="text-xs text-muted-foreground/80 leading-tight text-center">
-            {t("auth.legal.prefix")}{" "}
-            <a
-              href="https://openwhispr.com/terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-link underline decoration-link/30 hover:decoration-link/60 transition-colors"
-            >
-              {t("auth.legal.terms")}
-            </a>{" "}
-            {t("auth.legal.and")}{" "}
-            <a
-              href="https://openwhispr.com/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-link underline decoration-link/30 hover:decoration-link/60 transition-colors"
-            >
-              {t("auth.legal.privacy")}
-            </a>
-            {t("auth.legal.suffix")}
-          </p>
         </>
       )}
 
+      {/* Finding #9 (260603-qhw) review WR-02: "no sign-in methods" is never a
+          dead-end — offline use is always available. Show the explanatory note
+          but keep the continue-without-account path below it. */}
       {authView === "no-methods" && (
         <p className="text-xs text-muted-foreground text-center">
           {t("auth.noSignInMethods")}
         </p>
       )}
+
+      {/* Finding #9 (260603-qhw) review WR-02: "Continue without account" is a
+          PURELY CLIENT-SIDE offline-mode choice (setSkipAuth → nextStep, no
+          server route) — it is NOT local *login*, so the server's
+          localLogin.enabled policy must not strip it. Rendered for every
+          authView (local-and-sso, sso-only, no-methods) so an SSO-only or
+          misconfigured server can never trap a user who just wants to use the
+          app offline. */}
+      <div className="pt-1">
+        <button
+          type="button"
+          onClick={onContinueWithoutAccount}
+          className="w-full text-center text-xs text-muted-foreground/85 hover:text-foreground transition-colors py-1.5 rounded hover:bg-muted/30"
+          disabled={isSocialLoading !== null || isCheckingEmail}
+        >
+          {t("auth.emailStep.continueWithoutAccount")}
+        </button>
+      </div>
+
+      <p className="text-xs text-muted-foreground/80 leading-tight text-center">
+        {t("auth.legal.prefix")}{" "}
+        <a
+          href="https://openwhispr.com/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-link underline decoration-link/30 hover:decoration-link/60 transition-colors"
+        >
+          {t("auth.legal.terms")}
+        </a>{" "}
+        {t("auth.legal.and")}{" "}
+        <a
+          href="https://openwhispr.com/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-link underline decoration-link/30 hover:decoration-link/60 transition-colors"
+        >
+          {t("auth.legal.privacy")}
+        </a>
+        {t("auth.legal.suffix")}
+      </p>
     </div>
   );
 }
