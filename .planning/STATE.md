@@ -78,6 +78,8 @@ None blocking. Phase 1 carries forward two v1.7.2 integration-check findings as 
 |---|-------------|------|--------|-----------|
 | 260530-ms3 | Adopt upstream #835 — skip API key check for self-hosted transcription servers | 2026-05-30 | fdc9527c | [260530-ms3-adopt-upstream-835-skip-api-key-check-fo](./quick/260530-ms3-adopt-upstream-835-skip-api-key-check-fo/) |
 | 260603-ogm | Fix #8 (HIGH auth-leak) — desktop OIDC sign-in honors runtime serverUrl instead of build-time AUTH_URL | 2026-06-03 | eb9716d4 | [260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti](./quick/260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti/) |
+| 260603-qhw | #9 client half — server-driven local-login gating (hide email/password form when localLogin.enabled:false) + review fixes | 2026-06-03 | 9bbc7ed3, 2fe15b58 | [260603-qhw-implement-client-half-of-9-server-driven](./quick/260603-qhw-implement-client-half-of-9-server-driven/) |
+| 260603-r0p | WR-01 security — gate prod renderer test-hooks (`__zustand_setServerUrl` SSRF-bypass) behind e2e runtime signal; live-proven via CDP | 2026-06-03 | be1cb424 | [260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin](./quick/260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin/) |
 
 ## Session Continuity
 
