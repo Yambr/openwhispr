@@ -88,6 +88,18 @@ export default function AuthenticationStep({
     };
   }, [isSocialLoading]);
 
+  // Finding #9 (260603-qhw) race guard: localLoginEnabled defaults to true while
+  // the providers fetch is in flight, so a user can enter their email and open
+  // the password form before the server's localLogin:false resolves. When the
+  // gate lands disabled, retract any open local-login form so the UI can't offer
+  // a path the server will 403. (The server rejects it regardless — this is a
+  // UX/correctness backstop, not a security boundary.)
+  useEffect(() => {
+    if (serverProviders.localLoginEnabled === false && authMode !== null) {
+      setAuthMode(null);
+    }
+  }, [serverProviders.localLoginEnabled, authMode]);
+
   const handleSocialSignIn = useCallback(
     async (provider: SocialProvider) => {
       setIsSocialLoading(provider);
@@ -456,6 +468,7 @@ export default function AuthenticationStep({
       </div>
 
       <ServerProviderButtons
+        providersOverride={serverProviders.providers}
         onSelect={handleSocialSignIn}
         loadingId={isSocialLoading}
         disabled={isCheckingEmail || !oauthProtocolRegistered}

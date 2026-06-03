@@ -7,11 +7,7 @@ import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { iconFor } from "./auth/providerIcons";
-import {
-  useServerProviders,
-  resolveProviderView,
-  type ServerProvider,
-} from "../lib/serverProviders";
+import { resolveProviderView, type ServerProvider } from "../lib/serverProviders";
 
 interface ServerProviderButtonsProps {
   onSelect: (id: string) => void;
@@ -19,7 +15,13 @@ interface ServerProviderButtonsProps {
   disabled: boolean;
   /** Hidden when the OAuth protocol isn't registered (upstream behavior). */
   protocolUnavailableTitle?: string;
-  /** Test seam: inject a provider list instead of fetching. */
+  /**
+   * Provider list to render. The parent (AuthenticationStep) owns the single
+   * useServerProviders() fetch and passes the result down — finding #9
+   * (260603-qhw) removed this component's own useServerProviders() call so the
+   * /api/auth/providers endpoint is hit ONCE per auth screen, not twice. Honors
+   * the file-header "no fetch" contract. Defaults to [] (renders nothing).
+   */
   providersOverride?: ServerProvider[];
 }
 
@@ -31,8 +33,7 @@ export function ServerProviderButtons({
   providersOverride,
 }: ServerProviderButtonsProps) {
   const { t } = useTranslation();
-  const fetched = useServerProviders();
-  const providers = providersOverride ?? fetched.providers;
+  const providers = providersOverride ?? [];
 
   if (providers.length === 0) return null;
 
