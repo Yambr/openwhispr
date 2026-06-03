@@ -466,6 +466,10 @@ export interface ReferralItem {
 declare global {
   interface Window {
     electronAPI: {
+      // WR-01 (quick 260603-r0p): runtime e2e signal from preload. true only under
+      // NODE_ENV=test; gates the auth.ts test hooks out of production.
+      isE2E?: boolean;
+
       // Phase 1 HOST-02 (v1.8.0): runtime backend URL override.
       notifyServerUrlChanged?: (url: string | null) => void;
 

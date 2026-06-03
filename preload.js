@@ -55,6 +55,14 @@ const registerListener = (channel, handlerFactory) => {
 };
 
 contextBridge.exposeInMainWorld("electronAPI", {
+  // WR-01 (quick 260603-r0p): runtime e2e signal crossing the context bridge.
+  // preload runs in the Node/preload context with real process.env; the renderer
+  // (contextIsolation:true) cannot read process.env. auth.ts gates its three
+  // fork-only test hooks on this flag so the PRODUCTION renderer never registers
+  // them (closes the __zustand_setServerUrl SSRF-bypass on the #8 auth host).
+  // NODE_ENV=test is set only by tests/e2e/fixtures/electron-launch.ts at launch.
+  isE2E: process.env.NODE_ENV === "test",
+
   pasteText: (text, options) => ipcRenderer.invoke("paste-text", text, options),
   hideWindow: () => ipcRenderer.invoke("hide-window"),
   showDictationPanel: () => ipcRenderer.invoke("show-dictation-panel"),

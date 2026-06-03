@@ -146,10 +146,14 @@ export const authClient = new Proxy({} as AuthClientInstance, {
   },
 });
 
-// Phase 1 HOST-02 test hook: exposes the resolved baseURL to e2e step
-// definitions (tests/e2e/steps/host-runtime-override.steps.ts). Production
-// renderer code MUST NOT consume this — use authClient methods directly.
-if (typeof window !== "undefined") {
+// Phase 1 HOST-02 test hooks, GATED for WR-01 (quick 260603-r0p): these three
+// hooks exist ONLY under the e2e runtime signal (NODE_ENV=test, carried to the
+// renderer by preload.js#electronAPI.isE2E). The PRODUCTION renderer never
+// registers them — this closes the __zustand_setServerUrl SSRF-bypass against
+// the #8 (eb9716d4) auth host. Consumed by tests/e2e/steps/host-runtime-override
+// and onboarding-serverurl-email step defs. Gate failure mode is "hooks absent"
+// (safe), never "hooks present" — see the optional-chaining fallback.
+if (typeof window !== "undefined" && window.electronAPI?.isE2E === true) {
   (window as unknown as { authClientBaseUrlForTest?: () => string }).authClientBaseUrlForTest =
     () => {
       // Force the inner to build so cachedBaseURL is populated, then read it.
