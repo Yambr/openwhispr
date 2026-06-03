@@ -650,7 +650,8 @@
     },
     "welcomeSubtitle": "Диктуйте где угодно голосом",
     "welcomeTitle": "Добро пожаловать в OpenWhispr",
-    "sessionExpired": "Сессия истекла. Пожалуйста, войдите снова."
+    "sessionExpired": "Сессия истекла. Пожалуйста, войдите снова.",
+    "noSignInMethods": "Способы входа недоступны. Обратитесь к администратору."
   },
   "cleanupPrompt": "Очистка",
   "developerSection": {

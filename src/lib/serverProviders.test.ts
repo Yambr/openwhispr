@@ -19,6 +19,8 @@ vi.mock("../config/defaults", () => ({
 
 import {
   parseProvidersResponse,
+  parseLocalLoginEnabled,
+  selectAuthView,
   resolveProviderView,
   fetchServerProviders,
   resolveProvidersBaseUrl,
@@ -195,6 +197,51 @@ describe("resolveProviderView", () => {
   });
 });
 
+describe("parseLocalLoginEnabled", () => {
+  // Rule: return false IFF json is an object AND json.localLogin is an object
+  // AND json.localLogin.enabled === false (strict). Everything else -> true.
+
+  it("{ localLogin: { enabled: false } } -> false  (the ONLY disabling case)", () => {
+    expect(parseLocalLoginEnabled({ localLogin: { enabled: false } })).toBe(false);
+  });
+
+  it("{ localLogin: { enabled: true } } -> true  (new-server default)", () => {
+    expect(parseLocalLoginEnabled({ localLogin: { enabled: true } })).toBe(true);
+  });
+
+  it("{} -> true  (field absent: back-compat ON for old servers <=1.1.0)", () => {
+    expect(parseLocalLoginEnabled({})).toBe(true);
+  });
+
+  it("{ localLogin: {} } -> true  (enabled absent inside object: ON)", () => {
+    expect(parseLocalLoginEnabled({ localLogin: {} })).toBe(true);
+  });
+
+  it("{ localLogin: null } -> true  (null object: ON)", () => {
+    expect(parseLocalLoginEnabled({ localLogin: null })).toBe(true);
+  });
+
+  it("{ localLogin: 'false' } -> true  (string 'false', not boolean: ON)", () => {
+    expect(parseLocalLoginEnabled({ localLogin: "false" })).toBe(true);
+  });
+
+  it("null -> true  (non-object body: lockout-safe ON)", () => {
+    expect(parseLocalLoginEnabled(null)).toBe(true);
+  });
+
+  it('"garbage" -> true  (string body: lockout-safe ON)', () => {
+    expect(parseLocalLoginEnabled("garbage")).toBe(true);
+  });
+
+  it("42 -> true  (number body: lockout-safe ON)", () => {
+    expect(parseLocalLoginEnabled(42)).toBe(true);
+  });
+
+  it("{ localLogin: { enabled: 0 } } -> true  (falsy non-boolean: ON, only strict false disables)", () => {
+    expect(parseLocalLoginEnabled({ localLogin: { enabled: 0 } })).toBe(true);
+  });
+});
+
 describe("fetchServerProviders", () => {
   it("returns parsed providers on 200 (real shape)", async () => {
     const fetchImpl = async () =>
@@ -207,36 +254,43 @@ describe("fetchServerProviders", () => {
         }),
       }) as unknown as Response;
     const out = await fetchServerProviders("https://srv.example", fetchImpl);
-    expect(out.map((p) => p.id)).toEqual(["google"]);
+    expect(out.providers.map((p) => p.id)).toEqual(["google"]);
   });
 
-  it("returns [] when baseUrl is empty (no fetch performed)", async () => {
+  it("returns { providers:[], localLoginEnabled:true } when baseUrl is empty (no fetch performed)", async () => {
     let called = false;
     const fetchImpl = async () => {
       called = true;
       return {} as Response;
     };
     const out = await fetchServerProviders("", fetchImpl);
-    expect(out).toEqual([]);
+    expect(out.providers).toEqual([]);
+    expect(out.localLoginEnabled).toBe(true);
     expect(called).toBe(false);
   });
 
-  it("returns [] on non-2xx", async () => {
+  it("returns { providers:[], localLoginEnabled:true } on non-2xx", async () => {
     const fetchImpl = async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response;
-    expect(await fetchServerProviders("https://srv.example", fetchImpl)).toEqual([]);
+    const out = await fetchServerProviders("https://srv.example", fetchImpl);
+    expect(out.providers).toEqual([]);
+    expect(out.localLoginEnabled).toBe(true);
   });
 
-  it("returns [] on network throw", async () => {
+  it("returns { providers:[], localLoginEnabled:true } on network throw (lockout-safe)", async () => {
     const fetchImpl = async () => {
       throw new Error("network down");
     };
-    expect(await fetchServerProviders("https://srv.example", fetchImpl)).toEqual([]);
+    const out = await fetchServerProviders("https://srv.example", fetchImpl);
+    expect(out.providers).toEqual([]);
+    expect(out.localLoginEnabled).toBe(true);
   });
 
-  it("returns [] when body fails validation", async () => {
+  it("returns { providers:[], localLoginEnabled:true } when body fails validation", async () => {
     const fetchImpl = async () =>
       ({ ok: true, status: 200, json: async () => ({ garbage: true }) }) as Response;
-    expect(await fetchServerProviders("https://srv.example", fetchImpl)).toEqual([]);
+    const out = await fetchServerProviders("https://srv.example", fetchImpl);
+    expect(out.providers).toEqual([]);
+    expect(out.localLoginEnabled).toBe(true);
   });
 
   it("strips a trailing slash on baseUrl", async () => {
@@ -247,5 +301,64 @@ describe("fetchServerProviders", () => {
     };
     await fetchServerProviders("https://srv.example/", fetchImpl);
     expect(calledUrl).toBe("https://srv.example/api/auth/providers");
+  });
+
+  it("localLogin:{enabled:false} body yields localLoginEnabled:false", async () => {
+    const fetchImpl = async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          providers: [],
+          localLogin: { enabled: false },
+        }),
+      }) as unknown as Response;
+    const out = await fetchServerProviders("https://srv.example", fetchImpl);
+    expect(out.localLoginEnabled).toBe(false);
+  });
+
+  it("localLogin:{enabled:true} body yields localLoginEnabled:true", async () => {
+    const fetchImpl = async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          providers: [{ id: "google", name: "Google", enabled: true }],
+          localLogin: { enabled: true },
+        }),
+      }) as unknown as Response;
+    const out = await fetchServerProviders("https://srv.example", fetchImpl);
+    expect(out.localLoginEnabled).toBe(true);
+    expect(out.providers.map((p) => p.id)).toEqual(["google"]);
+  });
+});
+
+describe("selectAuthView", () => {
+  // Node-testable gate decision for AuthenticationStep — keeps JSX thin and
+  // policy unit-covered (vitest harness is node-only, no jsdom).
+  // Truth table:
+  //   { true,  0 } -> "local-and-sso"  (today's default when no SSO configured)
+  //   { true,  2 } -> "local-and-sso"  (local always on when enabled, SSO also shows)
+  //   { false, 2 } -> "sso-only"       (operator lockdown, SSO still available)
+  //   { false, 0 } -> "no-methods"     (misconfig: locked + no SSO advertised)
+
+  it("{ localLoginEnabled:true, providerCount:0 } -> 'local-and-sso' (today's default)", () => {
+    expect(selectAuthView({ localLoginEnabled: true, providerCount: 0 })).toBe("local-and-sso");
+  });
+
+  it("{ localLoginEnabled:true, providerCount:2 } -> 'local-and-sso'", () => {
+    expect(selectAuthView({ localLoginEnabled: true, providerCount: 2 })).toBe("local-and-sso");
+  });
+
+  it("{ localLoginEnabled:false, providerCount:2 } -> 'sso-only' (operator lockdown)", () => {
+    expect(selectAuthView({ localLoginEnabled: false, providerCount: 2 })).toBe("sso-only");
+  });
+
+  it("{ localLoginEnabled:false, providerCount:0 } -> 'no-methods' (misconfig)", () => {
+    expect(selectAuthView({ localLoginEnabled: false, providerCount: 0 })).toBe("no-methods");
+  });
+
+  it("{ localLoginEnabled:true, providerCount:1 } -> 'local-and-sso'", () => {
+    expect(selectAuthView({ localLoginEnabled: true, providerCount: 1 })).toBe("local-and-sso");
   });
 });

@@ -622,7 +622,8 @@
       "continueWith": "Continuar com {{provider}}"
     },
     "welcomeSubtitle": "Use sua voz para ditar em qualquer lugar",
-    "welcomeTitle": "Boas-vindas ao OpenWhispr"
+    "welcomeTitle": "Boas-vindas ao OpenWhispr",
+    "noSignInMethods": "Nenhum método de login disponível. Entre em contato com seu administrador."
   },
   "cleanupPrompt": "Limpeza",
   "developerSection": {

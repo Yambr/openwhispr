@@ -11,6 +11,7 @@ import {
 import { OPENWHISPR_BACKEND_URL } from "../config/defaults";
 import { ALLOW_CUSTOM_HOST_ENABLED } from "../config/defaults";
 import { ServerProviderButtons } from "./ServerProviderButtons";
+import { useServerProviders, selectAuthView } from "../lib/serverProviders";
 import { ServerUrlField } from "./onboarding/ServerUrlField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -34,6 +35,12 @@ export default function AuthenticationStep({
 }: AuthenticationStepProps) {
   const { t } = useTranslation();
   const { isSignedIn, isLoaded, user } = useAuth();
+  // Finding #9 (260603-qhw): server-driven local-login gating. When the server
+  // reports localLogin.enabled===false it 403/400-rejects the email/password
+  // routes, so hide that UI entirely and render SSO only. Default is true while
+  // loading and on any fetch failure — lockout-safe (a flaky server must never
+  // brick the password form).
+  const serverProviders = useServerProviders();
   const [authMode, setAuthMode] = useState<AuthMode>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -425,6 +432,13 @@ export default function AuthenticationStep({
   }
 
   // Main welcome view
+  // Derive once: loading defaults localLoginEnabled to true, so the form shows
+  // immediately in the common case — no flash-then-hide on the happy path.
+  const authView = selectAuthView({
+    localLoginEnabled: serverProviders.localLoginEnabled,
+    providerCount: serverProviders.providers.length,
+  });
+
   return (
     <div className="space-y-3">
       <div className="text-center mb-4">
@@ -456,102 +470,112 @@ export default function AuthenticationStep({
         </p>
       )}
 
-      <div className="flex items-center gap-2">
-        <div className="flex-1 h-px bg-border/50" />
-        <span className="text-xs font-medium text-muted-foreground/40 uppercase tracking-widest px-1">
-          {t("auth.common.or")}
-        </span>
-        <div className="flex-1 h-px bg-border/50" />
-      </div>
+      {authView === "local-and-sso" && (
+        <>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-px bg-border/50" />
+            <span className="text-xs font-medium text-muted-foreground/40 uppercase tracking-widest px-1">
+              {t("auth.common.or")}
+            </span>
+            <div className="flex-1 h-px bg-border/50" />
+          </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleEmailContinue();
-        }}
-        className="space-y-2"
-      >
-        {ALLOW_CUSTOM_HOST_ENABLED && (
-          <ServerUrlField
-            onValidated={() => setServerUrlValidated(true)}
-            onInvalidated={() => setServerUrlValidated(false)}
-            disabled={isSocialLoading !== null || isCheckingEmail}
-          />
-        )}
-        <Input
-          type="email"
-          placeholder={t("auth.emailStep.emailPlaceholder")}
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="h-9 text-sm"
-          required
-          disabled={
-            isSocialLoading !== null ||
-            isCheckingEmail ||
-            (ALLOW_CUSTOM_HOST_ENABLED && !serverUrlValidated)
-          }
-        />
-        <Button
-          type="submit"
-          variant="outline"
-          disabled={
-            !email.trim() ||
-            isSocialLoading !== null ||
-            isCheckingEmail ||
-            (ALLOW_CUSTOM_HOST_ENABLED && !serverUrlValidated)
-          }
-          className="w-full h-9"
-        >
-          {isCheckingEmail ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <>
-              <span className="text-sm font-medium">{t("auth.emailStep.continueWithEmail")}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleEmailContinue();
+            }}
+            className="space-y-2"
+          >
+            {ALLOW_CUSTOM_HOST_ENABLED && (
+              <ServerUrlField
+                onValidated={() => setServerUrlValidated(true)}
+                onInvalidated={() => setServerUrlValidated(false)}
+                disabled={isSocialLoading !== null || isCheckingEmail}
+              />
+            )}
+            <Input
+              type="email"
+              placeholder={t("auth.emailStep.emailPlaceholder")}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-9 text-sm"
+              required
+              disabled={
+                isSocialLoading !== null ||
+                isCheckingEmail ||
+                (ALLOW_CUSTOM_HOST_ENABLED && !serverUrlValidated)
+              }
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={
+                !email.trim() ||
+                isSocialLoading !== null ||
+                isCheckingEmail ||
+                (ALLOW_CUSTOM_HOST_ENABLED && !serverUrlValidated)
+              }
+              className="w-full h-9"
+            >
+              {isCheckingEmail ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  <span className="text-sm font-medium">{t("auth.emailStep.continueWithEmail")}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </Button>
+          </form>
+
+          {error && (
+            <div className="px-3 py-2 rounded-md bg-destructive/5 border border-destructive/20 flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0" />
+              <p className="text-xs text-destructive">{error}</p>
+            </div>
           )}
-        </Button>
-      </form>
 
-      {error && (
-        <div className="px-3 py-2 rounded-md bg-destructive/5 border border-destructive/20 flex items-center gap-2">
-          <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0" />
-          <p className="text-xs text-destructive">{error}</p>
-        </div>
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={onContinueWithoutAccount}
+              className="w-full text-center text-xs text-muted-foreground/85 hover:text-foreground transition-colors py-1.5 rounded hover:bg-muted/30"
+              disabled={isSocialLoading !== null || isCheckingEmail}
+            >
+              {t("auth.emailStep.continueWithoutAccount")}
+            </button>
+          </div>
+
+          <p className="text-xs text-muted-foreground/80 leading-tight text-center">
+            {t("auth.legal.prefix")}{" "}
+            <a
+              href="https://openwhispr.com/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-link underline decoration-link/30 hover:decoration-link/60 transition-colors"
+            >
+              {t("auth.legal.terms")}
+            </a>{" "}
+            {t("auth.legal.and")}{" "}
+            <a
+              href="https://openwhispr.com/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-link underline decoration-link/30 hover:decoration-link/60 transition-colors"
+            >
+              {t("auth.legal.privacy")}
+            </a>
+            {t("auth.legal.suffix")}
+          </p>
+        </>
       )}
 
-      <div className="pt-1">
-        <button
-          type="button"
-          onClick={onContinueWithoutAccount}
-          className="w-full text-center text-xs text-muted-foreground/85 hover:text-foreground transition-colors py-1.5 rounded hover:bg-muted/30"
-          disabled={isSocialLoading !== null || isCheckingEmail}
-        >
-          {t("auth.emailStep.continueWithoutAccount")}
-        </button>
-      </div>
-
-      <p className="text-xs text-muted-foreground/80 leading-tight text-center">
-        {t("auth.legal.prefix")}{" "}
-        <a
-          href="https://openwhispr.com/terms"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-link underline decoration-link/30 hover:decoration-link/60 transition-colors"
-        >
-          {t("auth.legal.terms")}
-        </a>{" "}
-        {t("auth.legal.and")}{" "}
-        <a
-          href="https://openwhispr.com/privacy"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-link underline decoration-link/30 hover:decoration-link/60 transition-colors"
-        >
-          {t("auth.legal.privacy")}
-        </a>
-        {t("auth.legal.suffix")}
-      </p>
+      {authView === "no-methods" && (
+        <p className="text-xs text-muted-foreground text-center">
+          {t("auth.noSignInMethods")}
+        </p>
+      )}
     </div>
   );
 }

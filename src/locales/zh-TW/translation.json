@@ -650,7 +650,8 @@
     },
     "welcomeSubtitle": "隨時隨地用語音輸入文字",
     "welcomeTitle": "歡迎使用 OpenWhispr",
-    "sessionExpired": "工作階段已過期，請重新登入。"
+    "sessionExpired": "工作階段已過期，請重新登入。",
+    "noSignInMethods": "沒有可用的登入方式。請聯絡您的管理員。"
   },
   "cleanupPrompt": "文字整理",
   "developerSection": {

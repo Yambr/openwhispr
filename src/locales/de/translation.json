@@ -650,7 +650,8 @@
     },
     "welcomeSubtitle": "Diktieren Sie überall mit Ihrer Stimme",
     "welcomeTitle": "Willkommen bei OpenWhispr",
-    "sessionExpired": "Sitzung abgelaufen"
+    "sessionExpired": "Sitzung abgelaufen",
+    "noSignInMethods": "Keine Anmeldemethoden verfügbar. Wende dich an deinen Administrator."
   },
   "cleanupPrompt": "Textbereinigung",
   "developerSection": {

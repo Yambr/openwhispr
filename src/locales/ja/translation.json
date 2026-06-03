@@ -650,7 +650,8 @@
       "continueWith": "{{provider}}で続行"
     },
     "welcomeSubtitle": "音声でどこでもディクテーション",
-    "welcomeTitle": "OpenWhispr へようこそ"
+    "welcomeTitle": "OpenWhispr へようこそ",
+    "noSignInMethods": "利用できるサインイン方法がありません。管理者にお問い合わせください。"
   },
   "cleanupPrompt": "クリーンアップ",
   "developerSection": {

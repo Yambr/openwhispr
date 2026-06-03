@@ -43,6 +43,24 @@ function iconHintForId(id: string): ProviderIconHint {
 }
 
 /**
+ * Pure total function. Never throws. Returns whether local (email/password)
+ * login is enabled based on the server response body.
+ *
+ * Absent or non-false => enabled; only explicit enabled===false disables;
+ * fetch failure degrades to enabled so a flaky server can't lock users out.
+ *
+ * Rule: return false IFF json is an object AND json.localLogin is an object
+ * AND json.localLogin.enabled === false (strict). Everything else -> true.
+ * Back-compat: old servers (<=1.1.0) omit localLogin entirely => true.
+ */
+export function parseLocalLoginEnabled(json: unknown): boolean {
+  if (typeof json !== "object" || json === null) return true;
+  const raw = (json as { localLogin?: unknown }).localLogin;
+  if (typeof raw !== "object" || raw === null) return true;
+  return (raw as { enabled?: unknown }).enabled !== false;
+}
+
+/**
  * Pure validator. Never throws. Returns a clean, deduped ServerProvider[].
  * Consumes the real server shape { providers:[{id,name,enabled}], ... };
  * extra top-level keys (emailVerification) are ignored. Invalid or
@@ -99,43 +117,78 @@ export function resolveProviderView(p: ServerProvider, t: TFunc): ServerProvider
   return { id: p.id, iconHint: p.iconHint, displayLabel };
 }
 
+/**
+ * Node-testable gate decision for AuthenticationStep — keeps the JSX thin and
+ * the policy unit-covered (vitest harness is node-only, no jsdom).
+ *
+ * When localLoginEnabled is true we ALWAYS allow local — provider count is
+ * irrelevant; SSO buttons render-null themselves when empty (existing behavior).
+ */
+export type AuthView = "local-and-sso" | "sso-only" | "no-methods";
+
+export function selectAuthView(args: {
+  localLoginEnabled: boolean;
+  providerCount: number;
+}): AuthView {
+  if (args.localLoginEnabled) return "local-and-sso";
+  return args.providerCount > 0 ? "sso-only" : "no-methods";
+}
+
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
+export interface FetchProvidersResult {
+  providers: ServerProvider[];
+  localLoginEnabled: boolean;
+}
+
+// Lockout-safe failure result: absent or unreachable server must never lock
+// users out of the password form. Degrading to localLoginEnabled:true means
+// a temporarily-unreachable server keeps the email/password UI visible.
+const FETCH_FAILURE_RESULT: FetchProvidersResult = { providers: [], localLoginEnabled: true };
+
 /**
- * Fetch the server's enabled providers. Pre-auth (no token), mirroring
- * POST /api/check-user. Any failure -> [] (degrade to password-only).
+ * Fetch the server's enabled providers and localLogin gate. Pre-auth (no
+ * token), mirroring POST /api/check-user. Any failure ->
+ * { providers: [], localLoginEnabled: true } (lockout-safe degrade).
  * fetchImpl is injectable for tests; defaults to global fetch.
  */
 export async function fetchServerProviders(
   baseUrl: string,
   fetchImpl: FetchLike = (url, init) => fetch(url, init)
-): Promise<ServerProvider[]> {
-  if (!baseUrl) return [];
+): Promise<FetchProvidersResult> {
+  if (!baseUrl) return FETCH_FAILURE_RESULT;
   const url = `${baseUrl.replace(/\/$/, "")}/api/auth/providers`;
   try {
     const res = await fetchImpl(url, {
       method: "GET",
       headers: { Accept: "application/json" },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return FETCH_FAILURE_RESULT;
     const body = await res.json();
-    return parseProvidersResponse(body);
+    return {
+      providers: parseProvidersResponse(body),
+      localLoginEnabled: parseLocalLoginEnabled(body),
+    };
   } catch {
-    return [];
+    return FETCH_FAILURE_RESULT;
   }
 }
 
 // `fetchServerProviders` swallows every failure (network throw, non-2xx, parse
-// error) and resolves to [] — degrade-to-password-only is the only failure mode,
-// and it is indistinguishable from "server has no providers". There is therefore
-// no honest "error" state to surface: the fetch never rejects, so an "error"
-// member would only ever be a dead, unreachable branch. Keep the union to the
-// two states that actually occur.
+// error) and resolves to { providers: [], localLoginEnabled: true } — degrade-
+// to-password-only is the only failure mode, and it is indistinguishable from
+// "server has no providers". There is therefore no honest "error" state to
+// surface: the fetch never rejects, so an "error" member would only ever be a
+// dead, unreachable branch. Keep the union to the two states that actually occur.
 export type ProvidersStatus = "loading" | "ready";
 
 export interface ProvidersState {
   status: ProvidersStatus;
   providers: ServerProvider[];
+  /** Whether the server allows local (email/password) login. Defaults to true
+   *  while loading and on any fetch failure — lockout-safe: a flaky server must
+   *  not brick a user out of the password form (Finding #9, 260603-qhw). */
+  localLoginEnabled: boolean;
 }
 
 /**
@@ -174,16 +227,20 @@ export function resolveProvidersBaseUrl(): string {
 export function useServerProviders(): ProvidersState {
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const baseUrl = serverUrl || OPENWHISPR_BACKEND_URL;
-  const [state, setState] = useState<ProvidersState>({ status: "loading", providers: [] });
+  const [state, setState] = useState<ProvidersState>({
+    status: "loading",
+    providers: [],
+    localLoginEnabled: true,
+  });
   useEffect(() => {
     let alive = true;
     if (!baseUrl) {
-      setState({ status: "ready", providers: [] });
+      setState({ status: "ready", providers: [], localLoginEnabled: true });
       return;
     }
-    setState({ status: "loading", providers: [] });
-    fetchServerProviders(baseUrl).then((providers) => {
-      if (alive) setState({ status: "ready", providers });
+    setState({ status: "loading", providers: [], localLoginEnabled: true });
+    fetchServerProviders(baseUrl).then((result) => {
+      if (alive) setState({ status: "ready", ...result });
     });
     return () => {
       alive = false;

@@ -650,7 +650,8 @@
       "continueWith": "Continua con {{provider}}"
     },
     "welcomeSubtitle": "Detta ovunque usando la tua voce",
-    "welcomeTitle": "Benvenuto in OpenWhispr"
+    "welcomeTitle": "Benvenuto in OpenWhispr",
+    "noSignInMethods": "Nessun metodo di accesso disponibile. Contatta il tuo amministratore."
   },
   "cleanupPrompt": "Correzione",
   "developerSection": {

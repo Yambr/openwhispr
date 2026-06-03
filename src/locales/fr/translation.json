@@ -650,7 +650,8 @@
     },
     "welcomeSubtitle": "Dictez n'importe où en utilisant votre voix",
     "welcomeTitle": "Bienvenue sur OpenWhispr",
-    "sessionExpired": "Session expirée. Veuillez relancer le processus d'inscription."
+    "sessionExpired": "Session expirée. Veuillez relancer le processus d'inscription.",
+    "noSignInMethods": "Aucune méthode de connexion n'est disponible. Contactez votre administrateur."
   },
   "cleanupPrompt": "Correction",
   "developerSection": {

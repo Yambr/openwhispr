@@ -650,7 +650,8 @@
     },
     "welcomeSubtitle": "随时随地用语音输入",
     "welcomeTitle": "欢迎使用 OpenWhispr",
-    "sessionExpired": "会话已过期，请重新登录。"
+    "sessionExpired": "会话已过期，请重新登录。",
+    "noSignInMethods": "没有可用的登录方式。请联系您的管理员。"
   },
   "cleanupPrompt": "文本整理",
   "developerSection": {
