@@ -11,6 +11,10 @@ export interface ReasoningConfig {
   customApiKey?: string;
   provider?: string;
   disableThinking?: boolean;
+  // explicit-requestKind-contract: forwarded to POST /api/reason body.requestKind
+  // as the PRIMARY server router, replacing the systemPrompt-presence heuristic.
+  // Additive + optional (old callers omit it ⇒ undefined ⇒ JSON drops the key).
+  requestKind?: "cleanup" | "agent" | "summary" | "title";
 }
 
 export abstract class BaseReasoningService {

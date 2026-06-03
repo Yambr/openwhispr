@@ -5704,6 +5704,8 @@ class IPCHandlers {
             text,
             model: opts.model,
             agentName: opts.agentName,
+            // explicit-requestKind-contract: primary server router; rides in opts, undefined ⇒ key dropped
+            requestKind: opts.requestKind,
             customDictionary: opts.customDictionary,
             customPrompt: opts.customPrompt,
             systemPrompt: opts.systemPrompt,

@@ -15,6 +15,9 @@ export const openwhisprProvider: InferenceProvider = {
     const result = await withSessionRefresh(async () => {
       const res = await window.electronAPI?.cloudReason?.(text, {
         agentName,
+        // explicit-requestKind-contract: forward caller's kind as-is (may be undefined
+        // for the rare cleanup-via-provider path; server falls back to heuristic then).
+        requestKind: config.requestKind,
         customDictionary: ctx.getCustomDictionary(),
         customPrompt,
         systemPrompt: config.systemPrompt,

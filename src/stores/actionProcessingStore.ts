@@ -130,6 +130,8 @@ export function runBackgroundAction(
       );
       const enhanced = await reasoningService.processText(noteContent, modelId, null, {
         systemPrompt,
+        // explicit-requestKind-contract: note formatting/summary path
+        requestKind: "summary",
         temperature: 0.3,
         disableThinking: settings.noteFormattingDisableThinking,
       });

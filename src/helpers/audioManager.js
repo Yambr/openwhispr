@@ -43,6 +43,9 @@ function resolveReasoningRoute(text, settings, agentName) {
       model: agentModel,
       config: {
         provider,
+        // explicit-requestKind-contract: dictation agent path; threaded via
+        // processWithReasoningModel → ReasoningService.processText → openwhispr.ts.
+        requestKind: "agent",
         lanUrl: isSelfHostedAgent ? settings.dictationAgentRemoteUrl : undefined,
         baseUrl: isCustomAgent ? settings.dictationAgentCloudBaseUrl || undefined : undefined,
         customApiKey:
@@ -1316,6 +1319,8 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         const reasonResult = await withSessionRefresh(async () => {
           const res = await window.electronAPI.cloudReason(processedText, {
             agentName,
+            // explicit-requestKind-contract: dictation cleanup path
+            requestKind: "cleanup",
             customDictionary: settings.customDictionary,
             customPrompt: this.getCustomPrompt(),
             language: settings.preferredLanguage || "auto",
@@ -2542,6 +2547,8 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
           const reasonResult = await withSessionRefresh(async () => {
             const res = await window.electronAPI.cloudReason(finalText, {
               agentName,
+              // explicit-requestKind-contract: streaming dictation cleanup path
+              requestKind: "cleanup",
               customDictionary: stSettings.customDictionary,
               customPrompt: this.getCustomPrompt(),
               language: stSettings.preferredLanguage || "auto",

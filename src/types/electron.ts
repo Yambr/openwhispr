@@ -1110,6 +1110,8 @@ declare global {
           systemPrompt?: string;
           language?: string;
           locale?: string;
+          // explicit-requestKind-contract: primary server router forwarded in body
+          requestKind?: "cleanup" | "agent" | "summary" | "title";
         }
       ) => Promise<{
         success: boolean;

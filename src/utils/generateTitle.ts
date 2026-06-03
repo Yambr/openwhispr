@@ -8,6 +8,8 @@ export async function generateNoteTitle(text: string, modelId: string): Promise<
   try {
     const raw = await reasoningService.processText(text.slice(0, 2000), modelId, null, {
       systemPrompt: TITLE_SYSTEM_PROMPT,
+      // explicit-requestKind-contract: note title generation path
+      requestKind: "title",
       temperature: 0.3,
       disableThinking: getSettings().noteFormattingDisableThinking,
     });
