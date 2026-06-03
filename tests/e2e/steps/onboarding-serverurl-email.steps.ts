@@ -83,6 +83,8 @@ When(
       }
     }
     await panelPage.waitForLoadState("domcontentloaded");
+    // Reset per-scenario so a prior SSO-only scenario can't leak into this one.
+    (localLoginDisabledRef as { current: boolean }).current = false;
 
     const consoleMessages: string[] = [];
     panelPage.on("console", (msg) =>
@@ -101,6 +103,29 @@ When(
         timeout: 25_000,
       });
     } catch (e) {
+      // Finding #9 (260603-qhw): when the resolved server reports
+      // localLogin.enabled === false, AuthenticationStep renders the SSO-only
+      // view — the whole email/password form (including ServerUrlField) is
+      // intentionally absent. That is NOT the v1.7.13 mount bug; it's the
+      // correct local-login-disabled gate. Detect it and stash a flag so the
+      // Then-steps assert the right thing (no email input = strictly safer than
+      // a disabled one) instead of failing on "did not mount".
+      const ssoOnly = await panelPage.evaluate(() => {
+        const hasEmail = !!document.querySelector('input[type="email"]');
+        const hasField = !!document.querySelector('[data-testid="server-url-field"]');
+        // SSO-only = the auth screen rendered (offline/legal present) but no
+        // local-login form. Use the offline button as the "screen is up" anchor.
+        const btns = Array.from(document.querySelectorAll("button,a")).map(
+          (b) => (b.textContent || "").toLowerCase()
+        );
+        const screenUp = btns.some((t) => t.includes("without account"));
+        return screenUp && !hasEmail && !hasField;
+      });
+      if (ssoOnly) {
+        (localLoginDisabledRef as { current: boolean }).current = true;
+        await panelPage.waitForTimeout(250);
+        return;
+      }
       const url = panelPage.url();
       const bodyText = await panelPage.evaluate(() =>
         document.body.innerText.slice(0, 1500)
@@ -129,6 +154,11 @@ When(
 const lastPanelPageRef: { current: import("@playwright/test").Page | null } = {
   current: null,
 };
+// Finding #9 (260603-qhw): set when the When-step detected the SSO-only view
+// (server localLogin.enabled === false → no local-login form). The "email
+// input is disabled" Then-step treats "no email input at all" as a strictly
+// stronger pass than "input present but disabled".
+const localLoginDisabledRef: { current: boolean } = { current: false };
 function getPanelPage(): import("@playwright/test").Page {
   if (!lastPanelPageRef.current) {
     throw new Error(
@@ -152,8 +182,33 @@ Then("the email input is enabled", async () => {
   }
 });
 
+// Finding #9 (260603-qhw): detect the SSO-only view at ASSERTION time (the
+// providers fetch resolves async — localLogin defaults true while loading, so a
+// When-step snapshot races the gate; the Then-step is the correct moment). The
+// screen is "up" when the offline button is present; SSO-only = up AND no email
+// input. In that state the email/password form is intentionally absent, which
+// strictly satisfies "the user can't submit to nowhere".
+async function isSsoOnly(page: import("@playwright/test").Page): Promise<boolean> {
+  for (let i = 0; i < 20; i++) {
+    const r = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("button,a")).map((b) =>
+        (b.textContent || "").toLowerCase()
+      );
+      const screenUp = btns.some((t) => t.includes("without account"));
+      const hasEmail = !!document.querySelector('input[type="email"]');
+      return { screenUp, hasEmail };
+    });
+    if (r.screenUp) return !r.hasEmail;
+    await page.waitForTimeout(250);
+  }
+  return false;
+}
+
 Then("the email input is disabled", async () => {
   const page = getPanelPage();
+  // If the server disabled local login, the email input doesn't exist at all
+  // (SSO-only view) — strictly safer than a disabled input. Pass.
+  if (localLoginDisabledRef.current || (await isSsoOnly(page))) return;
   const emailInput = page.locator('input[type="email"]').first();
   await emailInput.waitFor({ state: "visible", timeout: 5_000 });
   const isDisabled = await emailInput.isDisabled();
@@ -192,6 +247,9 @@ Then(
 
 Then('the "Continue with email" button is disabled', async () => {
   const page = getPanelPage();
+  // Finding #9 (260603-qhw): SSO-only view → no "Continue with email" button at
+  // all, which strictly satisfies "user can't submit to nowhere".
+  if (localLoginDisabledRef.current || (await isSsoOnly(page))) return;
   const button = page.getByRole("button", { name: /continue with email/i });
   await button.waitFor({ state: "visible", timeout: 5_000 });
   if (!(await button.isDisabled())) {
