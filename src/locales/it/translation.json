@@ -2138,6 +2138,9 @@
         "othersInCall_one": "{{count}} altra persona in chiamata",
         "othersInCall_other": "{{count}} altre persone in chiamata"
       }
+    },
+    "embeddings": {
+      "cloudUnavailable": "Servizio di embedding non disponibile — impossibile raggiungere il backend di embedding self-hosted. La reindicizzazione non è stata completata."
     }
   },
   "dictionary": {

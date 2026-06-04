@@ -2138,6 +2138,9 @@
         "othersInCall_one": "通話中還有 {{count}} 人",
         "othersInCall_other": "通話中還有 {{count}} 人"
       }
+    },
+    "embeddings": {
+      "cloudUnavailable": "嵌入服務無法使用——無法連接到自架的嵌入後端。重新索引未完成。"
     }
   },
   "dictionary": {
