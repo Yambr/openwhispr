@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { getSettings, selectResolvedMeetingTranscription } from "./settingsStore";
 import { useStreamingProvidersStore } from "./streamingProvidersStore";
+// FORK (260604-tsa): gates the empty-catalog realtime fallback so a lockdown
+// corp build targets the self-hosted relay instead of api.openai.com.
+import { PROVIDER_LOCKDOWN_ENABLED } from "../config/defaults";
 import { isBuiltInMicrophone } from "../utils/audioDeviceUtils";
 import { getBaseLanguageCode } from "../utils/languageSupport";
 import type { SystemAudioAccessResult, SystemAudioStrategy } from "../types/electron";
@@ -107,7 +110,7 @@ const isSegmentWithinIdentificationWindow = (
   );
 };
 
-const getMeetingTranscriptionOptions = () => {
+export const getMeetingTranscriptionOptions = () => {
   const state = getSettings();
   const resolved = selectResolvedMeetingTranscription(state);
   const language = getBaseLanguageCode(state.preferredLanguage);
@@ -131,6 +134,29 @@ const getMeetingTranscriptionOptions = () => {
   const mode =
     resolved.cloudTranscriptionMode === "byok" && byokKeyAvailable ? "byok" : "openwhispr";
   if (!provider) {
+    // FORK (260604-tsa): under a lockdown corp build, an empty catalog must NOT
+    // take the api.openai.com path with a hardcoded OpenAI model. The transport
+    // is already repointed to the self-hosted relay via
+    // streamingProviders.lockdown.js + the RC-2 deriveRealtimeWssUrl host, and
+    // mode "openwhispr" makes ipcHandlers set preconfigured:true so the realtime
+    // client never sends a session.update — the server pins the transcription
+    // model. We pass NO hardcoded OpenAI model (undefined is crash-safe in
+    // openaiRealtimeStreaming.js: `this.model = model || "..."`, and the model
+    // never reaches the wire in the preconfigured branch). Prepend-only: the
+    // upstream non-lockdown return below stays byte-identical.
+    if (PROVIDER_LOCKDOWN_ENABLED) {
+      logger.debug(
+        "lockdown: empty catalog, using self-hosted realtime relay (server pins model)",
+        {},
+        "meeting"
+      );
+      return {
+        provider: "openai-realtime" as const,
+        model: undefined,
+        mode: "openwhispr" as const,
+        language,
+      };
+    }
     logger.debug(
       "Streaming providers catalog not loaded, falling back to OpenAI default",
       {},
