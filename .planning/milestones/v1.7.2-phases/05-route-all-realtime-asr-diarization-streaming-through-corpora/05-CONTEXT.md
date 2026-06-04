@@ -29,7 +29,7 @@ From `~/openwhispr-server/.planning/ROADMAP.md` Phase 4 ("Streaming + Realtime")
 
 From `speaches-audio.md`:
 
-> Speaches master deployed on `aimodels.inner.alfaleasing.ru`, container `llm-speaches`, image `speaches-local:master-cuda-12.6.3`, port 8014. nginx proxies three audio routes, all reachable through LiteLLM proxy with key check. **`WSS /v1/realtime?model=alfaleasing/speaches-realtime`** — streaming transcription / conversational mode via OpenAI Realtime API spec. Speaches claims compatibility with that spec. LiteLLM v1.82.0+ supports `mode: realtime` — it raises the upstream WS itself and forwards events bidirectionally. Ingress allows WebSocket Upgrade with 3600s read/send timeouts.
+> Speaches master deployed on `<in-perimeter-host>`, container `llm-speaches`, image `speaches-local:master-cuda-12.6.3`, port 8014. nginx proxies three audio routes, all reachable through LiteLLM proxy with key check. **`WSS /v1/realtime?model=<operator-realtime-model>`** — streaming transcription / conversational mode via OpenAI Realtime API spec. Speaches claims compatibility with that spec. LiteLLM v1.82.0+ supports `mode: realtime` — it raises the upstream WS itself and forwards events bidirectionally. Ingress allows WebSocket Upgrade with 3600s read/send timeouts.
 
 **Translation:** the corporate backend already terminates the WebSocket and proxies to Speaches. Our client just needs to connect to `wss://${OPENWHISPR_BACKEND_URL}/v1/realtime?model=...` instead of `wss://api.openai.com/v1/realtime`.
 
