@@ -2186,6 +2186,9 @@
         "othersInCall_one": "{{count}} otra persona en la llamada",
         "othersInCall_other": "{{count}} otras personas en la llamada"
       }
+    },
+    "embeddings": {
+      "cloudUnavailable": "Servicio de incrustaciones no disponible: no se pudo conectar con el backend de incrustaciones autoalojado. La reindexación no se completó."
     }
   },
   "dictionary": {

@@ -996,6 +996,21 @@ class IPCHandlers {
       const vectorIndex = require("./vectorIndex");
       if (!vectorIndex.isReady()) return { success: false, error: "Vector index not ready" };
 
+      // FORK (260604-tsa): probe embedding availability BEFORE reindexAll —
+      // upstream reindexAll swallows per-batch embed failures (vectorIndex.js:
+      // 77-87, debug-log only), so under the throw-fast stub it would falsely
+      // return { success:true, indexed:0 }. localEmbeddings resolves to the
+      // seeded facade under lockdown (cloud → isAvailable()===true; stub →
+      // false); default build → real local module → true once the model exists.
+      // Honest early-return instead. Does NOT edit upstream vectorIndex.reindexAll.
+      const localEmbeddings = require("./localEmbeddings");
+      if (
+        typeof localEmbeddings.isAvailable === "function" &&
+        localEmbeddings.isAvailable() === false
+      ) {
+        return { success: false, error: "notes.embeddings.cloudUnavailable" };
+      }
+
       const notes = this.databaseManager.getNotes(null, 100000);
       let done = 0;
       await vectorIndex.reindexAll(notes, (completed, total) => {

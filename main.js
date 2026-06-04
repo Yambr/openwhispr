@@ -258,6 +258,10 @@ const WhisperCudaManager = require("./src/helpers/whisperCudaManager");
 const GoogleCalendarManager = require("./src/helpers/googleCalendarManager");
 const BuildConfig = require("./src/config/build-config.generated.cjs");
 const backendUrlState = require("./src/helpers/backendUrlState");
+// FORK (260604-tsa): under a lockdown corp build, seed ./localEmbeddings in
+// require.cache with a cloud facade or a throw-fast stub BEFORE vectorIndex
+// requires it (see install() call in startApp). No-op on the default build.
+const embeddingsBootstrap = require("./src/helpers/embeddingsBootstrap");
 const safeOrigin = (u) => {
   try { return new URL(u).origin; } catch { return null; }
 };
@@ -951,6 +955,12 @@ async function startApp() {
     });
   }
 
+  // FORK (260604-tsa): seed ./localEmbeddings in require.cache (cloud facade or
+  // throw-fast stub) BEFORE vectorIndex/localEmbeddings are first required below
+  // (962/974). MUST stay above the QdrantManager require; an await after 962
+  // would no-op the seam and let onnx spawn. No-op on the default build.
+  await embeddingsBootstrap.install();
+
   const QdrantManager = require("./src/helpers/qdrantManager");
   qdrantManager = new QdrantManager();
   sidecarRegistry.register("qdrant", () => qdrantManager.stop());
@@ -968,6 +978,25 @@ async function startApp() {
       })
       .catch((err) => {
         debugLogger.debug("Qdrant startup error (non-fatal)", { error: err.message });
+      });
+  }
+
+  // FORK (260604-tsa): dim migration MUST run AFTER ensureCollection (which
+  // hardcodes 384) resolves — chain it, do not race the upstream .catch. The
+  // invariant: ensureCollection() resolves BEFORE migrateCollectionDim runs, so
+  // the 384 collection exists to be detected and recreated at 1024 (never the
+  // reverse). runDimMigration self-guards via `seeded` (no-op unless the cloud
+  // facade was seeded), so calling it unconditionally is safe.
+  if (qdrantManager.isAvailable()) {
+    Promise.resolve(
+      qdrantManager.isReady() &&
+        require("./src/helpers/vectorIndex").ensureCollection()
+    )
+      .then(() => embeddingsBootstrap.runDimMigration(qdrantManager.getPort()))
+      .catch((err) => {
+        debugLogger.debug("Embedding dim migration error (non-fatal)", {
+          error: err.message,
+        });
       });
   }
 

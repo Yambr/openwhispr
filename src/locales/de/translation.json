@@ -2138,6 +2138,9 @@
         "othersInCall_one": "{{count}} weitere Person im Gespräch",
         "othersInCall_other": "{{count}} weitere Personen im Gespräch"
       }
+    },
+    "embeddings": {
+      "cloudUnavailable": "Embedding-Dienst nicht verfügbar – das selbst gehostete Embedding-Backend war nicht erreichbar. Die Neuindizierung wurde nicht abgeschlossen."
     }
   },
   "dictionary": {

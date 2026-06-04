@@ -2345,6 +2345,9 @@
         "othersInCall_one": "{{count}} other in call",
         "othersInCall_other": "{{count}} others in call"
       }
+    },
+    "embeddings": {
+      "cloudUnavailable": "Embedding service unavailable — could not reach the self-hosted embedding backend. Re-indexing was not completed."
     }
   },
   "dictionary": {
