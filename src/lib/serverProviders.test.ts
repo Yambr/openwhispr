@@ -21,6 +21,7 @@ import {
   parseProvidersResponse,
   parseLocalLoginEnabled,
   selectAuthView,
+  shouldShowServerUrlField,
   resolveProviderView,
   fetchServerProviders,
   resolveProvidersBaseUrl,
@@ -360,5 +361,37 @@ describe("selectAuthView", () => {
 
   it("{ localLoginEnabled:true, providerCount:1 } -> 'local-and-sso'", () => {
     expect(selectAuthView({ localLoginEnabled: true, providerCount: 1 })).toBe("local-and-sso");
+  });
+});
+
+describe("shouldShowServerUrlField (BUG 1 regression)", () => {
+  // quick-260604-eij BUG 1: the onboarding Server URL field was gated behind
+  // the DEFAULT host's authView === "local-and-sso". When yambr.com answered
+  // localLogin:false / zero providers, authView became "sso-only" or
+  // "no-methods" and the field that lets a self-hoster point at their OWN
+  // server never rendered. This codifies that the field's visibility is
+  // INDEPENDENT of authView — by construction (no authView argument).
+
+  it("true when ALLOW_CUSTOM_HOST is enabled (build-time literal passthrough)", () => {
+    expect(shouldShowServerUrlField(true)).toBe(true);
+  });
+
+  it("false when ALLOW_CUSTOM_HOST is disabled (default build DCE-folds the field)", () => {
+    expect(shouldShowServerUrlField(false)).toBe(false);
+  });
+
+  it("stays visible for EVERY authView selectAuthView can produce (the regression)", () => {
+    // Representative inputs that drive each of the three AuthView outcomes.
+    const cases: Array<{ localLoginEnabled: boolean; providerCount: number; expected: string }> = [
+      { localLoginEnabled: true, providerCount: 0, expected: "local-and-sso" },
+      { localLoginEnabled: false, providerCount: 2, expected: "sso-only" },
+      { localLoginEnabled: false, providerCount: 0, expected: "no-methods" },
+    ];
+    for (const c of cases) {
+      // Sanity: the input really does drive the authView we claim.
+      expect(selectAuthView(c)).toBe(c.expected);
+      // BUG 1 contract: the field is visible regardless of that authView.
+      expect(shouldShowServerUrlField(true)).toBe(true);
+    }
   });
 });

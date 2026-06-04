@@ -134,6 +134,26 @@ export function selectAuthView(args: {
   return args.providerCount > 0 ? "sso-only" : "no-methods";
 }
 
+/**
+ * Whether the onboarding/Settings Server URL field should be rendered.
+ *
+ * BUG 1 regression contract (quick-260604-eij): visibility is INTENTIONALLY
+ * independent of `authView`. The Server URL field is what lets a self-hoster
+ * point the client at their OWN server — so it must NOT be gated behind the
+ * DEFAULT server's `authView` answer (e.g. yambr.com returning
+ * localLogin:false / zero providers => "sso-only" or "no-methods"). If it
+ * were, a self-hoster could never reach their own host.
+ *
+ * This function takes NO `authView` argument by design: the type signature
+ * itself prevents anyone re-coupling field visibility to the default host's
+ * gate in the future. The only input is the build-time `ALLOW_CUSTOM_HOST`
+ * literal, which the default (corporate-minimal / upstream-parity) build
+ * folds out via Rolldown DCE.
+ */
+export function shouldShowServerUrlField(allowCustomHost: boolean): boolean {
+  return allowCustomHost;
+}
+
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export interface FetchProvidersResult {
