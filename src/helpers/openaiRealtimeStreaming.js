@@ -34,7 +34,7 @@ class OpenAIRealtimeStreaming {
   }
 
   async connect(options = {}) {
-    const { apiKey, model, preconfigured, language } = options;
+    const { apiKey, model, preconfigured, language, wssUrl } = options;
     if (!apiKey) throw new Error("OpenAI API key is required");
 
     if (this.isConnected || this.isConnecting) {
@@ -52,11 +52,15 @@ class OpenAIRealtimeStreaming {
     this.coldStartBufferSize = 0;
     this.speechStartedAt = null;
 
-    // Phase 05 D-04: route realtime through corporate backend (Speaches+LiteLLM
-    // is OpenAI-Realtime-compatible). URL derived from OPENWHISPR_BACKEND_URL at
-    // build time, or set explicitly via OPENWHISPR_REALTIME_WSS_URL. Empty =
-    // offline build → fail fast (do NOT fall back to api.openai.com).
-    if (!OPENWHISPR_REALTIME_WSS_URL) {
+    // Phase 05 D-04 / RC-2 (v1.7.19): route realtime through the corporate
+    // backend (Speaches+LiteLLM is OpenAI-Realtime-compatible). The host is a
+    // dumb-transport INPUT: the caller (ipcHandlers) derives it at runtime from
+    // backendUrlState.getBackendUrl() and passes it via options.wssUrl. When
+    // absent (default build / no runtime override) fall back to the build-time
+    // OPENWHISPR_REALTIME_WSS_URL constant. Empty resolved host = offline build
+    // → fail fast (do NOT fall back to api.openai.com).
+    const resolvedWssUrl = wssUrl || OPENWHISPR_REALTIME_WSS_URL;
+    if (!resolvedWssUrl) {
       this.isConnecting = false;
       throw new Error(
         "Realtime streaming is not configured for this build (OPENWHISPR_REALTIME_WSS_URL is empty). " +
@@ -64,9 +68,9 @@ class OpenAIRealtimeStreaming {
           "or disable streaming with OPENWHISPR_STREAMING=false."
       );
     }
-    const sep = OPENWHISPR_REALTIME_WSS_URL.includes("?") ? "&" : "?";
+    const sep = resolvedWssUrl.includes("?") ? "&" : "?";
     const langSuffix = language ? `&language=${encodeURIComponent(language)}` : "";
-    const url = `${OPENWHISPR_REALTIME_WSS_URL}${sep}intent=transcription${langSuffix}`;
+    const url = `${resolvedWssUrl}${sep}intent=transcription${langSuffix}`;
     debugLogger.debug("OpenAI Realtime connecting", {
       model: this.model,
       language: language || undefined,
