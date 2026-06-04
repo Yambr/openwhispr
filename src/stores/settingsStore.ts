@@ -1681,6 +1681,29 @@ export async function initializeSettings(): Promise<void> {
   const state = useSettingsStore.getState();
 
   if (window.electronAPI) {
+    // RC-1 (v1.7.19): cold-start serverUrl push. serverUrl is hydrated
+    // synchronously at store construction (above), so by the time this
+    // one-shot init runs it is already present. Push it to the main process
+    // NOW so backendUrlState.runtimeBackendUrl is set BEFORE any /api/*
+    // handler resolves getApiUrl() — otherwise every cloud request falls back
+    // to the build-time public default and times out on a corporate host.
+    //
+    // This is a DIRECT IPC call that deliberately bypasses the auth.ts
+    // subscribe path (auth.ts:68-91): it does NOT mutate the store's
+    // serverUrl, so no change event fires and window.location.reload is
+    // never triggered.
+    try {
+      if (typeof state.serverUrl === "string" && state.serverUrl.length > 0) {
+        window.electronAPI.notifyServerUrlChanged?.(state.serverUrl);
+      }
+    } catch (err) {
+      logger.warn(
+        "Failed to push persisted serverUrl to main process on startup",
+        { error: (err as Error).message },
+        "settings"
+      );
+    }
+
     try {
       const [
         openai,
