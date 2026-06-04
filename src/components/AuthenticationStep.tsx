@@ -11,11 +11,7 @@ import {
 import { OPENWHISPR_BACKEND_URL } from "../config/defaults";
 import { ALLOW_CUSTOM_HOST_ENABLED } from "../config/defaults";
 import { ServerProviderButtons } from "./ServerProviderButtons";
-import {
-  useServerProviders,
-  selectAuthView,
-  shouldShowServerUrlField,
-} from "../lib/serverProviders";
+import { useServerProviders, selectAuthView } from "../lib/serverProviders";
 import { ServerUrlField } from "./onboarding/ServerUrlField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -475,11 +471,18 @@ export default function AuthenticationStep({
           the `authView === "local-and-sso"` block so a self-hoster can point
           the client at their OWN server even when the DEFAULT host answers
           localLogin:false / zero providers (authView "sso-only" / "no-methods").
-          Visibility is driven solely by the build-time ALLOW_CUSTOM_HOST gate
-          via shouldShowServerUrlField — NEVER by authView. Validating a host
-          here persists serverUrl; useServerProviders re-fetches against the new
-          host (deps [baseUrl]) and selectAuthView re-derives from THAT host. */}
-      {shouldShowServerUrlField(ALLOW_CUSTOM_HOST_ENABLED) && (
+          Visibility is driven solely by the build-time ALLOW_CUSTOM_HOST gate —
+          NEVER by authView. Bare `ALLOW_CUSTOM_HOST_ENABLED &&` literal; in the
+          default build vite.config.mjs stub-aliases ServerUrlField to a null
+          component so its SSRF-probe code + `server-url-field` testid +
+          `onboarding.serverUrl.*` literals are absent from the bundle (WR-01;
+          shared with SettingsPage — see that import comment). The
+          shouldShowServerUrlField predicate remains the unit-tested contract
+          codifying "visibility takes no authView argument by construction".
+          Validating a host here persists serverUrl; useServerProviders
+          re-fetches against the new host (deps [baseUrl]) and selectAuthView
+          re-derives from THAT host. */}
+      {ALLOW_CUSTOM_HOST_ENABLED && (
         <ServerUrlField
           onValidated={() => setServerUrlValidated(true)}
           onInvalidated={() => setServerUrlValidated(false)}

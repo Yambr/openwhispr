@@ -81,6 +81,15 @@ import { Toggle } from "./ui/toggle";
 import DeveloperSection from "./DeveloperSection";
 import ChatAgentSettings from "./settings/ChatAgentSettings";
 import DictationAgentSettings from "./settings/DictationAgentSettings";
+// Server URL field (BUG 2, quick-260604-eij). Static import + bare
+// `ALLOW_CUSTOM_HOST_ENABLED &&` JSX gate. In the default (corporate-minimal /
+// upstream-parity) build, vite.config.mjs aliases ./onboarding/ServerUrlField
+// to ServerUrlField.stub.tsx (renders null, carries no `server-url-field` /
+// `onboarding.serverUrl.*` literals) so the field is fully absent from the
+// bundle — the same stub-alias DCE mechanism BILLING/STREAMING use, and the
+// reason a bare `&&` alone is insufficient here (SettingsPage lands in the
+// always-loaded SettingsModal chunk, so the static module edge would otherwise
+// retain ServerUrlField). See scripts/verify-allow-custom-host.js scenario 2.
 import { ServerUrlField } from "./onboarding/ServerUrlField";
 import InferenceConfigEditor from "./settings/InferenceConfigEditor";
 import { MeetingTranscriptionPanel } from "./settings/MeetingSettings";
@@ -3190,9 +3199,10 @@ EOF`,
             )}
 
             {/* Server URL (BUG 2 fix, quick-260604-eij): post-onboarding host
-                change for self-hosters. Bare `&&` on the build-time literal so
-                Rolldown DCE folds the whole block out of the default
-                (corporate-minimal / upstream-parity) build. */}
+                change for self-hosters. Bare `&&` on the build-time literal;
+                the import is stub-aliased to null in the default build (see the
+                ServerUrlField import comment above + vite.config.mjs) so the
+                whole section DCEs out of the corporate-minimal bundle. */}
             {ALLOW_CUSTOM_HOST_ENABLED && (
               <div>
                 <SectionHeader
