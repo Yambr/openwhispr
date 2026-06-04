@@ -284,6 +284,24 @@ function seedLockdownCloudBackupDefault() {
 
 seedLockdownCloudBackupDefault();
 
+// RC-3 (v1.7.19): under PROVIDER_LOCKDOWN_ENABLED there is no BYOK transcription
+// path — everything rides /api/transcribe on the corporate host (RC-1-covered).
+// A stray persisted cloudTranscriptionMode:"byok" (from a pre-fix onboarding)
+// would route transcription to the public BYOK endpoint and time out. Self-heal
+// it to "openwhispr" at module load, BEFORE the store constructor reads
+// cloudTranscriptionMode (readString default is already "openwhispr"), so
+// isOpenWhisprCloudMode stays true. OnboardingFlow is also gated so fresh
+// corporate installs never write "byok" in the first place.
+function seedLockdownTranscriptionMode() {
+  if (!isBrowser) return;
+  if (!PROVIDER_LOCKDOWN_ENABLED) return;
+  if (localStorage.getItem("cloudTranscriptionMode") === "byok") {
+    localStorage.setItem("cloudTranscriptionMode", "openwhispr");
+  }
+}
+
+seedLockdownTranscriptionMode();
+
 function migrateCustomPrompts() {
   if (!isBrowser) return;
   if (localStorage.getItem("_promptsMigrated") === "1") return;
