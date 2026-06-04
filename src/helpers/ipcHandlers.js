@@ -3392,9 +3392,10 @@ class IPCHandlers {
     // build-time-frozen OPENWHISPR_REALTIME_WSS_URL. deriveRealtimeWssUrl
     // returns "" when getBackendUrl() is empty → the streaming class then
     // falls back to its build-time constant (default-build behavior preserved).
-    // generate-build-config self-runs ONLY under require.main===module, so this
-    // require is side-effect-free from main-process code.
-    const { deriveRealtimeWssUrl } = require("../../scripts/generate-build-config");
+    // Imported from the PACKAGED src/helpers/ module (BL-01): scripts/ is NOT in
+    // electron-builder `files`, so requiring it from main threw MODULE_NOT_FOUND
+    // in the packed app. The build-config generator re-exports this same module.
+    const { deriveRealtimeWssUrl } = require("./realtimeWssUrl");
 
     const getSessionCookiesFromWindow = async (win) => {
       const scopedUrls = [getAuthUrl(), getApiUrl()].filter(Boolean);
