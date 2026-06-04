@@ -4,6 +4,18 @@
 **Status:** ✅ CONTRACT CONFIRMED with server peer iho3wkls 2026-06-04 (server takes impl RED-first, generic-naming). Wire shape below is FINAL.
 **Owner of server impl:** server repo (READ-ONLY to this client repo). Do NOT edit server here.
 
+## ✅ SERVER IMPLEMENTED 2026-06-04 (peer iho3wkls, on server main sha f2418411) — FINAL error semantics
+
+The client MUST treat these exact upstream-forwarded codes as the no-fallback signal:
+- **503** — embedding model not configured on the server (env empty AND body has no `model`); returned BEFORE the gateway call. Clean config error.
+- **502** — gateway returned non-2xx (model not installed on the gateway). UpstreamError.
+- **NEVER 401** on a config problem (401 means auth only).
+- So in CloudEmbeddings: any non-2xx (esp. 502/503) → throw explicit `EMBEDDINGS_UNAVAILABLE`
+  → caught by the existing ipcHandlers:990 FTS5 catch → keyword-search degradation. onnx untouched.
+- Two-layer defense: (proactive) `features.embeddings===false` from /api/capabilities skips the
+  request entirely + honest "semantic indexing unavailable" surfacing; (reactive) 502/503 on a
+  live request → same FTS5 path. Both → FTS5, zero onnx, zero cloud-leak.
+
 ## CONFIRMED CONTRACT (server peer agreed, server-side impl in flight)
 
 - **POST `/api/embeddings`** (NOT `/v1` — server uses `/api/*` convention). Auth: Bearer
