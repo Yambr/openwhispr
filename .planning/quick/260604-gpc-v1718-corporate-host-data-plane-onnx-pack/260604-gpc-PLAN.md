@@ -6,7 +6,6 @@ wave: 1
 depends_on: []
 files_modified:
   - src/stores/settingsStore.ts
-  - src/lib/auth.ts
   - src/helpers/openaiRealtimeStreaming.js
   - src/helpers/ipcHandlers.js
   - src/components/OnboardingFlow.tsx
@@ -134,7 +133,7 @@ RC-4 — packaging:
 
     Confirm the touched lines are fork-only via `git blame` (the v1.8.0 runtime-host feature) before editing — they are (initializeSettings host wiring is fork code). Do NOT edit auth.ts.
 
-    Write src/stores/__tests__/host-coldstart-push.test.ts (vitest, TS). Mock window.electronAPI.notifyServerUrlChanged with vi.fn(). Reset the `hasInitialized` guard between cases (re-import module with vi.resetModules, or expose via a test seam already present — prefer resetModules to avoid touching prod code). Set localStorage.serverUrl before constructing the store. Assert: persisted serverUrl → called once with that value; absent → not called.
+    Write src/stores/__tests__/host-coldstart-push.test.ts (vitest, TS). The vitest harness is node-only, so `typeof window === "undefined"` and `localStorage` is absent — the store's `isBrowser` guard would short-circuit serverUrl hydration and `initializeSettings` (`if (!isBrowser) return`), making the test a no-op or throwing `localStorage is not defined`. FIRST, BEFORE importing the store module, set up node stubs mirroring test/helpers/authClientProxy.test.js: assign `globalThis.window = { electronAPI: { notifyServerUrlChanged } }` (notifyServerUrlChanged = vi.fn()) and a Map-backed `localStorage` shim (getItem/setItem/removeItem over a `Map`) on `globalThis`. Set the localStorage.serverUrl entry BEFORE constructing the store so synchronous hydration picks it up. Reset the `hasInitialized` guard between cases (re-import module with vi.resetModules — prefer resetModules to avoid touching prod code; re-establish the window + localStorage stubs after each resetModules so the freshly-imported module sees them). Assert: persisted serverUrl → called once with that value; absent → not called.
   </action>
   <verify>
     <automated>npx vitest run src/stores/__tests__/host-coldstart-push.test.ts</automated>
@@ -158,7 +157,7 @@ RC-4 — packaging:
       (b) DICTATION connectInner (~5124): pass `wssUrl: deriveRealtimeWssUrl(backendUrlState.getBackendUrl())` in the connect({...}) call.
     deriveRealtimeWssUrl returns "" when getBackendUrl() is empty → openaiRealtimeStreaming falls back to the build-time constant, preserving default-build behavior. Owner confirmed the corp backend serves /v1/realtime → this is a pure repoint (token + socket now both hit the corp host).
 
-    Extend test/helpers/openaiRealtimeStreaming.test.js (existing vitest CJS, already mocks build-config + ws): add cases — (1) connect with options.wssUrl uses that exact host in `new WebSocket(...)`; (2) connect without wssUrl uses the build-time constant; (3) both wssUrl and build-time empty → throws (fail-fast, no WebSocket constructed).
+    Extend test/helpers/openaiRealtimeStreaming.test.js (existing vitest CJS, already mocks build-config + ws): add cases — (1) connect with options.wssUrl uses that exact host in `new WebSocket(...)`; (2) connect without wssUrl uses the build-time constant; (3) both wssUrl and build-time empty → throws (fail-fast, no WebSocket constructed). For case (3), re-mock OPENWHISPR_REALTIME_WSS_URL to "" by reusing the existing empty-constant mock pattern from test/helpers/openaiRealtimeStreaming.test.js:55 (`loadStreamingWithMockedUrl("")` via the doMock helper at lines 37-46), then connect with no wssUrl so the resolved host is empty.
   </action>
   <verify>
     <automated>npx vitest run test/helpers/openaiRealtimeStreaming.test.js</automated>
@@ -183,7 +182,7 @@ RC-4 — packaging:
       - line 542: change the spread guard to `...(!isLocal && !isSignedIn && !PROVIDER_LOCKDOWN_ENABLED ? { cloudTranscriptionMode: "byok" } : {})`.
     This prevents a fresh corp onboarding from ever writing byok; the reconciler covers existing installs.
 
-    Write src/stores/__tests__/lockdown-transcription-mode.test.ts (vitest TS). Mock PROVIDER_LOCKDOWN_ENABLED true/false via vi.mock("../config/defaults", ...) per case (use vi.resetModules + dynamic import so the module-load seed runs under the mocked flag). Cases: byok+lockdown→openwhispr; byok+no-lockdown→byok preserved; absent+lockdown→no write.
+    Write src/stores/__tests__/lockdown-transcription-mode.test.ts (vitest TS). The vitest harness is node-only, so the store's `isBrowser` guard (`typeof window === "undefined"`) short-circuits `seedLockdownTranscriptionMode` (`if (!isBrowser) return`) and `localStorage` is undefined. FIRST, BEFORE importing the store module, set up node stubs mirroring test/helpers/authClientProxy.test.js: assign `globalThis.window = {}` (truthy, so isBrowser passes) and a Map-backed `localStorage` shim (getItem/setItem/removeItem over a `Map`) on `globalThis`, and seed the cloudTranscriptionMode entry per case. Mock PROVIDER_LOCKDOWN_ENABLED true/false via vi.mock("../config/defaults", ...) per case (use vi.resetModules + dynamic import so the module-load seed runs under the mocked flag; re-establish the window + localStorage stubs after each resetModules so the freshly-imported module sees them). Cases: byok+lockdown→openwhispr; byok+no-lockdown→byok preserved; absent+lockdown→no write.
   </action>
   <verify>
     <automated>npx vitest run src/stores/__tests__/lockdown-transcription-mode.test.ts</automated>
