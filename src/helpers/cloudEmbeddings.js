@@ -23,8 +23,9 @@
 
 "use strict";
 
-// bge-m3-class dim. One source of truth; embeddingsBootstrap reads this for
-// the qdrant dim migration.
+// Server embedding vector dimension. One source of truth; embeddingsBootstrap
+// reads this for the qdrant dim migration. The client never hardcodes a model
+// name — the server picks the model from operator env.
 const CLOUD_EMBEDDING_DIM = 1024;
 
 // The wire boundary (net.fetch), the token source (tokenStore.get) and the
