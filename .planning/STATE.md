@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 Phase: 1 of 5 (Backend URL SoT Consolidation + Dynamic Better Auth)
 Plan: — (not yet planned)
 Status: Not started — roadmap created, ready to plan Phase 1
-Last activity: 2026-05-30 — Completed quick task 260530-ms3: Adopt upstream #835 (skip API key check for self-hosted transcription)
+Last activity: 2026-06-04 — Completed quick task 260604-eij: custom-host onboarding UX (Server URL field hoist + Settings host-change + WR-01 DCE stub-alias). Verified (6/6 must-haves, DCE gate 0 violations, 152/152 tests).
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -74,12 +74,13 @@ None blocking. Phase 1 carries forward two v1.7.2 integration-check findings as 
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260530-ms3 | Adopt upstream #835 — skip API key check for self-hosted transcription servers | 2026-05-30 | fdc9527c | [260530-ms3-adopt-upstream-835-skip-api-key-check-fo](./quick/260530-ms3-adopt-upstream-835-skip-api-key-check-fo/) |
-| 260603-ogm | Fix #8 (HIGH auth-leak) — desktop OIDC sign-in honors runtime serverUrl instead of build-time AUTH_URL | 2026-06-03 | eb9716d4 | [260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti](./quick/260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti/) |
-| 260603-qhw | #9 client half — server-driven local-login gating (hide email/password form when localLogin.enabled:false) + review fixes | 2026-06-03 | 9bbc7ed3, 2fe15b58 | [260603-qhw-implement-client-half-of-9-server-driven](./quick/260603-qhw-implement-client-half-of-9-server-driven/) |
-| 260603-r0p | WR-01 security — gate prod renderer test-hooks (`__zustand_setServerUrl` SSRF-bypass) behind e2e runtime signal; live-proven via CDP | 2026-06-03 | be1cb424 | [260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin](./quick/260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin/) |
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 260530-ms3 | Adopt upstream #835 — skip API key check for self-hosted transcription servers | 2026-05-30 | fdc9527c |  | [260530-ms3-adopt-upstream-835-skip-api-key-check-fo](./quick/260530-ms3-adopt-upstream-835-skip-api-key-check-fo/) |
+| 260603-ogm | Fix #8 (HIGH auth-leak) — desktop OIDC sign-in honors runtime serverUrl instead of build-time AUTH_URL | 2026-06-03 | eb9716d4 |  | [260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti](./quick/260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti/) |
+| 260603-qhw | #9 client half — server-driven local-login gating (hide email/password form when localLogin.enabled:false) + review fixes | 2026-06-03 | 9bbc7ed3, 2fe15b58 |  | [260603-qhw-implement-client-half-of-9-server-driven](./quick/260603-qhw-implement-client-half-of-9-server-driven/) |
+| 260603-r0p | WR-01 security — gate prod renderer test-hooks (`__zustand_setServerUrl` SSRF-bypass) behind e2e runtime signal; live-proven via CDP | 2026-06-03 | be1cb424 |  | [260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin](./quick/260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin/) |
+| 260604-eij | Custom-host onboarding UX — hoist Server URL field out of localLogin gate (BUG 1, self-hoster could never reach own server) + add Settings host-change section (BUG 2) + WR-01 DCE stub-alias so field is absent from default bundle | 2026-06-04 | a51bfdee | Verified | [260604-eij-custom-host-onboarding-ux-server-url-field](./quick/260604-eij-custom-host-onboarding-ux-server-url-field/) |
 
 ## Session Continuity
 
