@@ -3386,6 +3386,16 @@ class IPCHandlers {
     const backendUrlState = require("./backendUrlState");
     const getApiUrl = () => backendUrlState.getBackendUrl();
     const getAuthUrl = () => backendUrlState.getAuthUrl();
+    // RC-2 (v1.7.19): derive the realtime WSS host from the SAME runtime
+    // backend origin as the /api/* data plane, so a corporate self-hosted
+    // build's realtime socket follows the runtime serverUrl instead of the
+    // build-time-frozen OPENWHISPR_REALTIME_WSS_URL. deriveRealtimeWssUrl
+    // returns "" when getBackendUrl() is empty → the streaming class then
+    // falls back to its build-time constant (default-build behavior preserved).
+    // Imported from the PACKAGED src/helpers/ module (BL-01): scripts/ is NOT in
+    // electron-builder `files`, so requiring it from main threw MODULE_NOT_FOUND
+    // in the packed app. The build-config generator re-exports this same module.
+    const { deriveRealtimeWssUrl } = require("./realtimeWssUrl");
 
     const getSessionCookiesFromWindow = async (win) => {
       const scopedUrls = [getAuthUrl(), getApiUrl()].filter(Boolean);
@@ -4292,6 +4302,8 @@ class IPCHandlers {
         model: options.model,
         language: options.language,
         preconfigured: options.mode !== "byok",
+        // RC-2: runtime-derived corporate WSS host (empty → build-time fallback).
+        wssUrl: deriveRealtimeWssUrl(backendUrlState.getBackendUrl()),
       };
       const { mode: systemAudioMode } = await getMeetingSystemAudioPlan();
       let pairs;
@@ -5128,6 +5140,8 @@ class IPCHandlers {
             (BuildConfig.PROVIDER_LOCKDOWN_ENABLED ? "gpt-realtime" : "gpt-4o-mini-transcribe"),
           preconfigured: isCloud,
           language: options.language,
+          // RC-2: runtime-derived corporate WSS host (empty → build-time fallback).
+          wssUrl: deriveRealtimeWssUrl(backendUrlState.getBackendUrl()),
         });
         this._dictationStreaming = streaming;
       };

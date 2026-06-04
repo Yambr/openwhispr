@@ -167,20 +167,12 @@ function resolveBool(boolKey) {
 //     (or `&intent=...`). Keeping a fragment would swallow that suffix into
 //     the fragment, so `intent` would never reach the server (CR-03).
 //   - Malformed URL → realtime URL stays empty (STREAMING guard kicks in).
-function deriveRealtimeWssUrl(backendUrl) {
-  if (!backendUrl) return "";
-  try {
-    const u = new URL(backendUrl);
-    let protocol;
-    if (u.protocol === "https:") protocol = "wss:";
-    else if (u.protocol === "http:") protocol = "ws:";
-    else return ""; // non-http(s) — let STREAMING auto-disable handle it
-    const pathPrefix = u.pathname.replace(/\/$/, "");
-    return `${protocol}//${u.host}${pathPrefix}/v1/realtime${u.search}`;
-  } catch {
-    return "";
-  }
-}
+//
+// The implementation lives in the PACKAGED module src/helpers/realtimeWssUrl.js
+// (scripts/ is not in electron-builder `files`, so the main process cannot
+// require it at runtime — quick-260604-gpc BL-01). Re-exported here so the
+// build-time and run-time consumers share one source of truth.
+const { deriveRealtimeWssUrl } = require("../src/helpers/realtimeWssUrl");
 
 // Derive an Electron webRequest URL-filter pattern (`<scheme>//<host>/*`)
 // from a backend/auth URL. Consumed by main.js's

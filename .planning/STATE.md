@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 Phase: 1 of 5 (Backend URL SoT Consolidation + Dynamic Better Auth)
 Plan: — (not yet planned)
 Status: Not started — roadmap created, ready to plan Phase 1
-Last activity: 2026-05-30 — Completed quick task 260530-ms3: Adopt upstream #835 (skip API key check for self-hosted transcription)
+Last activity: 2026-06-04 — Completed quick task 260604-gpc: corporate self-hosted data-plane host fixes (RC-1..RC-4) + BL-01 review fix. 173/173 tests, tsc clean, DCE gate still 0 violations, all 6 must-haves verified. PRE-TAG GATES before v1.7.19: (1) RC-4 packed-asar smoke (onnxWorker.js ships + "onnx worker spawned" in packed log + semantic search works); (2) corporate live-verification (real update flow vs internal 10.177.236.0 backend — cloud requests now reach corp host, realtime meeting transcription works).
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -74,12 +74,14 @@ None blocking. Phase 1 carries forward two v1.7.2 integration-check findings as 
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260530-ms3 | Adopt upstream #835 — skip API key check for self-hosted transcription servers | 2026-05-30 | fdc9527c | [260530-ms3-adopt-upstream-835-skip-api-key-check-fo](./quick/260530-ms3-adopt-upstream-835-skip-api-key-check-fo/) |
-| 260603-ogm | Fix #8 (HIGH auth-leak) — desktop OIDC sign-in honors runtime serverUrl instead of build-time AUTH_URL | 2026-06-03 | eb9716d4 | [260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti](./quick/260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti/) |
-| 260603-qhw | #9 client half — server-driven local-login gating (hide email/password form when localLogin.enabled:false) + review fixes | 2026-06-03 | 9bbc7ed3, 2fe15b58 | [260603-qhw-implement-client-half-of-9-server-driven](./quick/260603-qhw-implement-client-half-of-9-server-driven/) |
-| 260603-r0p | WR-01 security — gate prod renderer test-hooks (`__zustand_setServerUrl` SSRF-bypass) behind e2e runtime signal; live-proven via CDP | 2026-06-03 | be1cb424 | [260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin](./quick/260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin/) |
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 260530-ms3 | Adopt upstream #835 — skip API key check for self-hosted transcription servers | 2026-05-30 | fdc9527c |  | [260530-ms3-adopt-upstream-835-skip-api-key-check-fo](./quick/260530-ms3-adopt-upstream-835-skip-api-key-check-fo/) |
+| 260603-ogm | Fix #8 (HIGH auth-leak) — desktop OIDC sign-in honors runtime serverUrl instead of build-time AUTH_URL | 2026-06-03 | eb9716d4 |  | [260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti](./quick/260603-ogm-fix-8-desktop-oidc-sign-in-uses-build-ti/) |
+| 260603-qhw | #9 client half — server-driven local-login gating (hide email/password form when localLogin.enabled:false) + review fixes | 2026-06-03 | 9bbc7ed3, 2fe15b58 |  | [260603-qhw-implement-client-half-of-9-server-driven](./quick/260603-qhw-implement-client-half-of-9-server-driven/) |
+| 260603-r0p | WR-01 security — gate prod renderer test-hooks (`__zustand_setServerUrl` SSRF-bypass) behind e2e runtime signal; live-proven via CDP | 2026-06-03 | be1cb424 |  | [260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin](./quick/260603-r0p-wr-01-gate-auth-ts-prod-test-hooks-behin/) |
+| 260604-eij | Custom-host onboarding UX — hoist Server URL field out of localLogin gate (BUG 1, self-hoster could never reach own server) + add Settings host-change section (BUG 2) + WR-01 DCE stub-alias so field is absent from default bundle | 2026-06-04 | a51bfdee | Verified | [260604-eij-custom-host-onboarding-ux-server-url-field](./quick/260604-eij-custom-host-onboarding-ux-server-url-field/) |
+| 260604-gpc | Corporate self-hosted data-plane + onnx pack (v1.7.19): RC-1 cold-start serverUrl push to main (all /api/* timed out), RC-2 runtime-derive realtime WSS host (both connect sites), RC-3 kill byok under lockdown (gate + self-heal reconciler), RC-4 package onnxWorker.js. + BL-01 review fix (relocate deriveRealtimeWssUrl to packaged helper — scripts/ require crashed packed binary). 173/173 tests | 2026-06-04 | f3a2da91, a51bfdee→HEAD | Verified (pre-tag gates: pack-smoke + corp live) | [260604-gpc-v1718-corporate-host-data-plane-onnx-pack](./quick/260604-gpc-v1718-corporate-host-data-plane-onnx-pack/) |
 
 ## Session Continuity
 

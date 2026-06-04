@@ -467,6 +467,29 @@ export default function AuthenticationStep({
         </p>
       </div>
 
+      {/* BUG 1 fix (quick-260604-eij): the Server URL field is hoisted OUT of
+          the `authView === "local-and-sso"` block so a self-hoster can point
+          the client at their OWN server even when the DEFAULT host answers
+          localLogin:false / zero providers (authView "sso-only" / "no-methods").
+          Visibility is driven solely by the build-time ALLOW_CUSTOM_HOST gate —
+          NEVER by authView. Bare `ALLOW_CUSTOM_HOST_ENABLED &&` literal; in the
+          default build vite.config.mjs stub-aliases ServerUrlField to a null
+          component so its SSRF-probe code + `server-url-field` testid +
+          `onboarding.serverUrl.*` literals are absent from the bundle (WR-01;
+          shared with SettingsPage — see that import comment). The
+          shouldShowServerUrlField predicate remains the unit-tested contract
+          codifying "visibility takes no authView argument by construction".
+          Validating a host here persists serverUrl; useServerProviders
+          re-fetches against the new host (deps [baseUrl]) and selectAuthView
+          re-derives from THAT host. */}
+      {ALLOW_CUSTOM_HOST_ENABLED && (
+        <ServerUrlField
+          onValidated={() => setServerUrlValidated(true)}
+          onInvalidated={() => setServerUrlValidated(false)}
+          disabled={isSocialLoading !== null || isCheckingEmail}
+        />
+      )}
+
       <ServerProviderButtons
         providersOverride={serverProviders.providers}
         onSelect={handleSocialSignIn}
@@ -500,13 +523,6 @@ export default function AuthenticationStep({
             }}
             className="space-y-2"
           >
-            {ALLOW_CUSTOM_HOST_ENABLED && (
-              <ServerUrlField
-                onValidated={() => setServerUrlValidated(true)}
-                onInvalidated={() => setServerUrlValidated(false)}
-                disabled={isSocialLoading !== null || isCheckingEmail}
-              />
-            )}
             <Input
               type="email"
               placeholder={t("auth.emailStep.emailPlaceholder")}

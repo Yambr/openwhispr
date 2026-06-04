@@ -1238,6 +1238,11 @@
       "tipDescription": "Separe várias palavras com vírgulas. Adicione frases de contexto como \"The word is Synty\" para melhor reconhecimento."
     },
     "general": {
+      "serverUrl": {
+        "title": "URL do servidor",
+        "description": "Conecte este aplicativo ao backend OpenWhispr auto-hospedado da sua organização.",
+        "reloadNotice": "Alterar a URL do servidor recarregará o aplicativo para aplicar o novo host."
+      },
       "appearance": {
         "auto": "Auto",
         "dark": "Escuro",

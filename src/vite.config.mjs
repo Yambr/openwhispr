@@ -185,6 +185,42 @@ export default defineConfig(({ mode }) => {
             replacement: useChatStreamingStub,
           });
         }
+
+        // BUG 2 / WR-01 (quick-260604-eij): when ALLOW_CUSTOM_HOST is false (the
+        // corporate-minimal / upstream-parity default), swap the onboarding
+        // Server URL field for a null-rendering stub. ServerUrlField has two
+        // static consumers — onboarding AuthenticationStep and the always-loaded
+        // SettingsPage (SettingsModal chunk) — so a bare `&&` JSX gate alone
+        // leaves the module edge live and the field's SSRF-probe code +
+        // `server-url-field` testid + `onboarding.serverUrl.*` i18n literals leak
+        // into the default bundle. Aliasing to the stub keeps them ABSENT
+        // (verify-allow-custom-host.js scenario 2). Same mechanism as
+        // BILLING/STREAMING above.
+        let allowCustomHostEnabled = true;
+        if (fs.existsSync(buildConfigPath)) {
+          const buildConfig = require(buildConfigPath);
+          allowCustomHostEnabled = buildConfig.ALLOW_CUSTOM_HOST_ENABLED === true;
+        }
+        if (!allowCustomHostEnabled) {
+          const serverUrlFieldStub = path.resolve(
+            __dirname,
+            "components",
+            "onboarding",
+            "ServerUrlField.stub.tsx"
+          );
+          baseAlias.push({
+            find: /^.*\/components\/onboarding\/ServerUrlField(\.tsx)?$/,
+            replacement: serverUrlFieldStub,
+          });
+          baseAlias.push({
+            find: /^\.\/onboarding\/ServerUrlField$/,
+            replacement: serverUrlFieldStub,
+          });
+          baseAlias.push({
+            find: /^\.\/ServerUrlField$/,
+            replacement: serverUrlFieldStub,
+          });
+        }
         return baseAlias;
       })(),
     },

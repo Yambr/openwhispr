@@ -1266,6 +1266,11 @@
       "tipDescription": "Trennen Sie mehrere Wörter mit Kommas. Fügen Sie Kontextphrasen wie \"The word is Synty\" für bessere Erkennung hinzu."
     },
     "general": {
+      "serverUrl": {
+        "title": "Server-URL",
+        "description": "Verbinden Sie diese App mit dem selbst gehosteten OpenWhispr-Backend Ihrer Organisation.",
+        "reloadNotice": "Beim Ändern der Server-URL wird die App neu geladen, um den neuen Host anzuwenden."
+      },
       "appearance": {
         "auto": "Auto",
         "dark": "Dunkel",
