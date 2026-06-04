@@ -1447,6 +1447,11 @@
       "tipDescription": "Separate multiple words with commas. Add context phrases like \"The word is Synty\" for better recognition."
     },
     "general": {
+      "serverUrl": {
+        "title": "Server URL",
+        "description": "Connect this app to your organization's self-hosted OpenWhispr backend.",
+        "reloadNotice": "Changing the server URL will reload the app to apply the new host."
+      },
       "appearance": {
         "auto": "Auto",
         "dark": "Dark",

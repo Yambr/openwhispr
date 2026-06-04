@@ -1266,6 +1266,11 @@
       "tipDescription": "複数の単語はカンマで区切ってください。より良い認識のために \"The word is Synty\" のようなコンテキストフレーズを追加してください。"
     },
     "general": {
+      "serverUrl": {
+        "title": "サーバー URL",
+        "description": "このアプリを組織のセルフホスト型 OpenWhispr バックエンドに接続します。",
+        "reloadNotice": "サーバー URL を変更すると、新しいホストを適用するためにアプリが再読み込みされます。"
+      },
       "appearance": {
         "auto": "自動",
         "dark": "ダーク",

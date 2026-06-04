@@ -1266,6 +1266,11 @@
       "tipDescription": "用逗號分隔多個字詞。新增上下文片語如 \"The word is Synty\" 以獲得更好的辨識效果。"
     },
     "general": {
+      "serverUrl": {
+        "title": "伺服器網址",
+        "description": "將此應用程式連線到您組織自架的 OpenWhispr 後端。",
+        "reloadNotice": "變更伺服器網址將重新載入應用程式以套用新的主機。"
+      },
       "appearance": {
         "auto": "自動",
         "dark": "深色",
