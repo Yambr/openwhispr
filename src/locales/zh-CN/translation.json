@@ -1266,6 +1266,11 @@
       "tipDescription": "用逗号分隔多个词语。添加上下文短语如 \"The word is Synty\" 以获得更好的识别效果。"
     },
     "general": {
+      "serverUrl": {
+        "title": "服务器地址",
+        "description": "将此应用连接到您组织自托管的 OpenWhispr 后端。",
+        "reloadNotice": "更改服务器地址将重新加载应用以应用新的主机。"
+      },
       "appearance": {
         "auto": "自动",
         "dark": "深色",

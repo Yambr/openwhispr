@@ -11,7 +11,11 @@ import {
 import { OPENWHISPR_BACKEND_URL } from "../config/defaults";
 import { ALLOW_CUSTOM_HOST_ENABLED } from "../config/defaults";
 import { ServerProviderButtons } from "./ServerProviderButtons";
-import { useServerProviders, selectAuthView } from "../lib/serverProviders";
+import {
+  useServerProviders,
+  selectAuthView,
+  shouldShowServerUrlField,
+} from "../lib/serverProviders";
 import { ServerUrlField } from "./onboarding/ServerUrlField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -467,6 +471,22 @@ export default function AuthenticationStep({
         </p>
       </div>
 
+      {/* BUG 1 fix (quick-260604-eij): the Server URL field is hoisted OUT of
+          the `authView === "local-and-sso"` block so a self-hoster can point
+          the client at their OWN server even when the DEFAULT host answers
+          localLogin:false / zero providers (authView "sso-only" / "no-methods").
+          Visibility is driven solely by the build-time ALLOW_CUSTOM_HOST gate
+          via shouldShowServerUrlField — NEVER by authView. Validating a host
+          here persists serverUrl; useServerProviders re-fetches against the new
+          host (deps [baseUrl]) and selectAuthView re-derives from THAT host. */}
+      {shouldShowServerUrlField(ALLOW_CUSTOM_HOST_ENABLED) && (
+        <ServerUrlField
+          onValidated={() => setServerUrlValidated(true)}
+          onInvalidated={() => setServerUrlValidated(false)}
+          disabled={isSocialLoading !== null || isCheckingEmail}
+        />
+      )}
+
       <ServerProviderButtons
         providersOverride={serverProviders.providers}
         onSelect={handleSocialSignIn}
@@ -500,13 +520,6 @@ export default function AuthenticationStep({
             }}
             className="space-y-2"
           >
-            {ALLOW_CUSTOM_HOST_ENABLED && (
-              <ServerUrlField
-                onValidated={() => setServerUrlValidated(true)}
-                onInvalidated={() => setServerUrlValidated(false)}
-                disabled={isSocialLoading !== null || isCheckingEmail}
-              />
-            )}
             <Input
               type="email"
               placeholder={t("auth.emailStep.emailPlaceholder")}

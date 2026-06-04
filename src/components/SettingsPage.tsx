@@ -36,7 +36,11 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { AUTH_URL, signOut, deleteAccount } from "../lib/auth";
-import { BILLING_ENABLED, PROVIDER_LOCKDOWN_ENABLED } from "@/config/defaults";
+import {
+  BILLING_ENABLED,
+  PROVIDER_LOCKDOWN_ENABLED,
+  ALLOW_CUSTOM_HOST_ENABLED,
+} from "@/config/defaults";
 import MicPermissionWarning from "./ui/MicPermissionWarning";
 import MicrophoneSettings from "./ui/MicrophoneSettings";
 import PermissionCard from "./ui/PermissionCard";
@@ -77,6 +81,7 @@ import { Toggle } from "./ui/toggle";
 import DeveloperSection from "./DeveloperSection";
 import ChatAgentSettings from "./settings/ChatAgentSettings";
 import DictationAgentSettings from "./settings/DictationAgentSettings";
+import { ServerUrlField } from "./onboarding/ServerUrlField";
 import InferenceConfigEditor from "./settings/InferenceConfigEditor";
 import { MeetingTranscriptionPanel } from "./settings/MeetingSettings";
 import LanguageSelector from "./ui/LanguageSelector";
@@ -3181,6 +3186,29 @@ EOF`,
                     </>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* Server URL (BUG 2 fix, quick-260604-eij): post-onboarding host
+                change for self-hosters. Bare `&&` on the build-time literal so
+                Rolldown DCE folds the whole block out of the default
+                (corporate-minimal / upstream-parity) build. */}
+            {ALLOW_CUSTOM_HOST_ENABLED && (
+              <div>
+                <SectionHeader
+                  title={t("settingsPage.general.serverUrl.title")}
+                  description={t("settingsPage.general.serverUrl.description")}
+                />
+                <SettingsPanel>
+                  <SettingsPanelRow>
+                    <div className="space-y-2 w-full">
+                      <ServerUrlField />
+                      <p className="text-xs text-muted-foreground/80 leading-snug">
+                        {t("settingsPage.general.serverUrl.reloadNotice")}
+                      </p>
+                    </div>
+                  </SettingsPanelRow>
+                </SettingsPanel>
               </div>
             )}
           </div>

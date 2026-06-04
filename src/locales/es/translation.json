@@ -1314,6 +1314,11 @@
       "tipDescription": "Separa varias palabras con comas. Añade frases de contexto como \"The word is Synty\" para un mejor reconocimiento."
     },
     "general": {
+      "serverUrl": {
+        "title": "URL del servidor",
+        "description": "Conecta esta aplicación al backend de OpenWhispr autoalojado de tu organización.",
+        "reloadNotice": "Cambiar la URL del servidor recargará la aplicación para aplicar el nuevo host."
+      },
       "appearance": {
         "auto": "Auto",
         "dark": "Oscuro",

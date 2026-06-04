@@ -1314,6 +1314,11 @@
       "tipDescription": "Séparez plusieurs mots par des virgules. Ajoutez des phrases de contexte comme « The word is Synty » pour une meilleure reconnaissance."
     },
     "general": {
+      "serverUrl": {
+        "title": "URL du serveur",
+        "description": "Connectez cette application au backend OpenWhispr auto-hébergé de votre organisation.",
+        "reloadNotice": "Modifier l'URL du serveur rechargera l'application pour appliquer le nouvel hôte."
+      },
       "appearance": {
         "auto": "Auto",
         "dark": "Sombre",
