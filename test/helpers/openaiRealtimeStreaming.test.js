@@ -149,6 +149,101 @@ describe("openaiRealtimeStreaming — empty-URL guard (Phase 05-02)", () => {
   });
 });
 
+describe("openaiRealtimeStreaming — runtime WSS host override (RC-2)", () => {
+  // Inject a FakeWebSocket + a build-time constant into require.cache, then
+  // connect() with/without options.wssUrl and observe the host the socket
+  // was constructed with. Mirrors the proven CR-01 require.cache pattern.
+  function connectAndCapture({ buildTimeUrl, connectOptions }) {
+    let capturedUrl = null;
+    function FakeWebSocket(url) {
+      capturedUrl = url;
+      this.readyState = 0;
+      this.on = () => {};
+      this.once = () => {};
+      this.close = () => {};
+      this.send = () => {};
+    }
+    FakeWebSocket.OPEN = 1;
+    FakeWebSocket.CONNECTING = 0;
+    FakeWebSocket.CLOSING = 2;
+    FakeWebSocket.CLOSED = 3;
+
+    resetCaches();
+
+    const wsResolved = require.resolve("ws");
+    const realWsCacheEntry = require.cache[wsResolved];
+    require.cache[wsResolved] = {
+      id: wsResolved,
+      filename: wsResolved,
+      loaded: true,
+      exports: FakeWebSocket,
+      children: [],
+      paths: [],
+    };
+    require.cache[CONFIG_PATH] = {
+      id: CONFIG_PATH,
+      filename: CONFIG_PATH,
+      loaded: true,
+      exports: { OPENWHISPR_REALTIME_WSS_URL: buildTimeUrl },
+      children: [],
+      paths: [],
+    };
+
+    // eslint-disable-next-line global-require
+    const Streaming = require(STREAMING_PATH);
+    const inst = new Streaming();
+    const promise = inst.connect({ apiKey: "sk-test-key", ...connectOptions });
+    promise.catch(() => {});
+
+    try { inst.cleanup(); } catch {}
+    if (realWsCacheEntry) require.cache[wsResolved] = realWsCacheEntry;
+    else delete require.cache[wsResolved];
+
+    return { capturedUrl, promise, inst };
+  }
+
+  test("options.wssUrl overrides the build-time host", () => {
+    const { capturedUrl } = connectAndCapture({
+      buildTimeUrl: "wss://build-time.example.com/v1/realtime",
+      connectOptions: { wssUrl: "wss://corp.internal/v1/realtime" },
+    });
+    expect(capturedUrl).toBeTruthy();
+    expect(capturedUrl).toBe("wss://corp.internal/v1/realtime?intent=transcription");
+    // The build-time host must NOT appear.
+    expect(capturedUrl).not.toMatch(/build-time\.example\.com/);
+  });
+
+  test("no options.wssUrl falls back to the build-time host (default build)", () => {
+    const { capturedUrl } = connectAndCapture({
+      buildTimeUrl: "wss://build-time.example.com/v1/realtime",
+      connectOptions: {},
+    });
+    expect(capturedUrl).toBeTruthy();
+    expect(capturedUrl).toBe("wss://build-time.example.com/v1/realtime?intent=transcription");
+  });
+
+  test("empty options.wssUrl ('' from deriveRealtimeWssUrl) falls back to the build-time host", () => {
+    // deriveRealtimeWssUrl returns "" when getBackendUrl() is empty — the
+    // streaming class must treat that as "no override" and use the constant.
+    const { capturedUrl } = connectAndCapture({
+      buildTimeUrl: "wss://build-time.example.com/v1/realtime",
+      connectOptions: { wssUrl: "" },
+    });
+    expect(capturedUrl).toBeTruthy();
+    expect(capturedUrl).toBe("wss://build-time.example.com/v1/realtime?intent=transcription");
+  });
+
+  test("both options.wssUrl and build-time constant empty → fail-fast throw, no WebSocket", async () => {
+    // resolved host is empty → the existing defensive Error fires; the socket
+    // is never constructed (no fallback to api.openai.com).
+    const Streaming = loadStreamingWithMockedUrl("");
+    const inst = new Streaming();
+    await expect(
+      inst.connect({ apiKey: "sk-test-key", wssUrl: "" })
+    ).rejects.toThrow(/OPENWHISPR_REALTIME_WSS_URL is empty/);
+  });
+});
+
 describe("openaiRealtimeStreaming — language query-param suffix (260526-ix4)", () => {
   // Build a URL by invoking connect() with the given language option against a
   // FakeWebSocket that captures the URL synchronously. Reuses the same

@@ -26,6 +26,7 @@
     "src/models/**/*",
     "src/services/localReasoningBridge.js",
     "src/types/**/*",
+    "src/workers/**/*",
     "src/utils.js",
     "src/utils/**/*",
     "src/updater.js",

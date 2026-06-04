@@ -36,6 +36,7 @@ import { getValidationMessage } from "../utils/hotkeyValidator";
 import { getCachedPlatform, getPlatform } from "../utils/platform";
 import logger from "../utils/logger";
 import { ActivationModeSelector } from "./ui/ActivationModeSelector";
+import { PROVIDER_LOCKDOWN_ENABLED } from "../config/defaults";
 import TranscriptionModelPicker from "./TranscriptionModelPicker";
 import { ACCESSIBILITY_SKIPPED_KEY, areRequiredPermissionsMet } from "../utils/permissions";
 
@@ -315,7 +316,10 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
     // Non-signed-in users in cloud mode default to BYOK to avoid
     // "OpenWhispr Cloud requires sign-in" errors.
-    if (!isSignedIn && !useLocalWhisper) {
+    // RC-3: never write "byok" under lockdown — corporate transcription always
+    // rides /api/transcribe (the seedLockdownTranscriptionMode reconciler keeps
+    // existing installs pinned to "openwhispr"; this prevents fresh writes).
+    if (!isSignedIn && !useLocalWhisper && !PROVIDER_LOCKDOWN_ENABLED) {
       updateTranscriptionSettings({ cloudTranscriptionMode: "byok" });
     }
 
@@ -539,7 +543,9 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               onModeChange={(isLocal) => {
                 updateTranscriptionSettings({
                   useLocalWhisper: isLocal,
-                  ...(!isLocal && !isSignedIn ? { cloudTranscriptionMode: "byok" } : {}),
+                  ...(!isLocal && !isSignedIn && !PROVIDER_LOCKDOWN_ENABLED
+                    ? { cloudTranscriptionMode: "byok" }
+                    : {}),
                 });
               }}
               cloudTranscriptionBaseUrl={cloudTranscriptionBaseUrl}
