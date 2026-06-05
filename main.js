@@ -985,6 +985,10 @@ async function startApp() {
           // → silent no-op → the corp build's 1024 vectors mismatch the stale
           // 384 collection and semantic search dies silently. runDimMigration
           // self-guards via `seeded` (no-op unless the cloud facade was seeded).
+          // FORK (260605-p6l): stash the live qdrant port so a post-login
+          // embeddingsBootstrap.reinstall() (fired from auth-set-token, AFTER
+          // startup) can re-derive it for its own dim migration.
+          embeddingsBootstrap.setQdrantPort(qdrantManager.getPort());
           try {
             await embeddingsBootstrap.runDimMigration(qdrantManager.getPort());
           } catch (err) {

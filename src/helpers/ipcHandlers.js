@@ -3391,6 +3391,18 @@ class IPCHandlers {
     ipcMain.handle("auth-set-token", (_event, token) => {
       if (typeof token === "string" && token) {
         tokenStore.set(token);
+        // FORK (260605-p6l): a token just landed. If a lockdown build fail-closed
+        // its embeddings capability probe at startup (no-token), re-probe now and
+        // upgrade the seeded localEmbeddings facade stub→cloud in place. Fire-and-
+        // forget (never awaited) so the IPC handler stays non-blocking; reinstall()
+        // self-guards (lockdown + lastReason==="no-token") and never throws.
+        require("./embeddingsBootstrap")
+          .reinstall()
+          .catch((err) =>
+            debugLogger.debug("embeddings reinstall after auth-set-token failed", {
+              error: err && err.message,
+            })
+          );
       } else {
         // Surface silent rotation-to-empty so we can spot regressions where the
         // renderer thinks it's persisting a token but the value never lands.
