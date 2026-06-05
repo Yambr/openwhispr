@@ -44,15 +44,20 @@ async function getCapabilities(deps) {
   try {
     const token = getToken();
     if (!token) {
-      // Do not send an unauthenticated request — fail closed.
+      // Do not send an unauthenticated request — fail closed. TRANSIENT: the
+      // token may land later via auth-set-token, so reason "no-token" arms the
+      // post-login re-probe (embeddingsBootstrap.reinstall).
       debug("capabilities: no auth token; embeddings unavailable (fail-closed)");
-      return { ...FAIL_CLOSED };
+      return { ...FAIL_CLOSED, reason: "no-token" };
     }
 
     const apiUrl = getBackendUrl();
     if (!apiUrl) {
+      // TRANSIENT under runtime onboarding — the backend URL can land at the
+      // same time as the token. Classify "no-token" (not "error") so the
+      // post-login re-probe still fires once both are present.
       debug("capabilities: no backend URL; embeddings unavailable (fail-closed)");
-      return { ...FAIL_CLOSED };
+      return { ...FAIL_CLOSED, reason: "no-token" };
     }
 
     const res = await fetch(`${apiUrl}/api/capabilities`, {
@@ -64,23 +69,33 @@ async function getCapabilities(deps) {
     });
 
     if (!res || !res.ok) {
-      debug("capabilities: embeddings unavailable on this server", {
-        status: res && res.status,
-      });
-      return { ...FAIL_CLOSED };
+      // AUTHORITATIVE (a token-bearing probe was answered): 401 → "unauthorized",
+      // any other non-ok → "server-false". Both make the bootstrap stop
+      // re-probing (no retry storm).
+      const status = res && res.status;
+      debug("capabilities: embeddings unavailable on this server", { status });
+      return {
+        ...FAIL_CLOSED,
+        reason: status === 401 ? "unauthorized" : "server-false",
+      };
     }
 
     const body = await res.json();
     const features = (body && body.features) || {};
+    const embeddings = features.embeddings === true;
     return {
-      embeddings: features.embeddings === true,
+      embeddings,
       rerank: features.rerank === true,
+      // AUTHORITATIVE: "ok" on a clean true probe; "server-false" when the
+      // server explicitly reports embeddings off.
+      reason: embeddings ? "ok" : "server-false",
     };
   } catch (err) {
+    // AUTHORITATIVE error (network/bad-json after a token-bearing attempt).
     debug("capabilities: embeddings unavailable on this server", {
       error: err && err.message,
     });
-    return { ...FAIL_CLOSED };
+    return { ...FAIL_CLOSED, reason: "error" };
   }
 }
 

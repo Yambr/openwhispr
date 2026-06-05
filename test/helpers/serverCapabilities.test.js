@@ -35,10 +35,25 @@ describe("serverCapabilities.getCapabilities", () => {
     expect(caps.embeddings).toBe(true);
   });
 
+  it("returns reason 'ok' alongside embeddings:true on a clean true probe", async () => {
+    fetchMock.mockResolvedValue(okJson({ features: { embeddings: true, rerank: true } }));
+    const caps = await getCapabilities(deps);
+    expect(caps.embeddings).toBe(true);
+    expect(caps.rerank).toBe(true);
+    expect(caps.reason).toBe("ok");
+  });
+
   it("returns { embeddings: false } when server reports features.embeddings false", async () => {
     fetchMock.mockResolvedValue(okJson({ features: { embeddings: false, rerank: false } }));
     const caps = await getCapabilities(deps);
     expect(caps.embeddings).toBe(false);
+  });
+
+  it("returns reason 'server-false' when server reports embeddings false (authoritative)", async () => {
+    fetchMock.mockResolvedValue(okJson({ features: { embeddings: false, rerank: false } }));
+    const caps = await getCapabilities(deps);
+    expect(caps.embeddings).toBe(false);
+    expect(caps.reason).toBe("server-false");
   });
 
   it("GETs /api/capabilities with a Bearer header against the runtime backend URL", async () => {
@@ -58,11 +73,32 @@ describe("serverCapabilities.getCapabilities", () => {
     );
   });
 
+  it("reason 'server-false' on a non-ok non-401 response (e.g. 500)", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    const caps = await getCapabilities(deps);
+    expect(caps.embeddings).toBe(false);
+    expect(caps.reason).toBe("server-false");
+  });
+
+  it("reason 'unauthorized' on a 401 response (authoritative, no retry)", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 401, json: async () => ({}) });
+    const caps = await getCapabilities(deps);
+    expect(caps.embeddings).toBe(false);
+    expect(caps.reason).toBe("unauthorized");
+  });
+
   it("fails closed on a network rejection, no throw", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
     await expect(getCapabilities(deps)).resolves.toEqual(
       expect.objectContaining({ embeddings: false })
     );
+  });
+
+  it("reason 'error' on a network rejection", async () => {
+    fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
+    const caps = await getCapabilities(deps);
+    expect(caps.embeddings).toBe(false);
+    expect(caps.reason).toBe("error");
   });
 
   it("fails closed on malformed JSON, no throw", async () => {
@@ -78,6 +114,19 @@ describe("serverCapabilities.getCapabilities", () => {
     );
   });
 
+  it("reason 'error' on malformed JSON", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON");
+      },
+    });
+    const caps = await getCapabilities(deps);
+    expect(caps.embeddings).toBe(false);
+    expect(caps.reason).toBe("error");
+  });
+
   it("fails closed when no token is available (does not send unauthenticated)", async () => {
     deps.getToken = () => null;
     const caps = await getCapabilities(deps);
@@ -85,10 +134,26 @@ describe("serverCapabilities.getCapabilities", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("reason 'no-token' when no token is available (transient, arms post-login retry)", async () => {
+    deps.getToken = () => null;
+    const caps = await getCapabilities(deps);
+    expect(caps.embeddings).toBe(false);
+    expect(caps.reason).toBe("no-token");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("fails closed when the backend URL is empty (does not fetch)", async () => {
     deps.getBackendUrl = () => "";
     const caps = await getCapabilities(deps);
     expect(caps.embeddings).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("reason 'no-token' (transient) when the backend URL is empty — URL may arrive with onboarding", async () => {
+    deps.getBackendUrl = () => "";
+    const caps = await getCapabilities(deps);
+    expect(caps.embeddings).toBe(false);
+    expect(caps.reason).toBe("no-token");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

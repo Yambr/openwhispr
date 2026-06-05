@@ -82,25 +82,39 @@ describe("embeddingsBootstrap.install — build gate OFF (default build)", () =>
 });
 
 describe("embeddingsBootstrap.install — gate ON + caps.embeddings TRUE", () => {
-  it("seeds the cloud facade so require('./localEmbeddings') returns cloud; onnx never required; seeded=true", async () => {
+  it("seeds a stable facade whose embedText forwards to the cloud delegate; onnx never required; seeded=true", async () => {
     bootstrap = freshBootstrap();
+    const cloudVec = new Float32Array([1, 2, 3]);
     const cloud = makeCloudFacade();
-    const deps = baseDeps({ cloudEmbeddings: cloud });
+    cloud.embedText = async () => cloudVec;
+    const deps = baseDeps({ cloudEmbeddings: cloud, getCapabilities: vi.fn(async () => ({ embeddings: true, reason: "ok" })) });
     bootstrap._setTestDeps(deps);
     await bootstrap.install();
     expect(deps.getCapabilities).toHaveBeenCalledTimes(1);
     expect(require.cache[LE_PATH]).toBeDefined();
-    expect(require.cache[LE_PATH].exports).toBe(cloud);
-    expect(require(LE_PATH)).toBe(cloud);
+    // The cache now holds the stable FACADE (not the cloud module directly).
+    // Assert the forwarder routes embedText through to the cloud delegate.
+    const seeded = require(LE_PATH);
+    await expect(seeded.embedText("q")).resolves.toBe(cloudVec);
     expect(onnxRequired).toBe(false);
     expect(bootstrap._isSeeded()).toBe(true);
+    expect(bootstrap._lastReason()).toBe("ok");
+  });
+
+  it("facade keeps a stable LocalEmbeddings.noteEmbedText (vectorIndex.js:3 destructure works)", async () => {
+    bootstrap = freshBootstrap();
+    const deps = baseDeps({ getCapabilities: vi.fn(async () => ({ embeddings: true, reason: "ok" })) });
+    bootstrap._setTestDeps(deps);
+    await bootstrap.install();
+    const { LocalEmbeddings } = require(LE_PATH);
+    expect(LocalEmbeddings.noteEmbedText("T", "C", "E")).toBe("T\nE");
   });
 });
 
 describe("embeddingsBootstrap.install — gate ON + caps.embeddings FALSE", () => {
   it("seeds a throw-fast stub: embedText rejects EMBEDDINGS_UNAVAILABLE, isAvailable false, downloadModel no-op; onnx never required; seeded=false", async () => {
     bootstrap = freshBootstrap();
-    const deps = baseDeps({ getCapabilities: vi.fn(async () => ({ embeddings: false })) });
+    const deps = baseDeps({ getCapabilities: vi.fn(async () => ({ embeddings: false, reason: "server-false" })) });
     bootstrap._setTestDeps(deps);
     await bootstrap.install();
 
@@ -113,6 +127,18 @@ describe("embeddingsBootstrap.install — gate ON + caps.embeddings FALSE", () =
     expect(onnxRequired).toBe(false);
     expect(bootstrap._isSeeded()).toBe(false);
     expect(deps.debug).toHaveBeenCalled();
+  });
+
+  it("install() at startup with caps no-token -> stub delegate + _lastReason 'no-token' (arms reinstall)", async () => {
+    bootstrap = freshBootstrap();
+    const deps = baseDeps({ getCapabilities: vi.fn(async () => ({ embeddings: false, reason: "no-token" })) });
+    bootstrap._setTestDeps(deps);
+    await bootstrap.install();
+    const seeded = require(LE_PATH);
+    expect(seeded.isAvailable()).toBe(false);
+    await expect(seeded.embedText("q")).rejects.toMatchObject({ code: "EMBEDDINGS_UNAVAILABLE" });
+    expect(bootstrap._isSeeded()).toBe(false);
+    expect(bootstrap._lastReason()).toBe("no-token");
   });
 
   it("a simulated semantic search catches the stub rejection and falls back to FTS5 without throwing", async () => {
@@ -171,6 +197,169 @@ describe("embeddingsBootstrap.install — bootstrap sequence safety + idempotenc
     await bootstrap.install();
     await bootstrap.install();
     expect(deps.getCapabilities).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("embeddingsBootstrap.reinstall — post-login capability re-probe", () => {
+  // THE CRUX: vectorIndex.js:2 captures `require("./localEmbeddings")` ONCE at
+  // module-load and calls .embedText on THAT object per-call. reinstall() must
+  // mutate-in-place the SAME seeded facade so the captured ref flips
+  // transparently. These tests capture the ref BEFORE reinstall (mirroring
+  // vectorIndex) and assert it routes to the cloud delegate AFTER.
+
+  it("upgrades stub->cloud on the SAME object when prior reason was 'no-token' (mutate-in-place proof)", async () => {
+    bootstrap = freshBootstrap();
+    const cloudVec = new Float32Array([9, 9, 9]);
+    const cloud = makeCloudFacade();
+    cloud.embedText = async () => cloudVec;
+    const getCapabilities = vi
+      .fn()
+      .mockResolvedValueOnce({ embeddings: false, reason: "no-token" }) // startup
+      .mockResolvedValueOnce({ embeddings: true, reason: "ok" }); // post-login
+    const client = {
+      getCollection: vi.fn(async () => ({ config: { params: { vectors: { size: 384 } } } })),
+      deleteCollection: vi.fn(async () => {}),
+      createCollection: vi.fn(async () => {}),
+    };
+    const makeQdrantClient = vi.fn(() => client);
+    bootstrap._setTestDeps(baseDeps({ getCapabilities, cloudEmbeddings: cloud, makeQdrantClient }));
+    await bootstrap.install();
+
+    // Capture the ref the way vectorIndex.js:2 does — BEFORE reinstall.
+    const ref = require(LE_PATH);
+    await expect(ref.embedText("q")).rejects.toMatchObject({ code: "EMBEDDINGS_UNAVAILABLE" });
+
+    bootstrap.setQdrantPort(6333);
+    await bootstrap.reinstall();
+
+    // The SAME captured ref now routes to the cloud delegate.
+    await expect(ref.embedText("q")).resolves.toBe(cloudVec);
+    expect(bootstrap._isSeeded()).toBe(true);
+    expect(bootstrap._lastReason()).toBe("ok");
+    // Dim migration ran once via the stashed port (one client built).
+    expect(makeQdrantClient).toHaveBeenCalledTimes(1);
+    expect(makeQdrantClient).toHaveBeenCalledWith(6333);
+  });
+
+  it("no-op when prior reason was authoritative 'server-false' (no re-probe, stays stub, no retry storm)", async () => {
+    bootstrap = freshBootstrap();
+    const getCapabilities = vi.fn(async () => ({ embeddings: false, reason: "server-false" }));
+    bootstrap._setTestDeps(baseDeps({ getCapabilities }));
+    await bootstrap.install();
+    expect(getCapabilities).toHaveBeenCalledTimes(1);
+
+    const ref = require(LE_PATH);
+    await bootstrap.reinstall();
+
+    // getCapabilities NOT called again; still stub.
+    expect(getCapabilities).toHaveBeenCalledTimes(1);
+    await expect(ref.embedText("q")).rejects.toMatchObject({ code: "EMBEDDINGS_UNAVAILABLE" });
+    expect(bootstrap._isSeeded()).toBe(false);
+  });
+
+  it("concurrency-safe: two overlapping reinstall() calls re-probe and migrate at most once", async () => {
+    bootstrap = freshBootstrap();
+    let resolveSlow;
+    const slow = new Promise((r) => (resolveSlow = r));
+    const getCapabilities = vi
+      .fn()
+      .mockResolvedValueOnce({ embeddings: false, reason: "no-token" }) // startup
+      .mockImplementationOnce(async () => {
+        await slow;
+        return { embeddings: true, reason: "ok" };
+      });
+    const client = {
+      getCollection: vi.fn(async () => ({ config: { params: { vectors: { size: 384 } } } })),
+      deleteCollection: vi.fn(async () => {}),
+      createCollection: vi.fn(async () => {}),
+    };
+    const makeQdrantClient = vi.fn(() => client);
+    bootstrap._setTestDeps(baseDeps({ getCapabilities, makeQdrantClient }));
+    await bootstrap.install();
+    bootstrap.setQdrantPort(6333);
+
+    // Fire two concurrent reinstall() calls while the re-probe is in flight.
+    const a = bootstrap.reinstall();
+    const b = bootstrap.reinstall();
+    resolveSlow();
+    await Promise.all([a, b]);
+
+    // getCapabilities: 1 (startup) + 1 (single coalesced re-probe) = 2 total.
+    expect(getCapabilities).toHaveBeenCalledTimes(2);
+    // Migration client built at most once.
+    expect(makeQdrantClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("reinstall() before install() ever ran is a no-op (nothing to upgrade)", async () => {
+    bootstrap = freshBootstrap();
+    const getCapabilities = vi.fn(async () => ({ embeddings: true, reason: "ok" }));
+    bootstrap._setTestDeps(baseDeps({ getCapabilities }));
+    await bootstrap.reinstall();
+    expect(getCapabilities).not.toHaveBeenCalled();
+    expect(require.cache[LE_PATH]).toBeUndefined();
+  });
+
+  it("reinstall() when install() already seeded cloud is a no-op (already upgraded)", async () => {
+    bootstrap = freshBootstrap();
+    const getCapabilities = vi.fn(async () => ({ embeddings: true, reason: "ok" }));
+    bootstrap._setTestDeps(baseDeps({ getCapabilities }));
+    await bootstrap.install();
+    expect(getCapabilities).toHaveBeenCalledTimes(1);
+    await bootstrap.reinstall();
+    // Already cloud → reinstall does not re-probe.
+    expect(getCapabilities).toHaveBeenCalledTimes(1);
+  });
+
+  it("reinstall() swaps the delegate but SKIPS migration when no qdrant port was stashed", async () => {
+    bootstrap = freshBootstrap();
+    const cloud = makeCloudFacade();
+    const getCapabilities = vi
+      .fn()
+      .mockResolvedValueOnce({ embeddings: false, reason: "no-token" })
+      .mockResolvedValueOnce({ embeddings: true, reason: "ok" });
+    const makeQdrantClient = vi.fn();
+    bootstrap._setTestDeps(baseDeps({ getCapabilities, cloudEmbeddings: cloud, makeQdrantClient }));
+    await bootstrap.install();
+    // setQdrantPort NOT called -> port unknown.
+    await bootstrap.reinstall();
+    expect(bootstrap._isSeeded()).toBe(true);
+    expect(makeQdrantClient).not.toHaveBeenCalled();
+  });
+
+  it("reinstall() with a still-no-token re-probe stays armed (lastReason stays 'no-token')", async () => {
+    bootstrap = freshBootstrap();
+    const getCapabilities = vi
+      .fn()
+      .mockResolvedValueOnce({ embeddings: false, reason: "no-token" })
+      .mockResolvedValueOnce({ embeddings: false, reason: "no-token" });
+    bootstrap._setTestDeps(baseDeps({ getCapabilities }));
+    await bootstrap.install();
+    await bootstrap.reinstall();
+    expect(getCapabilities).toHaveBeenCalledTimes(2);
+    expect(bootstrap._isSeeded()).toBe(false);
+    expect(bootstrap._lastReason()).toBe("no-token");
+  });
+
+  it("reinstall() never throws even if the re-probe rejects", async () => {
+    bootstrap = freshBootstrap();
+    const getCapabilities = vi
+      .fn()
+      .mockResolvedValueOnce({ embeddings: false, reason: "no-token" })
+      .mockRejectedValueOnce(new Error("boom"));
+    bootstrap._setTestDeps(baseDeps({ getCapabilities }));
+    await bootstrap.install();
+    await expect(bootstrap.reinstall()).resolves.toBeUndefined();
+    expect(bootstrap._isSeeded()).toBe(false);
+  });
+
+  it("reinstall() (build gate OFF) is a strict no-op (no probe, no seed)", async () => {
+    bootstrap = freshBootstrap();
+    const getCapabilities = vi.fn(async () => ({ embeddings: true, reason: "ok" }));
+    bootstrap._setTestDeps(baseDeps({ lockdownEnabled: false, getCapabilities }));
+    await bootstrap.install(); // no-op
+    await bootstrap.reinstall(); // no-op
+    expect(getCapabilities).not.toHaveBeenCalled();
+    expect(require.cache[LE_PATH]).toBeUndefined();
   });
 });
 
