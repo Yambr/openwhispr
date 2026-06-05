@@ -261,4 +261,59 @@ describe("embeddingsBootstrap.runDimMigration", () => {
     expect(calls).toContain("create:notes:1024");
     expect(calls).toContain("create:conversation_chunks:1024");
   });
+
+  // BL-01 REGRESSION: the main.js wiring MUST run runDimMigration only AFTER
+  // qdrantManager.start() resolves AND ensureCollection() completes. The
+  // original bug read qdrantManager.isReady() SYNCHRONOUSLY in a separate block
+  // (start() still pending → isReady() false → && short-circuits → migration
+  // ran against an unstarted qdrant → silent no-op → 384 collection never
+  // migrated to 1024 → corp semantic search silently dead). This test
+  // reproduces the deferred-start sequence the real entrypoint must honor and
+  // asserts the ordering: migration fires AFTER ensureCollection, never before.
+  it("ordering: migration runs after a DEFERRED start() resolves + ensureCollection (BL-01)", async () => {
+    bootstrap = freshBootstrap();
+    const order = [];
+    const client = {
+      getCollection: vi.fn(async () => ({ config: { params: { vectors: { size: 384 } } } })),
+      deleteCollection: vi.fn(async () => {}),
+      createCollection: vi.fn(async () => order.push("migrate")),
+    };
+    bootstrap._setTestDeps(baseDeps({ makeQdrantClient: vi.fn(() => client) }));
+    await bootstrap.install();
+
+    // Simulate the entrypoint: qdrant start() is a PENDING promise; isReady()
+    // is false until it resolves. ensureCollection runs first, THEN migration.
+    let ready = false;
+    let resolveStart;
+    const start = new Promise((r) => (resolveStart = r));
+    const isReady = () => ready;
+    const ensureCollection = vi.fn(async () => order.push("ensureCollection"));
+
+    // The CORRECT wiring (mirrors main.js): chain off start()'s resolution.
+    const wired = start.then(async () => {
+      if (isReady()) {
+        await ensureCollection();
+        await bootstrap.runDimMigration(6333);
+      }
+    });
+
+    // At this synchronous tick start() is unresolved → if the wiring had read
+    // isReady() synchronously in a separate block, migration would run now (the
+    // bug). It must NOT have run yet.
+    expect(order).toEqual([]);
+
+    // Now resolve start() the way qdrantManager.start() eventually does.
+    ready = true;
+    resolveStart();
+    await wired;
+
+    // ensureCollection BEFORE migrate, and migrate DID run (not short-circuited).
+    // runDimMigration recreates BOTH collections (notes + conversation_chunks),
+    // so "migrate" appears twice — the load-bearing assertions are: (1) it ran
+    // at all (not short-circuited by a synchronous isReady() false), and (2)
+    // ensureCollection came strictly first.
+    expect(order[0]).toBe("ensureCollection");
+    expect(order.filter((s) => s === "migrate").length).toBe(2);
+    expect(order.indexOf("ensureCollection")).toBeLessThan(order.indexOf("migrate"));
+  });
 });

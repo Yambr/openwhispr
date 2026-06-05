@@ -967,36 +967,35 @@ async function startApp() {
   if (qdrantManager.isAvailable()) {
     qdrantManager
       .start()
-      .then(() => {
+      .then(async () => {
         if (qdrantManager.isReady()) {
           const vectorIndex = require("./src/helpers/vectorIndex");
           vectorIndex.init(qdrantManager.getPort());
-          vectorIndex.ensureCollection().catch((err) => {
+          try {
+            await vectorIndex.ensureCollection();
+          } catch (err) {
             debugLogger.debug("Qdrant collection setup error (non-fatal)", { error: err.message });
-          });
+          }
+          // FORK (260604-tsa): dim migration MUST run AFTER start() RESOLVES and
+          // AFTER ensureCollection() (which hardcodes 384) — so it is chained
+          // here, inside the resolved start().then(), NOT in a separate block.
+          // BL-01: a separate block that reads qdrantManager.isReady()
+          // synchronously at startup short-circuits (start() is still pending →
+          // isReady() false) and runs the migration against an unstarted qdrant
+          // → silent no-op → the corp build's 1024 vectors mismatch the stale
+          // 384 collection and semantic search dies silently. runDimMigration
+          // self-guards via `seeded` (no-op unless the cloud facade was seeded).
+          try {
+            await embeddingsBootstrap.runDimMigration(qdrantManager.getPort());
+          } catch (err) {
+            debugLogger.debug("Embedding dim migration error (non-fatal)", {
+              error: err.message,
+            });
+          }
         }
       })
       .catch((err) => {
         debugLogger.debug("Qdrant startup error (non-fatal)", { error: err.message });
-      });
-  }
-
-  // FORK (260604-tsa): dim migration MUST run AFTER ensureCollection (which
-  // hardcodes 384) resolves — chain it, do not race the upstream .catch. The
-  // invariant: ensureCollection() resolves BEFORE migrateCollectionDim runs, so
-  // the 384 collection exists to be detected and recreated at 1024 (never the
-  // reverse). runDimMigration self-guards via `seeded` (no-op unless the cloud
-  // facade was seeded), so calling it unconditionally is safe.
-  if (qdrantManager.isAvailable()) {
-    Promise.resolve(
-      qdrantManager.isReady() &&
-        require("./src/helpers/vectorIndex").ensureCollection()
-    )
-      .then(() => embeddingsBootstrap.runDimMigration(qdrantManager.getPort()))
-      .catch((err) => {
-        debugLogger.debug("Embedding dim migration error (non-fatal)", {
-          error: err.message,
-        });
       });
   }
 
