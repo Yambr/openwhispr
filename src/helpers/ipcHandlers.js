@@ -996,19 +996,28 @@ class IPCHandlers {
       const vectorIndex = require("./vectorIndex");
       if (!vectorIndex.isReady()) return { success: false, error: "Vector index not ready" };
 
-      // FORK (260604-tsa): probe embedding availability BEFORE reindexAll —
-      // upstream reindexAll swallows per-batch embed failures (vectorIndex.js:
-      // 77-87, debug-log only), so under the throw-fast stub it would falsely
-      // return { success:true, indexed:0 }. localEmbeddings resolves to the
-      // seeded facade under lockdown (cloud → isAvailable()===true; stub →
-      // false); default build → real local module → true once the model exists.
-      // Honest early-return instead. Does NOT edit upstream vectorIndex.reindexAll.
-      const localEmbeddings = require("./localEmbeddings");
-      if (
-        typeof localEmbeddings.isAvailable === "function" &&
-        localEmbeddings.isAvailable() === false
-      ) {
-        return { success: false, error: "notes.embeddings.cloudUnavailable" };
+      // FORK (260604-tsa): under lockdown, probe embedding availability BEFORE
+      // reindexAll — upstream reindexAll swallows per-batch embed failures
+      // (vectorIndex.js:77-87, debug-log only), so under the throw-fast stub it
+      // would falsely return { success:true, indexed:0 }. localEmbeddings
+      // resolves to the seeded facade under lockdown (cloud → isAvailable()===
+      // true; stub → false). Honest early-return with the corp-flavored
+      // "cloudUnavailable" key. Does NOT edit upstream vectorIndex.reindexAll.
+      //
+      // MED-01: GATE this behind lockdown. On a DEFAULT build localEmbeddings is
+      // the real onnx module and isAvailable()===false also means "the local
+      // MiniLM model is still downloading" — returning the self-hosted-flavored
+      // "cloudUnavailable" error there is factually wrong. Default build keeps
+      // the upstream behavior (proceed, index what it can), so this probe must
+      // only fire when we're actually routing to the cloud (lockdown).
+      if (BuildConfig.PROVIDER_LOCKDOWN_ENABLED === true) {
+        const localEmbeddings = require("./localEmbeddings");
+        if (
+          typeof localEmbeddings.isAvailable === "function" &&
+          localEmbeddings.isAvailable() === false
+        ) {
+          return { success: false, error: "notes.embeddings.cloudUnavailable" };
+        }
       }
 
       const notes = this.databaseManager.getNotes(null, 100000);

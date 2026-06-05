@@ -36,13 +36,18 @@ async function reindexHandler(self, deps) {
   const vectorIndex = deps.vectorIndex;
   if (!vectorIndex.isReady()) return { success: false, error: "Vector index not ready" };
 
-  // FORK (260604-tsa): probe embedding availability BEFORE reindexAll.
-  const localEmbeddings = deps.localEmbeddings;
-  if (
-    typeof localEmbeddings.isAvailable === "function" &&
-    localEmbeddings.isAvailable() === false
-  ) {
-    return { success: false, error: "notes.embeddings.cloudUnavailable" };
+  // FORK (260604-tsa): under lockdown, probe embedding availability BEFORE
+  // reindexAll. MED-01: gated behind PROVIDER_LOCKDOWN_ENABLED — on a default
+  // build isAvailable()===false also means "local model still downloading", so
+  // the corp-flavored cloudUnavailable error must NOT fire there.
+  if (deps.lockdownEnabled === true) {
+    const localEmbeddings = deps.localEmbeddings;
+    if (
+      typeof localEmbeddings.isAvailable === "function" &&
+      localEmbeddings.isAvailable() === false
+    ) {
+      return { success: false, error: "notes.embeddings.cloudUnavailable" };
+    }
   }
 
   const notes = self.databaseManager.getNotes(null, 100000);
@@ -74,15 +79,26 @@ beforeEach(() => {
   deps = {
     vectorIndex: { isReady: () => true, reindexAll: reindexAllSpy },
     localEmbeddings: { isAvailable: vi.fn(() => true) },
+    lockdownEnabled: true, // default to the corp/lockdown build for these cases
   };
 });
 
 describe("db-semantic-reindex-all — honest unavailability probe", () => {
-  it("isAvailable()===false → { success:false, error:'notes.embeddings.cloudUnavailable' } WITHOUT reindexAll", async () => {
+  it("lockdown + isAvailable()===false → { success:false, error:'notes.embeddings.cloudUnavailable' } WITHOUT reindexAll", async () => {
+    deps.lockdownEnabled = true;
     deps.localEmbeddings.isAvailable = vi.fn(() => false);
     const result = await reindexHandler(self, deps);
     expect(result).toEqual({ success: false, error: "notes.embeddings.cloudUnavailable" });
     expect(reindexAllSpy).not.toHaveBeenCalled();
+  });
+
+  it("MED-01: DEFAULT build (lockdown OFF) + isAvailable()===false → probe SKIPPED, proceeds to reindexAll (no corp error)", async () => {
+    deps.lockdownEnabled = false;
+    deps.localEmbeddings.isAvailable = vi.fn(() => false);
+    const result = await reindexHandler(self, deps);
+    // Default build keeps upstream behavior: index what it can, no cloud error.
+    expect(reindexAllSpy).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
   });
 
   it("isAvailable()===true → proceeds to reindexAll and returns { success:true, indexed }", async () => {
@@ -107,11 +123,17 @@ describe("parity guard — reproduction matches the shipped handler", () => {
     // Isolate the db-semantic-reindex-all handler body.
     const start = HANDLER_SRC.indexOf('ipcMain.handle("db-semantic-reindex-all"');
     expect(start).toBeGreaterThan(-1);
-    const body = HANDLER_SRC.slice(start, start + 1200);
+    const body = HANDLER_SRC.slice(start, start + 2400);
     // Fork probe present.
     expect(body).toMatch(/localEmbeddings\s*=\s*require\("\.\/localEmbeddings"\)/);
     expect(body).toMatch(/localEmbeddings\.isAvailable\(\)\s*===\s*false/);
     expect(body).toContain('"notes.embeddings.cloudUnavailable"');
+    // MED-01: the probe MUST be gated behind PROVIDER_LOCKDOWN_ENABLED, and the
+    // gate must appear BEFORE the isAvailable() check (wraps it).
+    expect(body).toMatch(/BuildConfig\.PROVIDER_LOCKDOWN_ENABLED\s*===\s*true/);
+    expect(body.indexOf("PROVIDER_LOCKDOWN_ENABLED")).toBeLessThan(
+      body.indexOf("isAvailable() === false")
+    );
     // Upstream reindexAll invocation byte-identical.
     expect(body).toContain("await vectorIndex.reindexAll(notes, (completed, total) => {");
     // The probe must appear BEFORE the reindexAll call.
