@@ -61,8 +61,7 @@ class SpeakerEmbeddings {
 
     const { embeddingBuffer } = await onnxWorkerClient.request(
       "speaker.extract",
-      { samplesBuffer },
-      [samplesBuffer]
+      { samplesBuffer }
     );
 
     if (!embeddingBuffer) return null;
