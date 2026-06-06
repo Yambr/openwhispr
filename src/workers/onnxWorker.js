@@ -358,9 +358,7 @@ async function dispatch({ id, method, payload }) {
   }
   try {
     const result = await handler(payload || {});
-    const transferList = [];
-    if (result?.embeddingBuffer) transferList.push(result.embeddingBuffer);
-    return { reply: { id, result }, transferList };
+    return { reply: { id, result }, transferList: [] };
   } catch (err) {
     log("error", "handler threw", { method, error: err?.message, stack: err?.stack });
     return { reply: { id, error: { message: err?.message || String(err) } }, transferList: [] };
