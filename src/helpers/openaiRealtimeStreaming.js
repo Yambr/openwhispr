@@ -57,6 +57,10 @@ class OpenAIRealtimeStreaming {
         // onSessionEnd → meeting-path reconnect.
         if (typeof this.ws.terminate === "function") this.ws.terminate();
         else this.ws.close();
+        // C3 WR-04 fix: defensively stop the keepalive now (idempotent — the
+        // close handler also calls stopKeepalive). Prevents one extra interval
+        // tick against a socket that is already terminating.
+        this.stopKeepalive();
         return;
       }
       try {
@@ -363,9 +367,16 @@ class OpenAIRealtimeStreaming {
     this.isDisconnecting = true;
 
     if (this.ws.readyState === WebSocket.CONNECTING) {
-      this.ws.once("open", () => this.ws?.close());
+      // C3 CR-01/WR-05 fix: keep isDisconnecting=true so when the deferred
+      // open→close fires later, the close handler sees the explicit-teardown
+      // intent and does NOT mis-fire a meeting-path reconnect. Capture the
+      // socket in the closure (cleanup() nulls this.ws below) so the deferred
+      // close still actually closes THIS socket, then cleanup() to leave the
+      // instance in a consistent dead state instead of a half-cleaned one.
+      const connectingWs = this.ws;
+      connectingWs.once("open", () => connectingWs.close());
       const result = { text: this.getFullTranscript() };
-      this.isDisconnecting = false;
+      this.cleanup();
       return result;
     }
 
@@ -416,7 +427,13 @@ class OpenAIRealtimeStreaming {
 
     const result = { text: this.getFullTranscript() };
     this.cleanup();
-    this.isDisconnecting = false;
+    // C3 CR-01 fix: do NOT reset isDisconnecting to false here. ws.close()
+    // above schedules an ASYNC close event; resetting the flag synchronously
+    // (before that event fires) made the close handler's `!isDisconnecting`
+    // guard and the meeting-path reconnect guard (ipcHandlers onSessionEnd)
+    // both inert. The instance is discarded after disconnect(), so leaving
+    // isDisconnecting=true for its remaining lifetime is correct — a FRESH
+    // instance is born with isDisconnecting=false in the constructor.
     return result;
   }
 
