@@ -4056,12 +4056,21 @@ class IPCHandlers {
     // with exponential backoff so an unexpected realtime-socket close (e.g.
     // 1011 keepalive ping timeout) self-heals in <5s instead of waiting 20-40
     // min for the meeting-detection poll to re-run connectRealtimeStreaming.
-    // Scoped to the meeting OpenAI-Realtime path ONLY — AssemblyAI (~6777),
-    // Deepgram (~7021) and dictation (setupDictationCallbacks ~5128) are
+    // WR-02: scoped to the meeting realtime path for ANY provider in
+    // STREAMING_CLIENT_BY_PROVIDER (OpenAI-Realtime, AssemblyAI, Deepgram) —
+    // connectRealtimeStreaming carries the selected StreamingClass into the
+    // reconnect context and all three implement the onSessionEnd / isConnected
+    // / isDisconnecting contract (verified contract-safe). The keepalive
+    // watchdog in openaiRealtimeStreaming.js is OpenAI-Realtime-only.
+    // Dictation (setupDictationCallbacks ~5128) and one-shot streaming are
     // untouched. Reconnect is driven by streaming.onSessionEnd, matching the
     // class contract at openaiRealtimeStreaming.js close handler.
     const MEETING_RECONNECT_DELAYS_MS = [0, 1000, 2000, 4000, 8000];
     const MEETING_RECONNECT_MAX_DELAY_MS = 30000;
+    // WR-01: cap forever-retry so a permanently-dead backend stops minting
+    // tokens after N attempts; the meeting-detection poll remains the
+    // slow-path fallback.
+    const MEETING_RECONNECT_MAX_ATTEMPTS = 12;
     let meetingReconnectAttempts = { mic: 0, system: 0 };
     let meetingReconnectTimers = { mic: null, system: null };
 
@@ -4086,6 +4095,16 @@ class IPCHandlers {
       if (meetingReconnectTimers[source]) clearTimeout(meetingReconnectTimers[source]);
       meetingReconnectTimers[source] = setTimeout(async () => {
         meetingReconnectTimers[source] = null;
+        // WR-01: give up after MEETING_RECONNECT_MAX_ATTEMPTS so a permanently
+        // dead backend stops the token-mint storm; the meeting-detection poll
+        // remains the slow-path fallback. A successful reconnect resets
+        // meetingReconnectAttempts[source] to 0 below.
+        const attempts = meetingReconnectAttempts[source] || 0;
+        if (attempts >= MEETING_RECONNECT_MAX_ATTEMPTS) {
+          debugLogger.debug("Meeting realtime reconnect gave up", { source, attempts });
+          meetingReconnectTimers[source] = null;
+          return;
+        }
         // Re-check teardown guards: only reconnect if the meeting is still the
         // one that died (instance not yet replaced) and was not torn down.
         const current = this[ref];
