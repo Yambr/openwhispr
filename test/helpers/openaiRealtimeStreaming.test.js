@@ -393,3 +393,285 @@ describe("openaiRealtimeStreaming — language query-param suffix (260526-ix4)",
     expect(url).toMatch(/\?intent=transcription&language=ru/);
   });
 });
+
+describe("openaiRealtimeStreaming — keepalive (C3 260610-muw)", () => {
+  // C3 resilience: the realtime client must app-level ping the socket and
+  // terminate a half-dead one (no pong within the watchdog window) so the
+  // close handler fires the reconnect hook instead of the socket silently
+  // rotting until the gateway's 1011 keepalive-ping-timeout (20-40 min loss).
+  //
+  // Reuses the proven require.cache injection pattern (CR-01 / RC-2 above) but
+  // makes FakeWebSocket EVENT-DRIVEN: it stores handlers from `.on(event, cb)`
+  // and exposes `emit(event, ...args)` so the test can drive the socket to the
+  // connected state, then advance fake timers to exercise the keepalive loop.
+
+  function makeEventCapableWs() {
+    function FakeWebSocket(url) {
+      this.url = url;
+      this.readyState = FakeWebSocket.CONNECTING; // 0 until synthetic open
+      this.pingCount = 0;
+      this.pingTimestamps = [];
+      this.terminateCount = 0;
+      this.closeCount = 0;
+      this.sent = [];
+      // IN-04 fix: model the real `ws` multi-listener semantics with an
+      // array of handlers per event so a second `.on(event)` does not clobber
+      // the first and `.once` auto-removes after firing. This is the
+      // prerequisite for the CR-01 regression test, which registers a
+      // disconnect-time once("open") alongside the persistent on("open").
+      const handlers = new Map(); // event -> array of callbacks
+      const register = (event, cb) => {
+        if (!handlers.has(event)) handlers.set(event, []);
+        handlers.get(event).push(cb);
+      };
+      this.on = (event, cb) => {
+        register(event, cb);
+        return this;
+      };
+      this.once = (event, cb) => {
+        const wrapper = (...args) => {
+          // Self-remove before firing so re-entrant emits don't re-run it.
+          const list = handlers.get(event);
+          if (list) {
+            const i = list.indexOf(wrapper);
+            if (i !== -1) list.splice(i, 1);
+          }
+          cb(...args);
+        };
+        register(event, wrapper);
+        return this;
+      };
+      this.send = (payload) => {
+        this.sent.push(payload);
+      };
+      this.ping = () => {
+        this.pingCount += 1;
+        this.pingTimestamps.push(Date.now());
+      };
+      this.terminate = () => {
+        this.terminateCount += 1;
+        this.readyState = FakeWebSocket.CLOSED;
+      };
+      this.close = () => {
+        this.closeCount += 1;
+        this.readyState = FakeWebSocket.CLOSED;
+      };
+      // Test-side helpers (not part of the real ws API): call ALL registered
+      // handlers for the event, in registration order, against a snapshot
+      // (so once()'s self-removal mid-iteration is safe).
+      this.emit = (event, ...args) => {
+        const list = handlers.get(event);
+        if (!list) return;
+        for (const cb of [...list]) cb(...args);
+      };
+      FakeWebSocket._instances.push(this);
+    }
+    FakeWebSocket.OPEN = 1;
+    FakeWebSocket.CONNECTING = 0;
+    FakeWebSocket.CLOSING = 2;
+    FakeWebSocket.CLOSED = 3;
+    FakeWebSocket._instances = [];
+    return FakeWebSocket;
+  }
+
+  // Build an instance, inject the event-capable WS + a non-empty build-time URL,
+  // then connect() and drive the socket to the CONNECTED (preconfigured) state.
+  // Returns { inst, ws, restore } — caller must call restore() when done.
+  function connectPreconfigured() {
+    const FakeWebSocket = makeEventCapableWs();
+    resetCaches();
+
+    const wsResolved = require.resolve("ws");
+    const realWsCacheEntry = require.cache[wsResolved];
+    require.cache[wsResolved] = {
+      id: wsResolved,
+      filename: wsResolved,
+      loaded: true,
+      exports: FakeWebSocket,
+      children: [],
+      paths: [],
+    };
+    require.cache[CONFIG_PATH] = {
+      id: CONFIG_PATH,
+      filename: CONFIG_PATH,
+      loaded: true,
+      exports: { OPENWHISPR_REALTIME_WSS_URL: "wss://corp.example.com/v1/realtime" },
+      children: [],
+      paths: [],
+    };
+
+    // eslint-disable-next-line global-require
+    const Streaming = require(STREAMING_PATH);
+    const inst = new Streaming();
+
+    // connect() resolves when the preconfigured session.created arrives.
+    const connectPromise = inst.connect({ apiKey: "sk-test-key", preconfigured: true });
+    connectPromise.catch(() => {});
+
+    const ws = FakeWebSocket._instances[FakeWebSocket._instances.length - 1];
+    // Drive to connected: open the socket, then deliver a preconfigured
+    // session.created so connect()'s Promise resolves and isConnected = true.
+    ws.readyState = FakeWebSocket.OPEN;
+    ws.emit("open");
+    ws.emit("message", Buffer.from(JSON.stringify({ type: "session.created" })));
+
+    const restore = () => {
+      try {
+        inst.cleanup();
+      } catch {}
+      if (realWsCacheEntry) require.cache[wsResolved] = realWsCacheEntry;
+      else delete require.cache[wsResolved];
+    };
+
+    return { inst, ws, FakeWebSocket, connectPromise, restore };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("Test 1 (ping): a keepalive ping is sent on the interval once connected", () => {
+    vi.useFakeTimers();
+    const { inst, ws, restore } = connectPreconfigured();
+    try {
+      expect(inst.isConnected).toBe(true);
+      expect(ws.pingCount).toBe(0); // no ping yet
+
+      // Advance past one keepalive interval (~15-20s).
+      vi.advanceTimersByTime(20000);
+
+      expect(ws.pingCount).toBeGreaterThanOrEqual(1);
+    } finally {
+      restore();
+    }
+  });
+
+  test("Test 2 (pong watchdog): a missed-pong window terminates the half-dead socket", () => {
+    vi.useFakeTimers();
+    const { inst, ws, restore } = connectPreconfigured();
+    try {
+      expect(inst.isConnected).toBe(true);
+
+      // Never emit a "pong". Advance past the missed-pong window
+      // (KEEPALIVE_INTERVAL_MS * MISSED_PONG_LIMIT ~= 30s; use a margin).
+      vi.advanceTimersByTime(60000);
+
+      // The watchdog must proactively kill the socket so the close handler
+      // fires the reconnect path. terminate() preferred, close() acceptable.
+      expect(ws.terminateCount + ws.closeCount).toBeGreaterThanOrEqual(1);
+    } finally {
+      restore();
+    }
+  });
+
+  test("Test 3 (reconnect hook): unexpected close fires onSessionEnd (locks the reconnect contract)", () => {
+    const { inst, ws, restore } = connectPreconfigured();
+    try {
+      expect(inst.isConnected).toBe(true);
+
+      let sessionEnded = null;
+      inst.onSessionEnd = (data) => {
+        sessionEnded = data;
+      };
+
+      // Unexpected close WITHOUT disconnect() first (isDisconnecting stays false).
+      ws.readyState = ws.constructor.CLOSED;
+      ws.emit("close", 1011, Buffer.from("keepalive ping timeout"));
+
+      // The class contract (openaiRealtimeStreaming.js close handler) must
+      // invoke onSessionEnd on an unexpected close — this is the hook the
+      // Task 3 meeting-path reconnect wiring depends on.
+      expect(sessionEnded).not.toBeNull();
+      expect(sessionEnded).toHaveProperty("text");
+    } finally {
+      restore();
+    }
+  });
+
+  test("pong received within the window keeps the socket alive (no terminate)", () => {
+    vi.useFakeTimers();
+    const { inst, ws, restore } = connectPreconfigured();
+    try {
+      expect(inst.isConnected).toBe(true);
+
+      // Emit a pong just before each interval boundary so liveness stays fresh.
+      for (let i = 0; i < 4; i++) {
+        vi.advanceTimersByTime(15000);
+        ws.emit("pong");
+      }
+
+      // Socket pinged but was never terminated (it answered every ping).
+      expect(ws.pingCount).toBeGreaterThanOrEqual(1);
+      expect(ws.terminateCount).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test("CR-01 regression: intentional disconnect() does NOT fire onSessionEnd when the async close arrives after disconnect() returns", async () => {
+    // This is the exact lifecycle the CR-01 fix hardens: disconnect() calls
+    // ws.close() (which in the real ws lib schedules an ASYNC 'close' event)
+    // then returns. Previously disconnect() reset isDisconnecting=false
+    // synchronously before that close fired, making the close handler's
+    // `!isDisconnecting` guard inert → a spurious onSessionEnd (reconnect
+    // signal) on intentional teardown. The fix keeps isDisconnecting=true for
+    // the dead instance's lifetime, so the deferred close stays silent.
+    const { inst, ws, restore } = connectPreconfigured();
+    try {
+      expect(inst.isConnected).toBe(true);
+
+      let sessionEnded = null;
+      inst.onSessionEnd = (data) => {
+        sessionEnded = data;
+      };
+
+      // Intentional teardown. No audio sent, so disconnect() takes the direct
+      // close path (no commit await) and calls ws.close() then cleanup().
+      await inst.disconnect();
+
+      // The async 'close' event arrives AFTER disconnect() already returned.
+      ws.readyState = ws.constructor.CLOSED;
+      ws.emit("close", 1000, Buffer.from("normal closure"));
+
+      // No reconnect signal: isDisconnecting stayed true AND wasActive was
+      // false (cleanup ran inside disconnect), so onSessionEnd must NOT fire.
+      expect(sessionEnded).toBeNull();
+      expect(inst.isDisconnecting).toBe(true); // stays true for the dead instance
+    } finally {
+      restore();
+    }
+  });
+
+  test("WR-04 regression: watchdog terminate → synthetic close → onSessionEnd fires (locks the full reconnect chain)", () => {
+    // The feature hinges on terminate() → close event → onSessionEnd →
+    // meeting-path reconnect. Test 2 proves terminate() is called; this test
+    // locks the rest of the chain: after the watchdog terminates a half-dead
+    // socket, the close event must fire onSessionEnd (unexpected close → the
+    // reconnect signal the meeting layer consumes).
+    vi.useFakeTimers();
+    const { inst, ws, restore } = connectPreconfigured();
+    try {
+      expect(inst.isConnected).toBe(true);
+
+      let sessionEnded = null;
+      inst.onSessionEnd = (data) => {
+        sessionEnded = data;
+      };
+
+      // Never pong → watchdog terminates the half-dead socket.
+      vi.advanceTimersByTime(60000);
+      expect(ws.terminateCount).toBeGreaterThanOrEqual(1);
+
+      // The real ws lib emits 'close' (code 1006) after terminate(); simulate
+      // that deferred close arriving. isDisconnecting was NEVER set (this is an
+      // unexpected death, not a disconnect()), so onSessionEnd must fire.
+      ws.readyState = ws.constructor.CLOSED;
+      ws.emit("close", 1006, Buffer.from("abnormal closure"));
+
+      expect(sessionEnded).not.toBeNull();
+      expect(sessionEnded).toHaveProperty("text");
+    } finally {
+      restore();
+    }
+  });
+});

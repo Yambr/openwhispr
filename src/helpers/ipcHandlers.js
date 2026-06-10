@@ -4052,7 +4052,90 @@ class IPCHandlers {
       return { diarizationPcmPath, diarizationSegments, diarizationStartedAt };
     };
 
-    const attachMeetingStreamingHandlers = (streaming, win, source) => {
+    // C3 (260610-muw, owner-authorized upstream edit): per-source auto-reconnect
+    // with exponential backoff so an unexpected realtime-socket close (e.g.
+    // 1011 keepalive ping timeout) self-heals in <5s instead of waiting 20-40
+    // min for the meeting-detection poll to re-run connectRealtimeStreaming.
+    // WR-02: scoped to the meeting realtime path for ANY provider in
+    // STREAMING_CLIENT_BY_PROVIDER (OpenAI-Realtime, AssemblyAI, Deepgram) —
+    // connectRealtimeStreaming carries the selected StreamingClass into the
+    // reconnect context and all three implement the onSessionEnd / isConnected
+    // / isDisconnecting contract (verified contract-safe). The keepalive
+    // watchdog in openaiRealtimeStreaming.js is OpenAI-Realtime-only.
+    // Dictation (setupDictationCallbacks ~5128) and one-shot streaming are
+    // untouched. Reconnect is driven by streaming.onSessionEnd, matching the
+    // class contract at openaiRealtimeStreaming.js close handler.
+    const MEETING_RECONNECT_DELAYS_MS = [0, 1000, 2000, 4000, 8000];
+    const MEETING_RECONNECT_MAX_DELAY_MS = 30000;
+    // WR-01: cap forever-retry so a permanently-dead backend stops minting
+    // tokens after N attempts; the meeting-detection poll remains the
+    // slow-path fallback.
+    const MEETING_RECONNECT_MAX_ATTEMPTS = 12;
+    let meetingReconnectAttempts = { mic: 0, system: 0 };
+    let meetingReconnectTimers = { mic: null, system: null };
+
+    const clearMeetingReconnectTimers = () => {
+      for (const src of ["mic", "system"]) {
+        if (meetingReconnectTimers[src]) {
+          clearTimeout(meetingReconnectTimers[src]);
+          meetingReconnectTimers[src] = null;
+        }
+      }
+      meetingReconnectAttempts = { mic: 0, system: 0 };
+    };
+
+    const scheduleMeetingReconnect = (ctx) => {
+      const { ref, source } = ctx;
+      const attempt = meetingReconnectAttempts[source] || 0;
+      const delay =
+        attempt < MEETING_RECONNECT_DELAYS_MS.length
+          ? MEETING_RECONNECT_DELAYS_MS[attempt]
+          : MEETING_RECONNECT_MAX_DELAY_MS;
+
+      if (meetingReconnectTimers[source]) clearTimeout(meetingReconnectTimers[source]);
+      meetingReconnectTimers[source] = setTimeout(async () => {
+        meetingReconnectTimers[source] = null;
+        // WR-01: give up after MEETING_RECONNECT_MAX_ATTEMPTS so a permanently
+        // dead backend stops the token-mint storm; the meeting-detection poll
+        // remains the slow-path fallback. A successful reconnect resets
+        // meetingReconnectAttempts[source] to 0 below.
+        const attempts = meetingReconnectAttempts[source] || 0;
+        if (attempts >= MEETING_RECONNECT_MAX_ATTEMPTS) {
+          debugLogger.debug("Meeting realtime reconnect gave up", { source, attempts });
+          meetingReconnectTimers[source] = null;
+          return;
+        }
+        // Re-check teardown guards: only reconnect if the meeting is still the
+        // one that died (instance not yet replaced) and was not torn down.
+        const current = this[ref];
+        if (current && current !== ctx.streaming) return; // newer socket already replaced it
+        if (current && current.isDisconnecting) return; // explicit teardown in flight
+        // resetMeetingStreamingState() nulls this[ref] AND clears these timers;
+        // if this[ref] is null the meeting ended — but a reconnect leaves it
+        // null between dispose and rebuild, so guard on the timer ownership: if
+        // we got here the timer was ours and not cleared, so proceed.
+
+        try {
+          debugLogger.debug("Meeting realtime reconnect", { source, attempt });
+          const secret = await ctx.refetchSecret();
+          this[ref] = new ctx.StreamingClass();
+          attachMeetingStreamingHandlers(this[ref], ctx.win, source, ctx);
+          await this[ref].connect({ apiKey: secret, token: secret, ...ctx.connectOpts });
+          meetingReconnectAttempts[source] = 0; // success → reset backoff
+          debugLogger.debug("Meeting realtime reconnect succeeded", { source });
+        } catch (err) {
+          meetingReconnectAttempts[source] = (meetingReconnectAttempts[source] || 0) + 1;
+          debugLogger.error("Meeting realtime reconnect failed, retrying", {
+            source,
+            attempt: meetingReconnectAttempts[source],
+            error: err?.message,
+          });
+          scheduleMeetingReconnect(ctx);
+        }
+      }, delay);
+    };
+
+    const attachMeetingStreamingHandlers = (streaming, win, source, reconnectContext) => {
       const send = (channel, data) => {
         if (!win || win.isDestroyed()) {
           debugLogger.error("Meeting segment send failed: window unavailable", {
@@ -4167,6 +4250,21 @@ class IPCHandlers {
       streaming.onError = (error) => {
         send("meeting-transcription-error", error.message);
       };
+
+      // C3 (260610-muw): the meeting socket previously NEVER set onSessionEnd,
+      // so an unexpected close dropped the dead socket and only the poll
+      // re-created one (the 20-40 min gaps). Wire it to a per-source reconnect.
+      // Guards: do not reconnect if the meeting was torn down (this[ref] null /
+      // isDisconnecting) or a newer socket already replaced this instance.
+      if (reconnectContext) {
+        const { ref } = reconnectContext;
+        streaming.onSessionEnd = () => {
+          if (streaming.isDisconnecting) return; // explicit disconnect, not a death
+          if (this[ref] == null) return; // meeting torn down (resetMeetingStreamingState)
+          if (this[ref] !== streaming) return; // a newer socket already replaced this one
+          scheduleMeetingReconnect({ ...reconnectContext, streaming });
+        };
+      }
     };
 
     const fetchRealtimeToken = async (event, options, { streams } = {}) => {
@@ -4361,9 +4459,23 @@ class IPCHandlers {
 
       const StreamingClass =
         STREAMING_CLIENT_BY_PROVIDER[options.provider] ?? OpenAIRealtimeStreaming;
+      // C3 (260610-muw): reset any stale per-source reconnect bookkeeping from a
+      // prior meeting before arming fresh sockets.
+      clearMeetingReconnectTimers();
       for (const { ref, source } of pairs) {
         this[ref] = new StreamingClass();
-        attachMeetingStreamingHandlers(this[ref], win, source);
+        // C3: reconnect context lets onSessionEnd rebuild THIS source's socket
+        // (re-mint just this stream's token) without broadening scope or waiting
+        // for the meeting-detection poll.
+        const reconnectContext = {
+          ref,
+          source,
+          StreamingClass,
+          connectOpts,
+          win,
+          refetchSecret: () => fetchRealtimeToken(event, options),
+        };
+        attachMeetingStreamingHandlers(this[ref], win, source, reconnectContext);
       }
 
       await Promise.all(
@@ -5081,6 +5193,7 @@ class IPCHandlers {
     const resetMeetingStreamingState = () => {
       this._meetingMicStreaming = null;
       this._meetingSystemStreaming = null;
+      clearMeetingReconnectTimers(); // C3: cancel pending reconnects + reset backoff
       meetingSendCounts = { mic: 0, system: 0 };
       meetingLiveSpeakerStartedAt = null;
       meetingPendingMicChunks = [];
