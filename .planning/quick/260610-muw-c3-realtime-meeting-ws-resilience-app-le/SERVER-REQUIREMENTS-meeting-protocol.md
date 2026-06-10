@@ -103,6 +103,28 @@ edit. Awaiting operator facts + server-log analysis.
 
 ---
 
+## C3 reconnect token-per-stream assumption (WR-03 — server contract dependency)
+
+The C3 client reconnect (branch `quick/260610-muw-c3-realtime-ws-resilience`)
+re-mints a SINGLE-stream token on per-source reconnect
+(`ipcHandlers.js` `refetchSecret: () => fetchRealtimeToken(event, options)` with
+no `{streams}`), even when the original meeting opened 2 streams (mic+system) and
+when reconnecting the `system` source specifically.
+
+**Under PROVIDER_LOCKDOWN (the corporate path that ships): benign.** The realtime
+credential IS the user's Better Auth session bearer — identical for both streams,
+stream-index-agnostic (the server validates the bearer, strips the Authorization
+header, substitutes `LITELLM_MASTER_KEY` upstream). So a single-stream re-mint on
+system reconnect produces the same valid bearer. No server change required for the
+corp build.
+
+**Server contract requirement (only if the 2-stream ephemeral OpenAI/BYOK path is
+ever used for meetings):** the two per-stream realtime tokens MUST be
+interchangeable / stream-index-agnostic, OR the client reconnect must thread the
+stream index. Today the corp build never hits this (BYOK realtime tokens are not
+minted under lockdown). Filed so the assumption is explicit if BYOK realtime
+meetings are ever enabled server-side.
+
 ## Client-side companions (for cross-reference)
 
 - **C2** — `missing_start` mic-segment suppression. Client-side. Symptom confirmed

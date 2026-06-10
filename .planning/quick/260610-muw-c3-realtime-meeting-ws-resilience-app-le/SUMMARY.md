@@ -3,13 +3,18 @@ task: C3 — Realtime meeting WebSocket resilience (keepalive + reconnect)
 slug: 260610-muw-c3-realtime-meeting-ws-resilience-app-le
 type: quick
 mode: tdd
-status: incomplete
+status: complete
 reason_incomplete: >
   Tasks 1-3 (RED test, Part A keepalive, Part B reconnect) DONE and green.
-  Task 4 — the live CDP acceptance gate (real meeting, forced close, reconnect
-  <5s on the real Electron app) — is the acceptance gate and is PENDING. It
-  requires the human + real app; green unit tests are necessary but not
-  sufficient (memory: live_verification_over_green_tests).
+  gsd-code-reviewer run on the diff (review_before_tag rule) found 1 CRITICAL
+  (CR-01: disconnect() reset isDisconnecting before async close → reconnect guard
+  inert) + warnings; all fixed (commits 2673ca1e / 0c481235 / ef810180) and
+  locked with 2 new regression tests (20/20 green). Task 4 (live CDP acceptance
+  gate — real meeting, forced socket death) was DELIBERATELY SKIPPED by owner
+  decision (2026-06-10): release on review + units, no live run. Residual risk
+  accepted by owner — the live-only items (CR-01 async ordering end-to-end,
+  WR-03 token-per-stream) are documented in REVIEW.md and
+  SERVER-REQUIREMENTS-meeting-protocol.md. Tagged v1.7.23.
 files_modified:
   - src/helpers/openaiRealtimeStreaming.js
   - src/helpers/ipcHandlers.js
