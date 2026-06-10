@@ -6,6 +6,13 @@ const WEBSOCKET_TIMEOUT_MS = 15000;
 const DISCONNECT_TIMEOUT_MS = 3000;
 const SAMPLE_RATE = 24000;
 const COLD_START_BUFFER_MAX = 3 * SAMPLE_RATE * 2; // 3 seconds of 16-bit PCM
+// C3 (260610-muw, owner-authorized upstream edit): app-level keepalive so a
+// half-dead socket is detected and proactively torn down instead of rotting
+// until the gateway's `1011 keepalive ping timeout` (lost 20-40 min of
+// transcript per death). KEEPALIVE_INTERVAL_MS between ws.ping()s;
+// MISSED_PONG_LIMIT intervals without a "pong" → terminate.
+const KEEPALIVE_INTERVAL_MS = 15000;
+const MISSED_PONG_LIMIT = 2;
 
 class OpenAIRealtimeStreaming {
   constructor() {
@@ -27,6 +34,44 @@ class OpenAIRealtimeStreaming {
     this.coldStartBuffer = [];
     this.coldStartBufferSize = 0;
     this.speechStartedAt = null;
+    // C3 keepalive bookkeeping.
+    this.keepaliveTimer = null;
+    this.lastPongAt = 0;
+  }
+
+  // C3 (260610-muw): start the keepalive ping + pong-liveness watchdog. Called
+  // once the session is ready (session.created preconfigured / session.updated).
+  startKeepalive() {
+    this.lastPongAt = Date.now();
+    this.stopKeepalive();
+    this.keepaliveTimer = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      // No pong within MISSED_PONG_LIMIT intervals → socket is half-dead.
+      if (Date.now() - this.lastPongAt > KEEPALIVE_INTERVAL_MS * MISSED_PONG_LIMIT) {
+        debugLogger.debug("OpenAI Realtime keepalive: no pong, terminating", {
+          model: this.model,
+          sinceLastPongMs: Date.now() - this.lastPongAt,
+        });
+        // terminate() kills a half-dead socket immediately; fall back to
+        // close() if absent. Either fires the existing close handler →
+        // onSessionEnd → meeting-path reconnect.
+        if (typeof this.ws.terminate === "function") this.ws.terminate();
+        else this.ws.close();
+        return;
+      }
+      try {
+        this.ws.ping();
+      } catch (err) {
+        debugLogger.debug("OpenAI Realtime keepalive ping failed", { error: err?.message });
+      }
+    }, KEEPALIVE_INTERVAL_MS);
+  }
+
+  stopKeepalive() {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
   }
 
   getFullTranscript() {
@@ -96,6 +141,11 @@ class OpenAIRealtimeStreaming {
         debugLogger.debug("OpenAI Realtime WebSocket opened");
       });
 
+      // C3 (260610-muw): record pong liveness for the keepalive watchdog.
+      this.ws.on("pong", () => {
+        this.lastPongAt = Date.now();
+      });
+
       this.ws.on("message", (data) => {
         this.handleMessage(data);
       });
@@ -115,6 +165,7 @@ class OpenAIRealtimeStreaming {
       this.ws.on("close", (code, reason) => {
         const wasActive = this.isConnected;
         this.isConnecting = false;
+        this.stopKeepalive(); // C3: stop pinging a closed socket.
         debugLogger.debug("OpenAI Realtime WebSocket closed", {
           code,
           reason: reason?.toString(),
@@ -148,6 +199,7 @@ class OpenAIRealtimeStreaming {
             this.isConnected = true;
             this.isConnecting = false;
             clearTimeout(this.connectionTimeout);
+            this.startKeepalive(); // C3: session ready → begin keepalive.
             if (this.pendingResolve) {
               this.pendingResolve();
               this.pendingResolve = null;
@@ -187,6 +239,7 @@ class OpenAIRealtimeStreaming {
             this.isConnected = true;
             this.isConnecting = false;
             clearTimeout(this.connectionTimeout);
+            this.startKeepalive(); // C3: session ready → begin keepalive.
             debugLogger.debug("OpenAI Realtime session configured", {
               model: this.model,
             });
@@ -368,6 +421,7 @@ class OpenAIRealtimeStreaming {
   }
 
   cleanup() {
+    this.stopKeepalive(); // C3: ensure the keepalive timer never leaks.
     clearTimeout(this.connectionTimeout);
     this.connectionTimeout = null;
 
